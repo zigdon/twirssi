@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.7";
-my ($REV) = '$Rev: 344 $' =~ /(\d+)/;
+$VERSION = "1.7.1";
+my ($REV) = '$Rev: 345 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 344 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-05 16:40:46 -0800 (Mon, 05 Jan 2009) $',
+    changed => '$Date: 2009-01-06 07:14:03 -0800 (Tue, 06 Jan 2009) $',
 );
 
 my $window;
@@ -171,7 +171,7 @@ sub cmd_tweet_as {
             $away = 1;
         } else {
             &notice( "Can't find bitlbee server.",
-                "Update bitlbee_server or disalbe tweet_to_away" );
+                "Update bitlbee_server or disable tweet_to_away" );
         }
     }
 
@@ -233,7 +233,7 @@ sub cmd_reply_as {
     my $nick;
     $id =~ s/[^\w\d\-:]+//g;
     ( $nick, $id ) = split /:/, $id;
-    unless ( exists $id_map{$nick} ) {
+    unless ( exists $id_map{lc $nick} ) {
         &notice("Can't find a tweet from $nick to reply to!");
         return;
     }
@@ -783,7 +783,7 @@ sub monitor_child {
             } elsif ( $meta{type} eq 'dm' ) {
                 push @lines, "[$account%B\@$meta{nick}%n (%WDM%n)] $_\n",;
             } elsif ( $meta{type} eq 'error' ) {
-                push @lines, "debug: $_\n" if &debug,;
+                push @lines, "error: $_\n" if &debug,;
             } elsif ( $meta{type} eq 'debug' ) {
                 push @lines, "debug: $_\n" if &debug,;
             }
