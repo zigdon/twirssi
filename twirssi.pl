@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.7.1";
-my ($REV) = '$Rev: 346 $' =~ /(\d+)/;
+$VERSION = "1.7.2";
+my ($REV) = '$Rev: 347 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 346 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-06 07:14:23 -0800 (Tue, 06 Jan 2009) $',
+    changed => '$Date: 2009-01-06 09:54:25 -0800 (Tue, 06 Jan 2009) $',
 );
 
 my $window;
@@ -858,12 +858,8 @@ sub notice {
 sub sig_complete {
     my ( $complist, $window, $word, $linestart, $want_space ) = @_;
 
-    if (
-        $linestart =~ /^\/twitter_reply(?:_as)?\s*$/
-        or ( Irssi::settings_get_bool("twirssi_use_reply_aliases")
-            and $linestart =~ /^\/reply(?:_as)?\s*$/ )
-      )
-    {    # /twitter_reply gets a nick:num
+    # /twitter_reply gets a nick:num
+    if ( $linestart =~ /^\/twitter_reply(?:_as)?\s*$/ ) {
         @$complist = grep /^\Q$word/i, sort keys %{ $id_map{__indexes} };
     }
 
@@ -887,13 +883,12 @@ Irssi::settings_add_str( "twirssi", "twitter_usernames", undef );
 Irssi::settings_add_str( "twirssi", "twitter_passwords", undef );
 Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
     ".irssi/scripts/twirssi.json" );
-Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
-Irssi::settings_add_bool( "twirssi", "show_reply_context",        0 );
-Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
-Irssi::settings_add_bool( "twirssi", "twirssi_debug",             0 );
-Irssi::settings_add_bool( "twirssi", "twirssi_first_run",         1 );
-Irssi::settings_add_bool( "twirssi", "twirssi_track_replies",     1 );
-Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
+Irssi::settings_add_bool( "twirssi", "tweet_to_away",         0 );
+Irssi::settings_add_bool( "twirssi", "show_reply_context",    0 );
+Irssi::settings_add_bool( "twirssi", "show_own_tweets",       1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_debug",         0 );
+Irssi::settings_add_bool( "twirssi", "twirssi_first_run",     1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_track_replies", 1 );
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
 
 if ($window) {
@@ -907,10 +902,6 @@ if ($window) {
     Irssi::command_bind( "twitter_logout",   "cmd_logout" );
     Irssi::command_bind( "twitter_switch",   "cmd_switch" );
     Irssi::command_bind( "twirssi_upgrade",  "cmd_upgrade" );
-    if ( Irssi::settings_get_bool("twirssi_use_reply_aliases") ) {
-        Irssi::command_bind( "reply",    "cmd_reply" );
-        Irssi::command_bind( "reply_as", "cmd_reply_as" );
-    }
     Irssi::command_bind(
         "twirssi_dump",
         sub {
