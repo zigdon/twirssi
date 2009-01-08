@@ -10,7 +10,7 @@ use vars qw($VERSION %IRSSI);
 use constant { DEBUG => 0 };
 
 $VERSION = "1.1";
-my $REV = '$Rev: 300 $';
+my ($REV) = '$Rev: 301 $' =~ /(\d+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
