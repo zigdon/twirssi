@@ -10,7 +10,7 @@ use vars qw($VERSION %IRSSI);
 use constant { DEBUG => 0 };
 
 $VERSION = "1.1";
-my ($REV) = '$Rev: 302 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 303 $' =~ /(\d+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -150,6 +150,7 @@ sub cmd_login {
         &notice("Logged in as $user, loading friends list...");
         &load_friends;
         &notice( "loaded friends: ", scalar keys %nicks );
+        %nicks = %friends;
         $nicks{$user} = 0;
         &get_updates;
     } else {
@@ -163,7 +164,7 @@ sub load_friends {
     while (1) {
         my $friends = $twit->friends( { page => $page } );
         last unless $friends;
-        $new_friends{ $_->{screen_name} } = $nicks{ $_->{screen_name} } = time
+        $new_friends{ $_->{screen_name} } = time
           foreach @$friends;
         $page++;
         last if @$friends == 0 or $page == 10;
@@ -295,7 +296,7 @@ sub monitor_child {
             last;
           }
           my ($f, $t) = split ' ', $_;
-          $friends{$f} = $t;
+          $nicks{$f} = $friends{$f} = $t;
         }
 
         print "new last_poll = $last_poll" if DEBUG;
