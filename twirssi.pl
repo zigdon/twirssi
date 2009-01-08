@@ -18,8 +18,8 @@ BEGIN {
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.7.2";
-my ($REV) = '$Rev: 351 $' =~ /(\d+)/;
+$VERSION = "1.7.3";
+my ($REV) = '$Rev: 352 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -28,7 +28,7 @@ my ($REV) = '$Rev: 351 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-06 19:33:41 -0800 (Tue, 06 Jan 2009) $',
+    changed => '$Date: 2009-01-08 13:46:50 -0800 (Thu, 08 Jan 2009) $',
 );
 
 my $window;
@@ -571,7 +571,7 @@ sub load_friends {
     };
 
     if ($@) {
-        print $fh "type:error Error during friends list update.  Aborted.\n";
+        print $fh "type:debug Error during friends list update.  Aborted.\n";
         return;
     }
 
@@ -644,7 +644,7 @@ sub get_updates {
         }
 
         if ($error) {
-            print $fh "type:error Update encountered errors.  Aborted\n";
+            print $fh "type:debug Update encountered errors.  Aborted\n";
             print $fh $last_poll;
         } else {
             print $fh $new_poll;
@@ -666,17 +666,17 @@ sub do_updates {
     };
 
     if ($@) {
-        print $fh "type:error Error during friends_timeline call.  Aborted.\n";
+        print $fh "type:debug Error during friends_timeline call.  Aborted.\n";
         return 1;
     }
 
     unless ( ref $tweets ) {
         if ( $obj->can("get_error") ) {
-            print $fh "type:error API Error during friends_timeline call: ",
+            print $fh "type:debug API Error during friends_timeline call: ",
               JSON::Any->jsonToObj( $obj->get_error() ), "  Aborted.\n";
         } else {
             print $fh
-              "type:error API Error during friends_timeline call. Aborted.\n";
+              "type:debug API Error during friends_timeline call. Aborted.\n";
         }
         return 1;
     }
@@ -692,7 +692,11 @@ sub do_updates {
             and not exists $friends{ $t->{in_reply_to_screen_name} } )
         {
             $nicks{ $t->{in_reply_to_screen_name} } = time;
-            my $context = $obj->show_status( $t->{in_reply_to_status_id} );
+            my $context;
+            eval {
+              $context = $obj->show_status( $t->{in_reply_to_status_id} );
+            };
+
             if ($context) {
                 my $ctext = decode_entities( $context->{text} );
                 $ctext =~ s/%/%%/g;
@@ -701,8 +705,10 @@ sub do_updates {
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
                 $reply = "reply";
+            } elsif ($@) {
+                print $fh "type:debug request to get context failed: $@";
             } else {
-                print "Failed to get context from $t->{in_reply_to_screen_name}"
+                print $fh "type:debug Failed to get context from $t->{in_reply_to_screen_name}"
                   if &debug;
             }
         }
@@ -720,7 +726,7 @@ sub do_updates {
     };
 
     if ($@) {
-        print $fh "type:error Error during replies call.  Aborted.\n";
+        print $fh "type:debug Error during replies call.  Aborted.\n";
         return 1;
     }
 
@@ -743,7 +749,7 @@ sub do_updates {
     };
 
     if ($@) {
-        print $fh "type:error Error during direct_messages call.  Aborted.\n";
+        print $fh "type:debug Error during direct_messages call.  Aborted.\n";
         return 1;
     }
 
