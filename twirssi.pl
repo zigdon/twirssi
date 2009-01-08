@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.6.1";
-my ($REV) = '$Rev: 339 $' =~ /(\d+)/;
+$VERSION = "1.7";
+my ($REV) = '$Rev: 340 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -710,9 +710,17 @@ sub do_updates {
     }
 
     print scalar localtime, " - Polling for DMs" if &debug;
-    $tweets =
-      $obj->direct_messages( { since => HTTP::Date::time2str($last_poll) } )
-      || [];
+    eval {
+      $tweets =
+        $obj->direct_messages( { since => HTTP::Date::time2str($last_poll) } )
+        || [];
+    };
+
+    if ($@) {
+        print $fh "type:error Error during direct_messages call.  Aborted.\n";
+        return;
+    }
+
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
@@ -797,10 +805,20 @@ sub monitor_child {
               or warn "Failed to remove $filename: $!"
               unless &debug;
 
-      # keep 10 minutes of cached tweets, to make sure we don't show duplicates.
+            # keep enough cached tweets, to make sure we don't show duplicates.
             foreach ( keys %tweet_cache ) {
-                next if $tweet_cache{$_} > time - 600;
+                next if $tweet_cache{$_} >= $old_last_poll;
                 delete $tweet_cache{$_};
+            }
+
+            # save id_map hash
+            if (keys %id_map and my $file = Irssi::settings_get_str("twirssi_replies_store")) {
+              if (open JSON, ">$file") {
+                print JSON JSON::Any->objToJson(\%id_map);
+                close JSON;
+              } else {
+                &notice("Failed to write replies to $file: $!");
+              }
             }
             return;
         }
@@ -848,6 +866,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_location",
     ".irssi/scripts/twirssi.pl" );
 Irssi::settings_add_str( "twirssi", "twitter_usernames", undef );
 Irssi::settings_add_str( "twirssi", "twitter_passwords", undef );
+Irssi::settings_add_str( "twirssi", "twirssi_replies_store", ".irssi/scripts/twirssi.json");
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
 Irssi::settings_add_bool( "twirssi", "show_reply_context",        0 );
 Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
@@ -873,11 +892,12 @@ if ($window) {
         Irssi::command_bind( "reply_as", "cmd_reply_as" );
     }
     Irssi::command_bind(
-        "twitter_dump",
+        "twirssi_dump",
         sub {
-            print "twits: ",   Dumper \%twits;
+            print "twits: ",   join ", ", map {"u: $_->{username}"} values %twits;
             print "friends: ", join ", ", sort keys %friends;
             print "nicks: ",   join ", ", sort keys %nicks;
+            print "id_map: ",  Dumper \%{$id_map{__indexes}};
             print "last poll: $last_poll";
         }
     );
@@ -912,6 +932,23 @@ if ($window) {
     &notice("   %C(_(\\%N           http://twirssi.com/ for full docs");
     &notice(
         "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet");
+
+    my $file = Irssi::settings_get_str("twirssi_replies_store");
+    if ($file and -r $file) {
+      if (open(JSON, $file)) {
+        local $/;
+        my $json = <JSON>;
+        close JSON;
+        eval {
+          my $ref = JSON::Any->jsonToObj($json);
+          %id_map = %$ref;
+          my $num = keys %{$id_map{__indexes}};
+          &notice(sprintf "Loaded old replies from %d contact%s.", $num, ($num == 1 ? "" : "s"));
+        };
+      } else {
+        &notice("Failed to load old replies from $file: $!");
+      }
+    }
 
     if ( my $provider = Irssi::settings_get_str("short_url_provider") ) {
         eval "use WWW::Shorten::$provider;";
