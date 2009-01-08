@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.6.1";
-my ($REV) = '$Rev: 337 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 339 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -764,7 +764,7 @@ sub monitor_child {
             } elsif ( $meta{type} eq 'reply' ) {
                 push @lines, "[$account\\--> %B\@$meta{nick}%n$marker] $_\n",;
             } elsif ( $meta{type} eq 'dm' ) {
-                push @lines, "[$account%B\@$meta{nick}%n (%%WDM%%n)] $_\n",;
+                push @lines, "[$account%B\@$meta{nick}%n (%WDM%n)] $_\n",;
             } elsif ( $meta{type} eq 'error' ) {
                 push @lines, "debug: $_\n" if &debug,;
             } elsif ( $meta{type} eq 'debug' ) {
