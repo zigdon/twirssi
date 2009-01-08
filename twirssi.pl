@@ -1,7 +1,6 @@
 use strict;
 use Irssi;
 use Irssi::Irc;
-use Net::Twitter;
 use HTTP::Date;
 use HTML::Entities;
 use File::Temp;
@@ -9,10 +8,18 @@ use LWP::Simple;
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
+BEGIN {
+    $ENV{JSON_ANY_ORDER} = "JSON Syck DWIW";
+    require JSON::Any;
+    import JSON::Any;
+    require Net::Twitter;
+    import Net::Twitter;
+}
+
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.7.2";
-my ($REV) = '$Rev: 350 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 351 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +28,7 @@ my ($REV) = '$Rev: 350 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-06 14:59:49 -0800 (Tue, 06 Jan 2009) $',
+    changed => '$Date: 2009-01-06 19:33:41 -0800 (Tue, 06 Jan 2009) $',
 );
 
 my $window;
@@ -768,7 +775,7 @@ sub monitor_child {
             my %meta;
             foreach my $key (qw/id account nick type/) {
                 if (s/^$key:(\S+)\s*//) {
-                  $meta{$key} = $1;
+                    $meta{$key} = $1;
                 }
             }
 
@@ -943,9 +950,11 @@ if ($window) {
     Irssi::command_bind(
         "twirssi_version",
         sub {
-            &notice(
-"Twirssi v$VERSION (r$REV);  Net::Twitter v$Net::Twitter::VERSION. "
-                  . "See details at http://tinyurl.com/twirssi" );
+            &notice("Twirssi v$VERSION (r$REV); "
+                  . "Net::Twitter v$Net::Twitter::VERSION. "
+                  . "JSON in use: "
+                  . JSON::Any::handler()
+                  . ".  See details at http://twirssi.com/" );
         }
     );
     Irssi::command_bind(
