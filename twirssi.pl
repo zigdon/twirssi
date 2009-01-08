@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.6.1";
-my ($REV) = '$Rev: 336 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 337 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -651,8 +651,8 @@ sub do_updates {
     };
 
     if ($@) {
-        printf $fh "type:error Error during friends_timeline call.  Aborted.\n"
-          return;
+        print $fh "type:error Error during friends_timeline call.  Aborted.\n";
+        return;
     }
 
     foreach my $t ( reverse @$tweets ) {
@@ -691,10 +691,11 @@ sub do_updates {
     eval {
         $tweets = $obj->replies( { since => HTTP::Date::time2str($last_poll) } )
           || [];
-      }
+    };
 
-      if ($@) {
-        printf $fh "type:error Error during replies call.  Aborted.\n" return;
+    if ($@) {
+        print $fh "type:error Error during replies call.  Aborted.\n";
+        return;
     }
 
     foreach my $t ( reverse @$tweets ) {
