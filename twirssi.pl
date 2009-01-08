@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.7.2";
-my ($REV) = '$Rev: 348 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 349 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 348 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-06 11:09:34 -0800 (Tue, 06 Jan 2009) $',
+    changed => '$Date: 2009-01-06 11:16:45 -0800 (Tue, 06 Jan 2009) $',
 );
 
 my $window;
@@ -767,8 +767,9 @@ sub monitor_child {
             last if /^__friends__/;
             my %meta;
             foreach my $key (qw/id account nick type/) {
-                s/^$key:(\S+)\s*//;
-                $meta{$key} = $1;
+                if (s/^$key:(\S+)\s*//) {
+                  $meta{$key} = $1;
+                }
             }
 
             next if exists $meta{id} and exists $tweet_cache{ $meta{id} };
