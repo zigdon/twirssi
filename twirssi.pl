@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.4";
-my ($REV) = '$Rev: 317 $' =~ /(\d+)/;
+$VERSION = "1.5";
+my ($REV) = '$Rev: 318 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -32,6 +32,7 @@ my $poll;
 my %nicks;
 my %friends;
 my $last_poll = time - 300;
+my %tweet_cache;
 
 sub cmd_direct {
     my ( $data, $server, $win ) = @_;
@@ -125,6 +126,12 @@ sub cmd_tweet_as {
                 $data =~ s/\Q$url/$short/g;
             };
         }
+    }
+
+    if ( length $data > 140 ) {
+        &notice(
+            "Tweet too long (" . length($data) . " characters) - aborted" );
+        return;
     }
 
     unless ( $twits{$username}->update($data) ) {
@@ -221,7 +228,29 @@ sub cmd_logout {
 sub cmd_login {
     my ( $data, $server, $win ) = @_;
     my $pass;
-    ( $user, $pass ) = split ' ', $data, 2;
+    if ($data) {
+        ( $user, $pass ) = split ' ', $data, 2;
+    } elsif ( my $autouser = Irssi::settings_get_str("twitter_usernames")
+        and my $autopass = Irssi::settings_get_str("twitter_passwords") )
+    {
+        my @user = split /\s*,\s*/, $autouser;
+        my @pass = split /\s*,\s*/, $autopass;
+        if ( @user != @pass ) {
+            &notice("Number of usernames doesn't match "
+                  . "the number of passwords - auto-login failed" );
+        } else {
+            my ( $u, $p );
+            while ( @user and @pass ) {
+                $u = shift @user;
+                $p = shift @pass;
+                &cmd_login("$u $p");
+            }
+        }
+    } else {
+        &notice("/twitter_login requires either a username and password "
+              . "or twitter_usernames and twitter_passwords to be set." );
+        return;
+    }
 
     %friends = %nicks = ();
 
@@ -455,7 +484,8 @@ sub do_updates {
                 my $ctext = decode_entities( $context->{text} );
                 $ctext =~ s/%/%%/g;
                 $ctext =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
-                printf $fh "[%s%%B\@%s%%n] %s\n",
+                printf $fh "id:%d [%s%%B\@%s%%n] %s\n",
+                  $context->{id},
                   ( $username ne $user ? "$username: " : "" ),
                   $context->{user}{screen_name}, $ctext;
                 $prefix = "\--> ";
@@ -467,7 +497,8 @@ sub do_updates {
         next
           if $t->{user}{screen_name} eq $username
               and not Irssi::settings_get_bool("show_own_tweets");
-        printf $fh "%s[%s%%B\@%s%%n] %s\n",
+        printf $fh "id:%d %s[%s%%B\@%s%%n] %s\n",
+          $t->{id},
           $prefix,
           ( $username ne $user ? "$username: " : "" ),
           $t->{user}{screen_name},
@@ -484,7 +515,8 @@ sub do_updates {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
         $text =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
-        printf $fh "[%s%%B\@%s%%n] %s\n",
+        printf $fh "id:%d [%s%%B\@%s%%n] %s\n",
+          $t->{id},
           ( $username ne $user ? "$username: " : "" ),
           $t->{user}{screen_name},
           $text;
@@ -498,7 +530,8 @@ sub do_updates {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
         $text =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
-        printf $fh "[%s%%B\@%s%%n (%%WDM%%n)] %s\n",
+        printf $fh "id:%d [%s%%B\@%s%%n (%%WDM%%n)] %s\n",
+          $t->{id},
           ( $username ne $user ? "$username: " : "" ),
           $t->{sender_screen_name},
           $text;
@@ -517,6 +550,10 @@ sub monitor_child {
         while (<FILE>) {
             chomp;
             last if /^__friends__/;
+            if (s/^id:(\d+) //) {
+                next if exists $tweet_cache{$1};
+                $tweet_cache{$1} = time;
+            }
             push @lines, $_ unless /^__friends__/;
         }
 
@@ -544,6 +581,12 @@ sub monitor_child {
             unlink $filename
               or warn "Failed to remove $filename: $!"
               unless &debug;
+
+      # keep 10 minutes of cached tweets, to make sure we don't show duplicates.
+            foreach ( keys %tweet_cache ) {
+                next if $tweet_cache{$_} > time - 600;
+                delete $tweet_cache{$_};
+            }
             return;
         }
     }
@@ -647,20 +690,7 @@ if ($window) {
     if (    my $autouser = Irssi::settings_get_str("twitter_usernames")
         and my $autopass = Irssi::settings_get_str("twitter_passwords") )
     {
-        my @user = split /\s*,\s*/, $autouser;
-        my @pass = split /\s*,\s*/, $autopass;
-        if ( @user != @pass ) {
-            &notice(
-"Number of usernames doesn't match the number of passwords - auto-login failed"
-            );
-        } else {
-            my ( $u, $p );
-            while ( @user and @pass ) {
-                $u = shift @user;
-                $p = shift @pass;
-                &cmd_login("$u $p");
-            }
-        }
+        &cmd_login();
     }
 
 } else {
