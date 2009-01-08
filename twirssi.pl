@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.7.2";
-my ($REV) = '$Rev: 347 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 348 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 347 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-06 09:54:25 -0800 (Tue, 06 Jan 2009) $',
+    changed => '$Date: 2009-01-06 11:09:34 -0800 (Tue, 06 Jan 2009) $',
 );
 
 my $window;
@@ -553,7 +553,8 @@ sub load_friends {
     eval {
         while (1)
         {
-            print $fh "Loading friends page $page...\n" if ( $fh and &debug );
+            print $fh "type:debug Loading friends page $page...\n"
+              if ( $fh and &debug );
             my $friends = $twit->friends( { page => $page } );
             last unless $friends;
             $new_friends{ $_->{screen_name} } = time foreach @$friends;
@@ -563,19 +564,20 @@ sub load_friends {
     };
 
     if ($@) {
-        &notice("Error during friends list update.  Aborted.");
+        print $fh "type:error Error during friends list update.  Aborted.\n";
         return;
     }
 
     my ( $added, $removed ) = ( 0, 0 );
-    print $fh "Scanning for new friends...\n" if ( $fh and &debug );
+    print $fh "type:debug Scanning for new friends...\n" if ( $fh and &debug );
     foreach ( keys %new_friends ) {
         next if exists $friends{$_};
         $friends{$_} = time;
         $added++;
     }
 
-    print $fh "Scanning for removed friends...\n" if ( $fh and &debug );
+    print $fh "type:debug Scanning for removed friends...\n"
+      if ( $fh and &debug );
     foreach ( keys %friends ) {
         next if exists $new_friends{$_};
         delete $friends{$_};
@@ -623,7 +625,7 @@ sub get_updates {
 
         my ( $added, $removed ) = &load_friends($fh);
         if ( $added + $removed ) {
-            print $fh "%R***%n Friends list updated: ",
+            print $fh "type:debug %R***%n Friends list updated: ",
               join( ", ",
                 sprintf( "%d added",   $added ),
                 sprintf( "%d removed", $removed ) ),
@@ -653,12 +655,22 @@ sub do_updates {
     my $tweets;
     eval {
         $tweets = $obj->friends_timeline(
-            { since => HTTP::Date::time2str($last_poll) } )
-          || [];
+            { since => HTTP::Date::time2str($last_poll) } );
     };
 
     if ($@) {
         print $fh "type:error Error during friends_timeline call.  Aborted.\n";
+        return 1;
+    }
+
+    unless ( ref $tweets ) {
+        if ( $obj->can("get_error") ) {
+            print $fh "type:error API Error during friends_timeline call: ",
+              JSON::Any->jsonToObj( $obj->get_error() ), "  Aborted.\n";
+        } else {
+            print $fh
+              "type:error API Error during friends_timeline call. Aborted.\n";
+        }
         return 1;
     }
 
@@ -741,11 +753,13 @@ sub do_updates {
 }
 
 sub monitor_child {
-    my ( $data, $attempt ) = @_;
+    my ($data)   = @_;
     my $filename = $data->[0];
+    my $attempt  = $data->[1];
 
-    print scalar localtime, " - checking child log at $filename" if &debug;
-    my $old_last_poll = $last_poll;
+    print scalar localtime, " - checking child log at $filename ($attempt)"
+      if &debug;
+    my $new_last_poll;
     if ( open FILE, $filename ) {
         my @lines;
         while (<FILE>) {
@@ -757,7 +771,7 @@ sub monitor_child {
                 $meta{$key} = $1;
             }
 
-            next if exists $tweet_cache{ $meta{id} };
+            next if exists $meta{id} and exists $tweet_cache{ $meta{id} };
             $tweet_cache{ $meta{id} } = time;
             my $account = "";
             if ( $meta{account} ne $user ) {
@@ -783,24 +797,26 @@ sub monitor_child {
             } elsif ( $meta{type} eq 'dm' ) {
                 push @lines, "[$account%B\@$meta{nick}%n (%WDM%n)] $_\n",;
             } elsif ( $meta{type} eq 'error' ) {
-                push @lines, "error: $_\n" if &debug,;
+                push @lines, "ERROR: $_\n";
             } elsif ( $meta{type} eq 'debug' ) {
-                push @lines, "debug: $_\n" if &debug,;
+                print "$_" if &debug,;
+            } else {
+                print "Unknown line type $meta{type}: $_" if &debug,;
             }
         }
 
         %friends = ();
         while (<FILE>) {
             if (/^\d+$/) {
-                $last_poll = $_;
+                $new_last_poll = $_;
                 last;
             }
             my ( $f, $t ) = split ' ', $_;
             $nicks{$f} = $friends{$f} = $t;
         }
 
-        if ( $last_poll != $old_last_poll ) {
-            print "new last_poll = $last_poll" if &debug;
+        if ($new_last_poll) {
+            print "new last_poll = $new_last_poll" if &debug;
             foreach my $line (@lines) {
                 chomp $line;
                 $window->print( $line, MSGLEVEL_PUBLIC );
@@ -816,9 +832,10 @@ sub monitor_child {
 
             # keep enough cached tweets, to make sure we don't show duplicates.
             foreach ( keys %tweet_cache ) {
-                next if $tweet_cache{$_} >= $old_last_poll;
+                next if $tweet_cache{$_} >= $last_poll;
                 delete $tweet_cache{$_};
             }
+            $last_poll = $new_last_poll;
 
             # save id_map hash
             if ( keys %id_map
