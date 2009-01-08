@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.5.2";
-my ($REV) = '$Rev: 326 $' =~ /(\d+)/;
+$VERSION = "1.5.3";
+my ($REV) = '$Rev: 331 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -406,14 +406,20 @@ sub load_friends {
         $friends = $twit->friends( page => $page );
     }
 
+    my ($added, $removed) = (0, 0);
     foreach ( keys %new_friends ) {
         next if exists $friends{$_};
         $friends{$_} = time;
+        $added++;
     }
 
     foreach ( keys %friends ) {
-        delete $friends{$_} unless exists $new_friends{$_};
+        next if exists $new_friends{$_};
+        delete $friends{$_}; 
+        $removed++;
     }
+
+    return ($added, $removed);
 }
 
 sub get_updates {
@@ -451,8 +457,13 @@ sub get_updates {
             &do_updates( $fh, $_, $twits{$_} );
         }
 
+        my ($added, $removed) = &load_friends;
+        if ($added + $removed) {
+          print $fh "%R***%n Friends list updated: ",
+                    join(", ", sprintf("%d added", $added),
+                               sprintf("%d removed", $removed)), "\n";
+        }
         print $fh "__friends__\n";
-        &load_friends;
         foreach ( sort keys %friends ) {
             print $fh "$_ $friends{$_}\n";
         }
@@ -609,10 +620,11 @@ sub sig_complete {
     my ( $complist, $window, $word, $linestart, $want_space ) = @_;
 
     return unless $linestart =~ /^\/(?:tweet|dm)/;
-    return if $linestart eq '/tweet' and $word !~ s/^@//;
+    my $prefix = $word =~ s/^@//;
+    $prefix = 0 if $linestart eq '/dm' or $linestart eq '/dm_as';
     push @$complist, grep /^\Q$word/i,
       sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
-    @$complist = map { "\@$_" } @$complist if $linestart eq '/tweet';
+    @$complist = map { "\@$_" } @$complist if $prefix;
 }
 
 Irssi::settings_add_str( "twirssi", "twitter_window",     "twitter" );
