@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.3";
-my ($REV) = '$Rev: 312 $' =~ /(\d+)/;
+$VERSION = "1.4";
+my ($REV) = '$Rev: 317 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -232,8 +232,11 @@ sub cmd_login {
     );
 
     unless ( $twit->verify_credentials() ) {
-        &notice("Login failed");
+        &notice("Login as $user failed");
         $twit = undef;
+        if ( keys %twits ) {
+            &cmd_switch( ( keys %twits )[0], $server, $win );
+        }
         return;
     }
 
@@ -251,6 +254,15 @@ sub cmd_login {
         &notice("Logged in as $user, loading friends list...");
         &load_friends;
         &notice( "loaded friends: ", scalar keys %friends );
+        if ( Irssi::settings_get_bool("twirssi_first_run") ) {
+            Irssi::settings_set_bool( "twirssi_first_run", 0 );
+            unless ( exists $friends{twirssi} ) {
+                &notice("Welcome to twirssi!"
+                      . "  Perhaps you should add \@twirssi to your friends list,"
+                      . " so you can be notified when a new version is release?"
+                      . "  Just type /twitter_friend twirssi." );
+            }
+        }
         %nicks = %friends;
         $nicks{$user} = 0;
         &get_updates;
@@ -563,10 +575,13 @@ Irssi::settings_add_str( "twirssi", "bitlbee_server",     "bitlbee" );
 Irssi::settings_add_str( "twirssi", "short_url_provider", "TinyURL" );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
     ".irssi/scripts/twirssi.pl" );
+Irssi::settings_add_str( "twirssi", "twitter_usernames", undef );
+Irssi::settings_add_str( "twirssi", "twitter_passwords", undef );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",      0 );
 Irssi::settings_add_bool( "twirssi", "show_reply_context", 0 );
 Irssi::settings_add_bool( "twirssi", "show_own_tweets",    1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_debug",      0 );
+Irssi::settings_add_bool( "twirssi", "twirssi_first_run",  1 );
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
 
 if ($window) {
@@ -628,6 +643,26 @@ if ($window) {
             );
         }
     }
+
+    if (    my $autouser = Irssi::settings_get_str("twitter_usernames")
+        and my $autopass = Irssi::settings_get_str("twitter_passwords") )
+    {
+        my @user = split /\s*,\s*/, $autouser;
+        my @pass = split /\s*,\s*/, $autopass;
+        if ( @user != @pass ) {
+            &notice(
+"Number of usernames doesn't match the number of passwords - auto-login failed"
+            );
+        } else {
+            my ( $u, $p );
+            while ( @user and @pass ) {
+                $u = shift @user;
+                $p = shift @pass;
+                &cmd_login("$u $p");
+            }
+        }
+    }
+
 } else {
     Irssi::active_win()
       ->print( "Create a window named "
