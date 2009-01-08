@@ -10,7 +10,7 @@ use vars qw($VERSION %IRSSI);
 use constant { DEBUG => 0 };
 
 $VERSION = "1.1";
-my ($REV) = '$Rev: 301 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 302 $' =~ /(\d+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -264,7 +264,7 @@ sub get_updates {
               $text;
         }
         print scalar localtime, " - Done" if DEBUG;
-        print $fh "--friends:\n";
+        print $fh "__friends__\n";
         &load_friends;
         foreach (sort keys %friends) {
           print $fh "$_ $friends{$_}\n";
@@ -284,7 +284,8 @@ sub monitor_child {
         my @lines;
         while (<FILE>) {
           chomp;
-          push @lines, $_ unless /^--friends:$/;
+          last if /^__friends__/;
+          push @lines, $_ unless /^__friends__/;
         }
 
         %friends = ();
