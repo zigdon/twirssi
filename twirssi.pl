@@ -19,7 +19,7 @@ BEGIN {
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.7.3";
-my ($REV) = '$Rev: 352 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 353 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -28,7 +28,7 @@ my ($REV) = '$Rev: 352 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-08 13:46:50 -0800 (Thu, 08 Jan 2009) $',
+    changed => '$Date: 2009-01-08 14:17:30 -0800 (Thu, 08 Jan 2009) $',
 );
 
 my $window;
@@ -45,10 +45,7 @@ my %id_map;
 sub cmd_direct {
     my ( $data, $server, $win ) = @_;
 
-    unless ($twit) {
-        &notice("Not logged in!  Use /twitter_login username pass!");
-        return;
-    }
+    return unless &logged_in($twit);
 
     my ( $target, $text ) = split ' ', $data, 2;
     unless ( $target and $text ) {
@@ -62,10 +59,7 @@ sub cmd_direct {
 sub cmd_direct_as {
     my ( $data, $server, $win ) = @_;
 
-    unless ($twit) {
-        &notice("Not logged in!  Use /twitter_login username pass!");
-        return;
-    }
+    return unless &logged_in($twit);
 
     my ( $username, $target, $text ) = split ' ', $data, 3;
     unless ( $username and $target and $text ) {
@@ -73,10 +67,7 @@ sub cmd_direct_as {
         return;
     }
 
-    unless ( exists $twits{$username} ) {
-        &notice("Unknown username $username");
-        return;
-    }
+    return unless &valid_username($username);
 
     eval {
         unless ( $twits{$username}
@@ -99,10 +90,7 @@ sub cmd_direct_as {
 sub cmd_tweet {
     my ( $data, $server, $win ) = @_;
 
-    unless ($twit) {
-        &notice("Not logged in!  Use /twitter_login username pass!");
-        return;
-    }
+    return unless &logged_in($twit);
 
     $data =~ s/^\s+|\s+$//;
     unless ($data) {
@@ -116,10 +104,7 @@ sub cmd_tweet {
 sub cmd_tweet_as {
     my ( $data, $server, $win ) = @_;
 
-    unless ($twit) {
-        &notice("Not logged in!  Use /twitter_login username pass!");
-        return;
-    }
+    return unless &logged_in($twit);
 
     $data =~ s/^\s+|\s+$//;
     my ( $username, $data ) = split ' ', $data, 2;
@@ -129,10 +114,7 @@ sub cmd_tweet_as {
         return;
     }
 
-    unless ( exists $twits{$username} ) {
-        &notice("Unknown username $username");
-        return;
-    }
+    return unless &valid_username($username);
 
     if ( Irssi::settings_get_str("short_url_provider") ) {
         foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
@@ -143,11 +125,7 @@ sub cmd_tweet_as {
         }
     }
 
-    if ( length $data > 140 ) {
-        &notice(
-            "Tweet too long (" . length($data) . " characters) - aborted" );
-        return;
-    }
+    return if &too_long($data);
 
     eval {
         unless ( $twits{$username}->update($data) )
@@ -166,21 +144,7 @@ sub cmd_tweet_as {
         $nicks{$1} = time;
     }
 
-    my $away = 0;
-    if (    Irssi::settings_get_bool("tweet_to_away")
-        and $data !~ /\@\w/
-        and $data !~ /^[dD] / )
-    {
-        my $server =
-          Irssi::server_find_tag( Irssi::settings_get_str("bitlbee_server") );
-        if ($server) {
-            $server->send_raw("away :$data");
-            $away = 1;
-        } else {
-            &notice( "Can't find bitlbee server.",
-                "Update bitlbee_server or disable tweet_to_away" );
-        }
-    }
+    my $away = &update_away($data);
 
     &notice( "Update sent" . ( $away ? " (and away msg set)" : "" ) );
 }
@@ -188,10 +152,7 @@ sub cmd_tweet_as {
 sub cmd_reply {
     my ( $data, $server, $win ) = @_;
 
-    unless ($twit) {
-        &notice("Not logged in!  Use /twitter_login username pass!");
-        return;
-    }
+    return unless &logged_in($twit);
 
     $data =~ s/^\s+|\s+$//;
     unless ($data) {
@@ -219,10 +180,7 @@ sub cmd_reply_as {
         return;
     }
 
-    unless ($twit) {
-        &notice("Not logged in!  Use /twitter_login username pass!");
-        return;
-    }
+    return unless &logged_in($twit);
 
     $data =~ s/^\s+|\s+$//;
     my ( $username, $id, $data ) = split ' ', $data, 3;
@@ -232,10 +190,7 @@ sub cmd_reply_as {
         return;
     }
 
-    unless ( exists $twits{$username} ) {
-        &notice("Unknown username $username");
-        return;
-    }
+    return unless &valid_username($username);
 
     my $nick;
     $id =~ s/[^\w\d\-:]+//g;
@@ -264,11 +219,7 @@ sub cmd_reply_as {
         }
     }
 
-    if ( length $data > 140 ) {
-        &notice(
-            "Tweet too long (" . length($data) . " characters) - aborted" );
-        return;
-    }
+    return if &too_long($data);
 
     eval {
         unless (
@@ -294,21 +245,7 @@ sub cmd_reply_as {
         $nicks{$1} = time;
     }
 
-    my $away = 0;
-    if (    Irssi::settings_get_bool("tweet_to_away")
-        and $data !~ /\@\w/
-        and $data !~ /^[dD] / )
-    {
-        my $server =
-          Irssi::server_find_tag( Irssi::settings_get_str("bitlbee_server") );
-        if ($server) {
-            $server->send_raw("away :$data");
-            $away = 1;
-        } else {
-            &notice( "Can't find bitlbee server.",
-                "Update bitlbee_server or disalbe tweet_to_away" );
-        }
-    }
+    my $away = &update_away($data);
 
     &notice( "Update sent" . ( $away ? " (and away msg set)" : "" ) );
 }
@@ -319,10 +256,7 @@ sub gen_cmd {
     return sub {
         my ( $data, $server, $win ) = @_;
 
-        unless ($twit) {
-            &notice("Not logged in!  Use /twitter_login username pass!");
-            return;
-        }
+        return unless &logged_in($twit);
 
         $data =~ s/^\s+|\s+$//;
         unless ($data) {
@@ -364,12 +298,12 @@ sub cmd_logout {
     my ( $data, $server, $win ) = @_;
 
     $data =~ s/^\s+|\s+$//g;
-    if ( $data and exists $twits{$data} ) {
+    return unless &valid_username($data);
+
+    if ($data) {
         &notice("Logging out $data...");
         $twits{$data}->end_session();
         delete $twits{$data};
-    } elsif ($data) {
-        &notice("Unknown username '$data'");
     } else {
         &notice("Logging out $user...");
         $twit->end_session();
@@ -605,10 +539,8 @@ sub get_updates {
               . Irssi::settings_get_str('twitter_window')
               . "'.  Create it or change the value of twitter_window" );
     }
-    unless ($twit) {
-        &notice("Not logged in!  Use /twitter_login username pass!");
-        return;
-    }
+
+    return unless &logged_in($twit);
 
     my ( $fh, $filename ) = File::Temp::tempfile();
     my $pid = fork();
@@ -694,7 +626,7 @@ sub do_updates {
             $nicks{ $t->{in_reply_to_screen_name} } = time;
             my $context;
             eval {
-              $context = $obj->show_status( $t->{in_reply_to_status_id} );
+                $context = $obj->show_status( $t->{in_reply_to_status_id} );
             };
 
             if ($context) {
@@ -708,7 +640,8 @@ sub do_updates {
             } elsif ($@) {
                 print $fh "type:debug request to get context failed: $@";
             } else {
-                print $fh "type:debug Failed to get context from $t->{in_reply_to_screen_name}"
+                print $fh
+"type:debug Failed to get context from $t->{in_reply_to_screen_name}"
                   if &debug;
             }
         }
@@ -884,6 +817,61 @@ sub debug {
 
 sub notice {
     $window->print( "%R***%n @_", MSGLEVEL_PUBLIC );
+}
+
+sub update_away {
+    my $data = shift;
+
+    if (    Irssi::settings_get_bool("tweet_to_away")
+        and $data !~ /\@\w/
+        and $data !~ /^[dD] / )
+    {
+        my $server =
+          Irssi::server_find_tag( Irssi::settings_get_str("bitlbee_server") );
+        if ($server) {
+            $server->send_raw("away :$data");
+            return 1;
+        } else {
+            &notice( "Can't find bitlbee server.",
+                "Update bitlbee_server or disable tweet_to_away" );
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+sub too_long {
+    my $data = shift;
+
+    if ( length $data > 140 ) {
+        &notice(
+            "Tweet too long (" . length($data) . " characters) - aborted" );
+        return 1;
+    }
+
+    return 0;
+}
+
+sub valid_username {
+    my $username = shift;
+
+    unless ( exists $twits{$username} ) {
+        &notice("Unknown username $username");
+        return 0;
+    }
+
+    return 1;
+}
+
+sub logged_in {
+    my $obj = shift;
+    unless ($obj) {
+        &notice("Not logged in!  Use /twitter_login username pass!");
+        return 0;
+    }
+
+    return 1;
 }
 
 sub sig_complete {
