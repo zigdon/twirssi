@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.7";
-my ($REV) = '$Rev: 342 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 343 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 342 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-05 16:26:47 -0800 (Mon, 05 Jan 2009) $',
+    changed => '$Date: 2009-01-05 16:36:08 -0800 (Mon, 05 Jan 2009) $',
 );
 
 my $window;
@@ -605,7 +605,7 @@ sub get_updates {
     my $pid = fork();
 
     if ($pid) {    # parent
-        Irssi::timeout_add_once( 5000, 'monitor_child', [$filename] );
+        Irssi::timeout_add_once( 5000, 'monitor_child', [ $filename, 0 ] );
         Irssi::pidwait_add($pid);
     } elsif ( defined $pid ) {    # child
         close STDIN;
@@ -732,7 +732,7 @@ sub do_updates {
 }
 
 sub monitor_child {
-    my $data     = shift;
+    my ( $data, $attempt ) = @_;
     my $filename = $data->[0];
 
     print scalar localtime, " - checking child log at $filename" if &debug;
@@ -828,7 +828,14 @@ sub monitor_child {
     }
 
     close FILE;
-    Irssi::timeout_add_once( 5000, 'monitor_child', [$filename] );
+
+    if ( $attempt < 12 ) {
+        Irssi::timeout_add_once( 5000, 'monitor_child',
+            [ $filename, $attempt + 1 ] );
+    } else {
+        &notice("Giving up on polling $filename");
+        unlink $filename unless &debug;
+    }
 }
 
 sub debug {
