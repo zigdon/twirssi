@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.7";
-my ($REV) = '$Rev: 343 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 344 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 343 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-05 16:36:08 -0800 (Mon, 05 Jan 2009) $',
+    changed => '$Date: 2009-01-05 16:40:46 -0800 (Mon, 05 Jan 2009) $',
 );
 
 my $window;
@@ -614,10 +614,11 @@ sub get_updates {
 
         my $new_poll = time;
 
-        &do_updates( $fh, $user, $twit );
+        my $error = 0;
+        $error += &do_updates( $fh, $user, $twit );
         foreach ( keys %twits ) {
             next if $_ eq $user;
-            &do_updates( $fh, $_, $twits{$_} );
+            $error += &do_updates( $fh, $_, $twits{$_} );
         }
 
         my ( $added, $removed ) = &load_friends($fh);
@@ -632,7 +633,13 @@ sub get_updates {
         foreach ( sort keys %friends ) {
             print $fh "$_ $friends{$_}\n";
         }
-        print $fh $new_poll;
+
+        if ($error) {
+            print $fh "type:error Update encountered errors.  Aborted\n";
+            print $fh $last_poll;
+        } else {
+            print $fh $new_poll;
+        }
         close $fh;
         exit;
     }
@@ -652,7 +659,7 @@ sub do_updates {
 
     if ($@) {
         print $fh "type:error Error during friends_timeline call.  Aborted.\n";
-        return;
+        return 1;
     }
 
     foreach my $t ( reverse @$tweets ) {
@@ -695,7 +702,7 @@ sub do_updates {
 
     if ($@) {
         print $fh "type:error Error during replies call.  Aborted.\n";
-        return;
+        return 1;
     }
 
     foreach my $t ( reverse @$tweets ) {
@@ -718,7 +725,7 @@ sub do_updates {
 
     if ($@) {
         print $fh "type:error Error during direct_messages call.  Aborted.\n";
-        return;
+        return 1;
     }
 
     foreach my $t ( reverse @$tweets ) {
@@ -729,6 +736,8 @@ sub do_updates {
           $t->{id}, $username, $t->{sender_screen_name}, $text;
     }
     print scalar localtime, " - Done" if &debug;
+
+    return 0;
 }
 
 sub monitor_child {
