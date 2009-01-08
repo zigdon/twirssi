@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.5";
-my ($REV) = '$Rev: 318 $' =~ /(\d+)/;
+$VERSION = "1.5.2";
+my ($REV) = '$Rev: 326 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -245,6 +245,7 @@ sub cmd_login {
                 $p = shift @pass;
                 &cmd_login("$u $p");
             }
+            return;
         }
     } else {
         &notice("/twitter_login requires either a username and password "
@@ -436,6 +437,7 @@ sub get_updates {
 
     if ($pid) {    # parent
         Irssi::timeout_add_once( 5000, 'monitor_child', [$filename] );
+        Irssi::pidwait_add($pid);
     } elsif ( defined $pid ) {    # child
         close STDIN;
         close STDOUT;
