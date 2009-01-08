@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.6";
-my ($REV) = '$Rev: 334 $' =~ /(\d+)/;
+$VERSION = "1.6.1";
+my ($REV) = '$Rev: 335 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -216,6 +216,7 @@ sub cmd_reply_as {
     }
 
     my $nick;
+    $id =~ s/[^\w\d\-:]+//g;
     ( $nick, $id ) = split /:/, $id;
     unless ( exists $id_map{$nick} ) {
         &notice("Can't find a tweet from $nick to reply to!");
@@ -223,7 +224,7 @@ sub cmd_reply_as {
     }
 
     $id = $id_map{__indexes}{$nick} unless $id;
-    unless ( $id_map{$nick}[$id] ) {
+    unless ( $id_map{lc $nick}[$id] ) {
         &notice("Can't find a tweet numbered $id from $nick to reply to!");
         return;
     }
@@ -249,7 +250,7 @@ sub cmd_reply_as {
 
     unless (
         $twits{$username}->update(
-            { status => $data, in_reply_to_status_id => $id_map{$nick}[$id] }
+            { status => $data, in_reply_to_status_id => $id_map{lc $nick}[$id] }
         )
       )
     {
@@ -695,7 +696,7 @@ sub monitor_child {
                 and $meta{id} )
             {
                 $marker = ( $id_map{__indexes}{ $meta{nick} } + 1 ) % 100;
-                $id_map{ $meta{nick} }[$marker]   = $meta{id};
+                $id_map{ lc $meta{nick} }[$marker]   = $meta{id};
                 $id_map{__indexes}{ $meta{nick} } = $marker;
                 $marker                           = ":$marker";
             }
@@ -766,8 +767,7 @@ sub sig_complete {
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
     {    # /twitter_reply gets a nick:num
-        @$complist = grep { $_ ne "__indexes" } grep /^\Q$word/i,
-          sort keys %id_map;
+        @$complist = grep /^\Q$word/i, sort keys %{$id_map{__indexes}};
     }
 
     # /tweet, /tweet_as, /dm, /dm_as - complete @nicks (and nicks as the first
