@@ -9,8 +9,8 @@ use File::Temp;
 use vars qw($VERSION %IRSSI);
 use constant { DEBUG => 0 };
 
-$VERSION = "1.1";
-my ($REV) = '$Rev: 309 $' =~ /(\d+)/;
+$VERSION = "1.2";
+my ($REV) = '$Rev: 310 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -231,12 +231,19 @@ sub cmd_login {
     }
 
     if ($twit) {
+        my $rate_limit = $twit->rate_limit_status();
+        if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
+            &notice("Rate limit exceeded, try again later");
+            $twit = undef;
+            return;
+        }
+
         $twits{$user} = $twit;
         Irssi::timeout_remove($poll) if $poll;
         $poll = Irssi::timeout_add( 300 * 1000, \&get_updates, "" );
         &notice("Logged in as $user, loading friends list...");
         &load_friends;
-        &notice( "loaded friends: ", scalar keys %nicks );
+        &notice( "loaded friends: ", scalar keys %friends );
         %nicks = %friends;
         $nicks{$user} = 0;
         &get_updates;
