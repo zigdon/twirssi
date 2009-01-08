@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.6.1";
-my ($REV) = '$Rev: 335 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 336 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -71,10 +71,17 @@ sub cmd_direct_as {
         return;
     }
 
-    unless ( $twits{$username}
-        ->new_direct_message( { user => $target, text => $text } ) )
-    {
-        &notice("DM to $target failed");
+    eval {
+        unless ( $twits{$username}
+            ->new_direct_message( { user => $target, text => $text } ) )
+        {
+            &notice("DM to $target failed");
+            return;
+        }
+    };
+
+    if ($@) {
+        &notice("DM caused an error.  Aborted");
         return;
     }
 
@@ -135,8 +142,16 @@ sub cmd_tweet_as {
         return;
     }
 
-    unless ( $twits{$username}->update($data) ) {
-        &notice("Update failed");
+    eval {
+        unless ( $twits{$username}->update($data) )
+        {
+            &notice("Update failed");
+            return;
+        }
+    };
+
+    if ($@) {
+        &notice("Update caused an error.  Aborted.");
         return;
     }
 
@@ -224,7 +239,7 @@ sub cmd_reply_as {
     }
 
     $id = $id_map{__indexes}{$nick} unless $id;
-    unless ( $id_map{lc $nick}[$id] ) {
+    unless ( $id_map{ lc $nick }[$id] ) {
         &notice("Can't find a tweet numbered $id from $nick to reply to!");
         return;
     }
@@ -248,13 +263,23 @@ sub cmd_reply_as {
         return;
     }
 
-    unless (
-        $twits{$username}->update(
-            { status => $data, in_reply_to_status_id => $id_map{lc $nick}[$id] }
-        )
-      )
-    {
-        &notice("Update failed");
+    eval {
+        unless (
+            $twits{$username}->update(
+                {
+                    status                => $data,
+                    in_reply_to_status_id => $id_map{ lc $nick }[$id]
+                }
+            )
+          )
+        {
+            &notice("Update failed");
+            return;
+        }
+    };
+
+    if ($@) {
+        &notice("Update caused an error.  Aborted");
         return;
     }
 
@@ -298,8 +323,16 @@ sub gen_cmd {
             return;
         }
 
-        unless ( $twit->$api_name($data) ) {
-            &notice("$api_name failed");
+        eval {
+            unless ( $twit->$api_name($data) )
+            {
+                &notice("$api_name failed");
+                return;
+            }
+        };
+
+        if ($@) {
+            &notice("$api_name caused an error.  Aborted.");
             return;
         }
 
@@ -517,13 +550,21 @@ sub load_friends {
     my $fh   = shift;
     my $page = 1;
     my %new_friends;
-    while (1) {
-        print $fh "Loading friends page $page...\n" if ( $fh and &debug );
-        my $friends = $twit->friends( { page => $page } );
-        last unless $friends;
-        $new_friends{ $_->{screen_name} } = time foreach @$friends;
-        $page++;
-        last if @$friends == 0 or $page == 10;
+    eval {
+        while (1)
+        {
+            print $fh "Loading friends page $page...\n" if ( $fh and &debug );
+            my $friends = $twit->friends( { page => $page } );
+            last unless $friends;
+            $new_friends{ $_->{screen_name} } = time foreach @$friends;
+            $page++;
+            last if @$friends == 0 or $page == 10;
+        }
+    };
+
+    if ($@) {
+        &notice("Error during friends list update.  Aborted.");
+        return;
     }
 
     my ( $added, $removed ) = ( 0, 0 );
@@ -602,9 +643,18 @@ sub do_updates {
     my ( $fh, $username, $obj ) = @_;
 
     print scalar localtime, " - Polling for updates for $username" if &debug;
-    my $tweets =
-      $obj->friends_timeline( { since => HTTP::Date::time2str($last_poll) } )
-      || [];
+    my $tweets;
+    eval {
+        $tweets = $obj->friends_timeline(
+            { since => HTTP::Date::time2str($last_poll) } )
+          || [];
+    };
+
+    if ($@) {
+        printf $fh "type:error Error during friends_timeline call.  Aborted.\n"
+          return;
+    }
+
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
@@ -638,8 +688,15 @@ sub do_updates {
     }
 
     print scalar localtime, " - Polling for replies" if &debug;
-    $tweets = $obj->replies( { since => HTTP::Date::time2str($last_poll) } )
-      || [];
+    eval {
+        $tweets = $obj->replies( { since => HTTP::Date::time2str($last_poll) } )
+          || [];
+      }
+
+      if ($@) {
+        printf $fh "type:error Error during replies call.  Aborted.\n" return;
+    }
+
     foreach my $t ( reverse @$tweets ) {
         next
           if exists $friends{ $t->{user}{screen_name} };
@@ -696,9 +753,9 @@ sub monitor_child {
                 and $meta{id} )
             {
                 $marker = ( $id_map{__indexes}{ $meta{nick} } + 1 ) % 100;
-                $id_map{ lc $meta{nick} }[$marker]   = $meta{id};
-                $id_map{__indexes}{ $meta{nick} } = $marker;
-                $marker                           = ":$marker";
+                $id_map{ lc $meta{nick} }[$marker] = $meta{id};
+                $id_map{__indexes}{ $meta{nick} }  = $marker;
+                $marker                            = ":$marker";
             }
 
             if ( $meta{type} eq 'tweet' ) {
@@ -707,6 +764,8 @@ sub monitor_child {
                 push @lines, "[$account\\--> %B\@$meta{nick}%n$marker] $_\n",;
             } elsif ( $meta{type} eq 'dm' ) {
                 push @lines, "[$account%B\@$meta{nick}%n (%%WDM%%n)] $_\n",;
+            } elsif ( $meta{type} eq 'error' ) {
+                push @lines, "debug: $_\n" if &debug,;
             } elsif ( $meta{type} eq 'debug' ) {
                 push @lines, "debug: $_\n" if &debug,;
             }
@@ -767,7 +826,7 @@ sub sig_complete {
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
     {    # /twitter_reply gets a nick:num
-        @$complist = grep /^\Q$word/i, sort keys %{$id_map{__indexes}};
+        @$complist = grep /^\Q$word/i, sort keys %{ $id_map{__indexes} };
     }
 
     # /tweet, /tweet_as, /dm, /dm_as - complete @nicks (and nicks as the first
