@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.5.3";
-my ($REV) = '$Rev: 333 $' =~ /(\d+)/;
+$VERSION = "1.6";
+my ($REV) = '$Rev: 334 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -136,6 +136,123 @@ sub cmd_tweet_as {
     }
 
     unless ( $twits{$username}->update($data) ) {
+        &notice("Update failed");
+        return;
+    }
+
+    foreach ( $data =~ /@([-\w]+)/ ) {
+        $nicks{$1} = time;
+    }
+
+    my $away = 0;
+    if (    Irssi::settings_get_bool("tweet_to_away")
+        and $data !~ /\@\w/
+        and $data !~ /^[dD] / )
+    {
+        my $server =
+          Irssi::server_find_tag( Irssi::settings_get_str("bitlbee_server") );
+        if ($server) {
+            $server->send_raw("away :$data");
+            $away = 1;
+        } else {
+            &notice( "Can't find bitlbee server.",
+                "Update bitlbee_server or disalbe tweet_to_away" );
+        }
+    }
+
+    &notice( "Update sent" . ( $away ? " (and away msg set)" : "" ) );
+}
+
+sub cmd_reply {
+    my ( $data, $server, $win ) = @_;
+
+    unless ($twit) {
+        &notice("Not logged in!  Use /twitter_login username pass!");
+        return;
+    }
+
+    $data =~ s/^\s+|\s+$//;
+    unless ($data) {
+        &notice("Usage: /reply <nick[:num]> <update>");
+        return;
+    }
+
+    $data =~ s/^\s+|\s+$//;
+    my ( $id, $data ) = split ' ', $data, 2;
+    unless ( $id and $data ) {
+        &notice("Usage: /reply_as <nick[:num]> <update>");
+        return;
+    }
+
+    &cmd_reply_as( "$user $id $data", $server, $win );
+}
+
+sub cmd_reply_as {
+    my ( $data, $server, $win ) = @_;
+
+    unless ( Irssi::settings_get_bool("twirssi_track_replies") ) {
+        &notice("twirssi_track_replies is required in order to reply to "
+              . "specific tweets.  Either enable it, or just use /tweet "
+              . "\@username <text>." );
+        return;
+    }
+
+    unless ($twit) {
+        &notice("Not logged in!  Use /twitter_login username pass!");
+        return;
+    }
+
+    $data =~ s/^\s+|\s+$//;
+    my ( $username, $id, $data ) = split ' ', $data, 3;
+
+    unless ( $username and $data ) {
+        &notice("Usage: /reply_as <username> <nick[:num]> <update>");
+        return;
+    }
+
+    unless ( exists $twits{$username} ) {
+        &notice("Unknown username $username");
+        return;
+    }
+
+    my $nick;
+    ( $nick, $id ) = split /:/, $id;
+    unless ( exists $id_map{$nick} ) {
+        &notice("Can't find a tweet from $nick to reply to!");
+        return;
+    }
+
+    $id = $id_map{__indexes}{$nick} unless $id;
+    unless ( $id_map{$nick}[$id] ) {
+        &notice("Can't find a tweet numbered $id from $nick to reply to!");
+        return;
+    }
+
+    # remove any @nick at the beginning of the reply, as we'll add it anyway
+    $data =~ s/^\s*\@?$nick\s*//;
+    $data = "\@$nick " . $data;
+
+    if ( Irssi::settings_get_str("short_url_provider") ) {
+        foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
+            eval {
+                my $short = makeashorterlink($url);
+                $data =~ s/\Q$url/$short/g;
+            };
+        }
+    }
+
+    if ( length $data > 140 ) {
+        &notice(
+            "Tweet too long (" . length($data) . " characters) - aborted" );
+        return;
+    }
+
+    unless (
+        $twits{$username}->update(
+            { status => $data, in_reply_to_status_id => $id_map{$nick}[$id] }
+        )
+      )
+    {
         &notice("Update failed");
         return;
     }
@@ -396,11 +513,11 @@ sub cmd_upgrade {
 }
 
 sub load_friends {
-    my $fh = shift;
+    my $fh   = shift;
     my $page = 1;
     my %new_friends;
     while (1) {
-        print $fh "Loading friends page $page...\n" if ($fh and &debug);
+        print $fh "Loading friends page $page...\n" if ( $fh and &debug );
         my $friends = $twit->friends( { page => $page } );
         last unless $friends;
         $new_friends{ $_->{screen_name} } = time foreach @$friends;
@@ -408,22 +525,22 @@ sub load_friends {
         last if @$friends == 0 or $page == 10;
     }
 
-    my ($added, $removed) = (0, 0);
-    print $fh "Scanning for new friends...\n" if ($fh and &debug);
+    my ( $added, $removed ) = ( 0, 0 );
+    print $fh "Scanning for new friends...\n" if ( $fh and &debug );
     foreach ( keys %new_friends ) {
         next if exists $friends{$_};
         $friends{$_} = time;
         $added++;
     }
 
-    print $fh "Scanning for removed friends...\n" if ($fh and &debug);
+    print $fh "Scanning for removed friends...\n" if ( $fh and &debug );
     foreach ( keys %friends ) {
         next if exists $new_friends{$_};
-        delete $friends{$_}; 
+        delete $friends{$_};
         $removed++;
     }
 
-    return ($added, $removed);
+    return ( $added, $removed );
 }
 
 sub get_updates {
@@ -461,11 +578,13 @@ sub get_updates {
             &do_updates( $fh, $_, $twits{$_} );
         }
 
-        my ($added, $removed) = &load_friends($fh);
-        if ($added + $removed) {
-          print $fh "%R***%n Friends list updated: ",
-                    join(", ", sprintf("%d added", $added),
-                               sprintf("%d removed", $removed)), "\n";
+        my ( $added, $removed ) = &load_friends($fh);
+        if ( $added + $removed ) {
+            print $fh "%R***%n Friends list updated: ",
+              join( ", ",
+                sprintf( "%d added",   $added ),
+                sprintf( "%d removed", $removed ) ),
+              "\n";
         }
         print $fh "__friends__\n";
         foreach ( sort keys %friends ) {
@@ -558,24 +677,37 @@ sub monitor_child {
             last if /^__friends__/;
             my %meta;
             foreach my $key (qw/id account nick type/) {
-              s/^$key:(\S+)\s*//;
-              $meta{$key} = $1;
+                s/^$key:(\S+)\s*//;
+                $meta{$key} = $1;
             }
 
-            next if exists $tweet_cache{$meta{id}};
-            $tweet_cache{$meta{id}} = time;
+            next if exists $tweet_cache{ $meta{id} };
+            $tweet_cache{ $meta{id} } = time;
             my $account = "";
-            if ($meta{account} ne $user) {
-              $account = "$meta{account}: ";
+            if ( $meta{account} ne $user ) {
+                $account = "$meta{account}: ";
             }
-            if ($meta{type} eq 'tweet') {
-              push @lines, "[$account%B\@$meta{nick}%n] $_\n",
-            } elsif ($meta{type} eq 'reply') {
-              push @lines, "[$account\\--> %B\@$meta{nick}%n] $_\n",
-            } elsif ($meta{type} eq 'dm') {
-              push @lines, "[$account%B\@$meta{nick}%n (%%WDM%%n)] $_\n",
-            } elsif ($meta{type} eq 'debug') {
-              push @lines, "debug: $_\n" if &debug,
+
+            my $marker = "";
+            if (    $meta{type} ne 'dm'
+                and Irssi::settings_get_bool("twirssi_track_replies")
+                and $meta{nick}
+                and $meta{id} )
+            {
+                $marker = ( $id_map{__indexes}{ $meta{nick} } + 1 ) % 100;
+                $id_map{ $meta{nick} }[$marker]   = $meta{id};
+                $id_map{__indexes}{ $meta{nick} } = $marker;
+                $marker                           = ":$marker";
+            }
+
+            if ( $meta{type} eq 'tweet' ) {
+                push @lines, "[$account%B\@$meta{nick}%n$marker] $_\n",;
+            } elsif ( $meta{type} eq 'reply' ) {
+                push @lines, "[$account\\--> %B\@$meta{nick}%n$marker] $_\n",;
+            } elsif ( $meta{type} eq 'dm' ) {
+                push @lines, "[$account%B\@$meta{nick}%n (%%WDM%%n)] $_\n",;
+            } elsif ( $meta{type} eq 'debug' ) {
+                push @lines, "debug: $_\n" if &debug,;
             }
         }
 
@@ -628,12 +760,25 @@ sub notice {
 sub sig_complete {
     my ( $complist, $window, $word, $linestart, $want_space ) = @_;
 
-    return unless $linestart =~ /^\/(?:tweet|dm)/;
-    my $prefix = $word =~ s/^@//;
-    $prefix = 0 if $linestart eq '/dm' or $linestart eq '/dm_as';
-    push @$complist, grep /^\Q$word/i,
-      sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
-    @$complist = map { "\@$_" } @$complist if $prefix;
+    if (
+        $linestart =~ /^\/twitter_reply(?:_as)?\s*$/
+        or ( Irssi::settings_get_bool("twirssi_use_reply_aliases")
+            and $linestart =~ /^\/reply(?:_as)?\s*$/ )
+      )
+    {    # /twitter_reply gets a nick:num
+        @$complist = grep { $_ ne "__indexes" } grep /^\Q$word/i,
+          sort keys %id_map;
+    }
+
+    # /tweet, /tweet_as, /dm, /dm_as - complete @nicks (and nicks as the first
+    # arg to dm)
+    if ( $linestart =~ /^\/(?:tweet|dm)/ ) {
+        my $prefix = $word =~ s/^@//;
+        $prefix = 0 if $linestart eq '/dm' or $linestart eq '/dm_as';
+        push @$complist, grep /^\Q$word/i,
+          sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
+        @$complist = map { "\@$_" } @$complist if $prefix;
+    }
 }
 
 Irssi::settings_add_str( "twirssi", "twitter_window",     "twitter" );
@@ -643,22 +788,30 @@ Irssi::settings_add_str( "twirssi", "twirssi_location",
     ".irssi/scripts/twirssi.pl" );
 Irssi::settings_add_str( "twirssi", "twitter_usernames", undef );
 Irssi::settings_add_str( "twirssi", "twitter_passwords", undef );
-Irssi::settings_add_bool( "twirssi", "tweet_to_away",      0 );
-Irssi::settings_add_bool( "twirssi", "show_reply_context", 0 );
-Irssi::settings_add_bool( "twirssi", "show_own_tweets",    1 );
-Irssi::settings_add_bool( "twirssi", "twirssi_debug",      0 );
-Irssi::settings_add_bool( "twirssi", "twirssi_first_run",  1 );
+Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
+Irssi::settings_add_bool( "twirssi", "show_reply_context",        0 );
+Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_debug",             0 );
+Irssi::settings_add_bool( "twirssi", "twirssi_first_run",         1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_track_replies",     1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
 
 if ($window) {
-    Irssi::command_bind( "dm",              "cmd_direct" );
-    Irssi::command_bind( "tweet",           "cmd_tweet" );
-    Irssi::command_bind( "dm_as",           "cmd_direct_as" );
-    Irssi::command_bind( "tweet_as",        "cmd_tweet_as" );
-    Irssi::command_bind( "twitter_login",   "cmd_login" );
-    Irssi::command_bind( "twitter_logout",  "cmd_logout" );
-    Irssi::command_bind( "twitter_switch",  "cmd_switch" );
-    Irssi::command_bind( "twirssi_upgrade", "cmd_upgrade" );
+    Irssi::command_bind( "dm",               "cmd_direct" );
+    Irssi::command_bind( "dm_as",            "cmd_direct_as" );
+    Irssi::command_bind( "tweet",            "cmd_tweet" );
+    Irssi::command_bind( "tweet_as",         "cmd_tweet_as" );
+    Irssi::command_bind( "twitter_reply",    "cmd_reply" );
+    Irssi::command_bind( "twitter_reply_as", "cmd_reply_as" );
+    Irssi::command_bind( "twitter_login",    "cmd_login" );
+    Irssi::command_bind( "twitter_logout",   "cmd_logout" );
+    Irssi::command_bind( "twitter_switch",   "cmd_switch" );
+    Irssi::command_bind( "twirssi_upgrade",  "cmd_upgrade" );
+    if ( Irssi::settings_get_bool("twirssi_use_reply_aliases") ) {
+        Irssi::command_bind( "reply",    "cmd_reply" );
+        Irssi::command_bind( "reply_as", "cmd_reply_as" );
+    }
     Irssi::command_bind(
         "twitter_dump",
         sub {
@@ -696,7 +849,7 @@ if ($window) {
     Irssi::signal_add_last( 'complete word' => \&sig_complete );
 
     &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N (r$REV)");
-    &notice("   %C(_(\\%N        http://twirssi.com/ for full docs");
+    &notice("   %C(_(\\%N           http://twirssi.com/ for full docs");
     &notice(
         "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet");
 
