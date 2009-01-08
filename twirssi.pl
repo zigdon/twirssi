@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.5.3";
-my ($REV) = '$Rev: 331 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 333 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -33,6 +33,7 @@ my %nicks;
 my %friends;
 my $last_poll = time - 300;
 my %tweet_cache;
+my %id_map;
 
 sub cmd_direct {
     my ( $data, $server, $win ) = @_;
@@ -282,7 +283,7 @@ sub cmd_login {
         Irssi::timeout_remove($poll) if $poll;
         $poll = Irssi::timeout_add( 300 * 1000, \&get_updates, "" );
         &notice("Logged in as $user, loading friends list...");
-        &load_friends;
+        &load_friends();
         &notice( "loaded friends: ", scalar keys %friends );
         if ( Irssi::settings_get_bool("twirssi_first_run") ) {
             Irssi::settings_set_bool( "twirssi_first_run", 0 );
@@ -330,7 +331,7 @@ sub cmd_upgrade {
             return;
         }
 
-        $md5 = get("http://irc.peeron.com/~zigdon/twirssi/md5sum");
+        $md5 = get("http://twirssi.com/md5sum");
         chomp $md5;
         $md5 =~ s/ .*//;
         unless ($md5) {
@@ -354,7 +355,7 @@ sub cmd_upgrade {
         }
     }
 
-    my $URL = "http://irc.peeron.com/~zigdon/twirssi/twirssi.pl";
+    my $URL = "http://twirssi.com/twirssi.pl";
     &notice("Downloading twirssi from $URL");
     LWP::Simple::getstore( $URL, "$loc.upgrade" );
 
@@ -395,24 +396,27 @@ sub cmd_upgrade {
 }
 
 sub load_friends {
+    my $fh = shift;
     my $page = 1;
     my %new_friends;
     while (1) {
+        print $fh "Loading friends page $page...\n" if ($fh and &debug);
         my $friends = $twit->friends( { page => $page } );
         last unless $friends;
         $new_friends{ $_->{screen_name} } = time foreach @$friends;
         $page++;
         last if @$friends == 0 or $page == 10;
-        $friends = $twit->friends( page => $page );
     }
 
     my ($added, $removed) = (0, 0);
+    print $fh "Scanning for new friends...\n" if ($fh and &debug);
     foreach ( keys %new_friends ) {
         next if exists $friends{$_};
         $friends{$_} = time;
         $added++;
     }
 
+    print $fh "Scanning for removed friends...\n" if ($fh and &debug);
     foreach ( keys %friends ) {
         next if exists $new_friends{$_};
         delete $friends{$_}; 
@@ -457,7 +461,7 @@ sub get_updates {
             &do_updates( $fh, $_, $twits{$_} );
         }
 
-        my ($added, $removed) = &load_friends;
+        my ($added, $removed) = &load_friends($fh);
         if ($added + $removed) {
           print $fh "%R***%n Friends list updated: ",
                     join(", ", sprintf("%d added", $added),
@@ -485,7 +489,7 @@ sub do_updates {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
         $text =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
-        my $prefix = "";
+        my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
             and $t->{in_reply_to_screen_name} ne $username
             and $t->{in_reply_to_screen_name}
@@ -497,11 +501,10 @@ sub do_updates {
                 my $ctext = decode_entities( $context->{text} );
                 $ctext =~ s/%/%%/g;
                 $ctext =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
-                printf $fh "id:%d [%s%%B\@%s%%n] %s\n",
-                  $context->{id},
-                  ( $username ne $user ? "$username: " : "" ),
+                printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
+                  $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
-                $prefix = "\--> ";
+                $reply = "reply";
             } else {
                 print "Failed to get context from $t->{in_reply_to_screen_name}"
                   if &debug;
@@ -510,12 +513,8 @@ sub do_updates {
         next
           if $t->{user}{screen_name} eq $username
               and not Irssi::settings_get_bool("show_own_tweets");
-        printf $fh "id:%d %s[%s%%B\@%s%%n] %s\n",
-          $t->{id},
-          $prefix,
-          ( $username ne $user ? "$username: " : "" ),
-          $t->{user}{screen_name},
-          $text;
+        printf $fh "id:%d account:%s nick:%s type:%s %s\n",
+          $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
     }
 
     print scalar localtime, " - Polling for replies" if &debug;
@@ -528,11 +527,8 @@ sub do_updates {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
         $text =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
-        printf $fh "id:%d [%s%%B\@%s%%n] %s\n",
-          $t->{id},
-          ( $username ne $user ? "$username: " : "" ),
-          $t->{user}{screen_name},
-          $text;
+        printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
+          $t->{id}, $username, $t->{user}{screen_name}, $text;
     }
 
     print scalar localtime, " - Polling for DMs" if &debug;
@@ -543,11 +539,8 @@ sub do_updates {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
         $text =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
-        printf $fh "id:%d [%s%%B\@%s%%n (%%WDM%%n)] %s\n",
-          $t->{id},
-          ( $username ne $user ? "$username: " : "" ),
-          $t->{sender_screen_name},
-          $text;
+        printf $fh "id:%d account:%s nick:%s type:dm %s\n",
+          $t->{id}, $username, $t->{sender_screen_name}, $text;
     }
     print scalar localtime, " - Done" if &debug;
 }
@@ -563,11 +556,27 @@ sub monitor_child {
         while (<FILE>) {
             chomp;
             last if /^__friends__/;
-            if (s/^id:(\d+) //) {
-                next if exists $tweet_cache{$1};
-                $tweet_cache{$1} = time;
+            my %meta;
+            foreach my $key (qw/id account nick type/) {
+              s/^$key:(\S+)\s*//;
+              $meta{$key} = $1;
             }
-            push @lines, $_ unless /^__friends__/;
+
+            next if exists $tweet_cache{$meta{id}};
+            $tweet_cache{$meta{id}} = time;
+            my $account = "";
+            if ($meta{account} ne $user) {
+              $account = "$meta{account}: ";
+            }
+            if ($meta{type} eq 'tweet') {
+              push @lines, "[$account%B\@$meta{nick}%n] $_\n",
+            } elsif ($meta{type} eq 'reply') {
+              push @lines, "[$account\\--> %B\@$meta{nick}%n] $_\n",
+            } elsif ($meta{type} eq 'dm') {
+              push @lines, "[$account%B\@$meta{nick}%n (%%WDM%%n)] $_\n",
+            } elsif ($meta{type} eq 'debug') {
+              push @lines, "debug: $_\n" if &debug,
+            }
         }
 
         %friends = ();
@@ -687,7 +696,7 @@ if ($window) {
     Irssi::signal_add_last( 'complete word' => \&sig_complete );
 
     &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N (r$REV)");
-    &notice("   %C(_(\\%N        http://tinyurl.com/twirssi for full docs");
+    &notice("   %C(_(\\%N        http://twirssi.com/ for full docs");
     &notice(
         "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet");
 
