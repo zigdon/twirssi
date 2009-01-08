@@ -5,12 +5,14 @@ use Net::Twitter;
 use HTTP::Date;
 use HTML::Entities;
 use File::Temp;
+use LWP::Simple;
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
-use constant { DEBUG => 0 };
 
-$VERSION = "1.2";
-my ($REV) = '$Rev: 310 $' =~ /(\d+)/;
+$VERSION = "1.3";
+my ($REV) = '$Rev: 312 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -116,8 +118,13 @@ sub cmd_tweet_as {
         return;
     }
 
-    foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
-        eval { my $short = makeashorterlink($url); $data =~ s/\Q$url/$short/g; };
+    if ( Irssi::settings_get_str("short_url_provider") ) {
+        foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
+            eval {
+                my $short = makeashorterlink($url);
+                $data =~ s/\Q$url/$short/g;
+            };
+        }
     }
 
     unless ( $twits{$username}->update($data) ) {
@@ -252,6 +259,99 @@ sub cmd_login {
     }
 }
 
+sub cmd_upgrade {
+    my ( $data, $server, $win ) = @_;
+
+    my $loc = Irssi::settings_get_str("twirssi_location");
+    unless ( -w $loc ) {
+        &notice(
+"$loc isn't writable, can't upgrade.  Perhaps you need to /set twirssi_location?"
+        );
+        return;
+    }
+
+    if ( not -x "/usr/bin/md5sum" and not $data ) {
+        &notice(
+"/usr/bin/md5sum can't be found - try '/twirssi_upgrade nomd5' to skip MD5 verification"
+        );
+        return;
+    }
+
+    my $md5;
+    unless ($data) {
+        eval { use Digest::MD5; };
+
+        if ($@) {
+            &notice(
+"Failed to load Digest::MD5.  Try '/twirssi_upgrade nomd5' to skip MD5 verification"
+            );
+            return;
+        }
+
+        $md5 = get("http://irc.peeron.com/~zigdon/twirssi/md5sum");
+        chomp $md5;
+        $md5 =~ s/ .*//;
+        unless ($md5) {
+            &notice("Failed to download md5sum from peeron!  Aborting.");
+            return;
+        }
+
+        unless ( open( CUR, $loc ) ) {
+            &notice(
+"Failed to read $loc.  Check that /set twirssi_location is set to the correct location."
+            );
+            return;
+        }
+
+        my $cur_md5 = Digest::MD5::md5_hex(<CUR>);
+        close CUR;
+
+        if ( $cur_md5 eq $md5 ) {
+            &notice("Current twirssi seems to be up to date.");
+            return;
+        }
+    }
+
+    my $URL = "http://irc.peeron.com/~zigdon/twirssi/twirssi.pl";
+    &notice("Downloading twirssi from $URL");
+    LWP::Simple::getstore( $URL, "$loc.upgrade" );
+
+    unless ($data) {
+        unless ( open( NEW, "$loc.upgrade" ) ) {
+            &notice(
+"Failed to read $loc.upgrade.  Check that /set twirssi_location is set to the correct location."
+            );
+            return;
+        }
+
+        my $new_md5 = Digest::MD5::md5_hex(<NEW>);
+        close NEW;
+
+        if ( $new_md5 ne $md5 ) {
+            &notice("MD5 verification failed. expected $md5, got $new_md5");
+            return;
+        }
+    }
+
+    rename $loc, "$loc.backup"
+      or &notice("Failed to back up $loc: $!.  Aborting")
+      and return;
+    rename "$loc.upgrade", $loc
+      or &notice("Failed to rename $loc.upgrade: $!.  Aborting")
+      and return;
+
+    my ( $dir, $file ) = ( $loc =~ m{(.*)/([^/]+)$} );
+    if ( -e "$dir/autorun/$file" ) {
+        &notice("Updating $dir/autorun/$file");
+        unlink "$dir/autorun/$file"
+          or &notice("Failed to remove old $file from autorun: $!");
+        symlink "../$file", "$dir/autorun/$file"
+          or &notice("Failed to create symlink in autorun directory: $!");
+    }
+
+    &notice("Download complete.  Reload twirssi with /script load $file");
+}
+
 sub load_friends {
     my $page = 1;
     my %new_friends;
@@ -275,6 +375,8 @@ sub load_friends {
 }
 
 sub get_updates {
+    print scalar localtime, " - get_updates starting" if &debug;
+
     $window =
       Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
     unless ($window) {
@@ -315,12 +417,13 @@ sub get_updates {
         close $fh;
         exit;
     }
+    print scalar localtime, " - get_updates ends" if &debug;
 }
 
 sub do_updates {
     my ( $fh, $username, $obj ) = @_;
 
-    print scalar localtime, " - Polling for updates for $username" if DEBUG;
+    print scalar localtime, " - Polling for updates for $username" if &debug;
     my $tweets =
       $obj->friends_timeline( { since => HTTP::Date::time2str($last_poll) } )
       || [];
@@ -344,6 +447,9 @@ sub do_updates {
                   ( $username ne $user ? "$username: " : "" ),
                   $context->{user}{screen_name}, $ctext;
                 $prefix = "\--> ";
+            } else {
+                print "Failed to get context from $t->{in_reply_to_screen_name}"
+                  if &debug;
             }
         }
         next
@@ -356,7 +462,7 @@ sub do_updates {
           $text;
     }
 
-    print scalar localtime, " - Polling for replies" if DEBUG;
+    print scalar localtime, " - Polling for replies" if &debug;
     $tweets = $obj->replies( { since => HTTP::Date::time2str($last_poll) } )
       || [];
     foreach my $t ( reverse @$tweets ) {
@@ -372,7 +478,7 @@ sub do_updates {
           $text;
     }
 
-    print scalar localtime, " - Polling for DMs" if DEBUG;
+    print scalar localtime, " - Polling for DMs" if &debug;
     $tweets =
       $obj->direct_messages( { since => HTTP::Date::time2str($last_poll) } )
       || [];
@@ -385,14 +491,15 @@ sub do_updates {
           $t->{sender_screen_name},
           $text;
     }
-    print scalar localtime, " - Done" if DEBUG;
+    print scalar localtime, " - Done" if &debug;
 }
 
 sub monitor_child {
     my $data     = shift;
     my $filename = $data->[0];
 
-    print scalar localtime, " - checking child log at $filename" if DEBUG;
+    print scalar localtime, " - checking child log at $filename" if &debug;
+    my $old_last_poll = $last_poll;
     if ( open FILE, $filename ) {
         my @lines;
         while (<FILE>) {
@@ -411,21 +518,30 @@ sub monitor_child {
             $nicks{$f} = $friends{$f} = $t;
         }
 
-        print "new last_poll = $last_poll" if DEBUG;
-        foreach my $line (@lines) {
-            chomp $line;
-            $window->print( $line, MSGLEVEL_PUBLIC );
-            foreach ( $line =~ /\@([-\w]+)/ ) {
-                $nicks{$1} = time;
+        if ( $last_poll != $old_last_poll ) {
+            print "new last_poll = $last_poll" if &debug;
+            foreach my $line (@lines) {
+                chomp $line;
+                $window->print( $line, MSGLEVEL_PUBLIC );
+                foreach ( $line =~ /\@([-\w]+)/ ) {
+                    $nicks{$1} = time;
+                }
             }
-        }
 
-        close FILE;
-        unlink $filename or warn "Failed to remove $filename: $!";
-        return;
+            close FILE;
+            unlink $filename
+              or warn "Failed to remove $filename: $!"
+              unless &debug;
+            return;
+        }
     }
 
+    close FILE;
     Irssi::timeout_add_once( 5000, 'monitor_child', [$filename] );
+}
+
+sub debug {
+    return Irssi::settings_get_bool("twirssi_debug");
 }
 
 sub notice {
@@ -445,24 +561,38 @@ sub sig_complete {
 Irssi::settings_add_str( "twirssi", "twitter_window",     "twitter" );
 Irssi::settings_add_str( "twirssi", "bitlbee_server",     "bitlbee" );
 Irssi::settings_add_str( "twirssi", "short_url_provider", "TinyURL" );
+Irssi::settings_add_str( "twirssi", "twirssi_location",
+    ".irssi/scripts/twirssi.pl" );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",      0 );
 Irssi::settings_add_bool( "twirssi", "show_reply_context", 0 );
 Irssi::settings_add_bool( "twirssi", "show_own_tweets",    1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_debug",      0 );
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
+
 if ($window) {
-    Irssi::command_bind( "dm",             "cmd_direct" );
-    Irssi::command_bind( "tweet",          "cmd_tweet" );
-    Irssi::command_bind( "dm_as",          "cmd_direct_as" );
-    Irssi::command_bind( "tweet_as",       "cmd_tweet_as" );
-    Irssi::command_bind( "twitter_login",  "cmd_login" );
-    Irssi::command_bind( "twitter_logout", "cmd_logout" );
-    Irssi::command_bind( "twitter_switch", "cmd_switch" );
+    Irssi::command_bind( "dm",              "cmd_direct" );
+    Irssi::command_bind( "tweet",           "cmd_tweet" );
+    Irssi::command_bind( "dm_as",           "cmd_direct_as" );
+    Irssi::command_bind( "tweet_as",        "cmd_tweet_as" );
+    Irssi::command_bind( "twitter_login",   "cmd_login" );
+    Irssi::command_bind( "twitter_logout",  "cmd_logout" );
+    Irssi::command_bind( "twitter_switch",  "cmd_switch" );
+    Irssi::command_bind( "twirssi_upgrade", "cmd_upgrade" );
+    Irssi::command_bind(
+        "twitter_dump",
+        sub {
+            print "twits: ",   Dumper \%twits;
+            print "friends: ", join ", ", sort keys %friends;
+            print "nicks: ",   join ", ", sort keys %nicks;
+            print "last poll: $last_poll";
+        }
+    );
     Irssi::command_bind(
         "twirssi_version",
         sub {
             &notice(
-"Twirssi v$VERSION (r$REV).  See details at http://tinyurl.com/twirssi"
-            );
+"Twirssi v$VERSION (r$REV);  Net::Twitter v$Net::Twitter::VERSION. "
+                  . "See details at http://tinyurl.com/twirssi" );
         }
     );
     Irssi::command_bind(
