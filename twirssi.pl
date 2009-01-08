@@ -19,7 +19,7 @@ BEGIN {
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.7.3";
-my ($REV) = '$Rev: 353 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 354 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -28,7 +28,7 @@ my ($REV) = '$Rev: 353 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-08 14:17:30 -0800 (Thu, 08 Jan 2009) $',
+    changed => '$Date: 2009-01-08 14:46:04 -0800 (Thu, 08 Jan 2009) $',
 );
 
 my $window;
@@ -617,6 +617,7 @@ sub do_updates {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
         $text =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
+        $text =~ s/[\n\r]/ /g;
         my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
             and $t->{in_reply_to_screen_name} ne $username
@@ -633,6 +634,7 @@ sub do_updates {
                 my $ctext = decode_entities( $context->{text} );
                 $ctext =~ s/%/%%/g;
                 $ctext =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
+                $ctext =~ s/[\n\r]/ /g;
                 printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
@@ -670,6 +672,7 @@ sub do_updates {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
         $text =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
+        $text =~ s/[\n\r]/ /g;
         printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
     }
@@ -690,6 +693,7 @@ sub do_updates {
         my $text = decode_entities( $t->{text} );
         $text =~ s/%/%%/g;
         $text =~ s/(^|\W)\@([-\w]+)/$1%B\@$2%n/g;
+        $text =~ s/[\n\r]/ /g;
         printf $fh "id:%d account:%s nick:%s type:dm %s\n",
           $t->{id}, $username, $t->{sender_screen_name}, $text;
     }
