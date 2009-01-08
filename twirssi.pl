@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "1.7.1";
-my ($REV) = '$Rev: 345 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 346 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 345 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-06 07:14:03 -0800 (Tue, 06 Jan 2009) $',
+    changed => '$Date: 2009-01-06 07:14:23 -0800 (Tue, 06 Jan 2009) $',
 );
 
 my $window;
@@ -233,7 +233,7 @@ sub cmd_reply_as {
     my $nick;
     $id =~ s/[^\w\d\-:]+//g;
     ( $nick, $id ) = split /:/, $id;
-    unless ( exists $id_map{lc $nick} ) {
+    unless ( exists $id_map{ lc $nick } ) {
         &notice("Can't find a tweet from $nick to reply to!");
         return;
     }
