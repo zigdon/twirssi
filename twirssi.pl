@@ -901,6 +901,20 @@ sub sig_complete {
     }
 }
 
+sub event_send_text {
+    my ( $line, $server, $win ) = @_;
+    my $awin = Irssi::active_win();
+
+    # if the window where we got our text was the twitter window, and the user
+    # wants to be lazy, tweet away!
+    if ( ($awin->get_active_name() eq $window->{name})
+         and Irssi::settings_get_bool("tweet_window_input") ) {
+        &cmd_tweet($line, $server, $win);
+    }
+}
+
+Irssi::signal_add( "send text", "event_send_text" );
+
 Irssi::settings_add_str( "twirssi", "twitter_window",     "twitter" );
 Irssi::settings_add_str( "twirssi", "bitlbee_server",     "bitlbee" );
 Irssi::settings_add_str( "twirssi", "short_url_provider", "TinyURL" );
@@ -917,6 +931,7 @@ Irssi::settings_add_bool( "twirssi", "twirssi_debug",             0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_first_run",         1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_track_replies",     1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
+Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
 
 if ($window) {
