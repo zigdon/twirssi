@@ -6,20 +6,13 @@ use HTML::Entities;
 use File::Temp;
 use LWP::Simple;
 use Data::Dumper;
+use Net::Twitter;
 $Data::Dumper::Indent = 1;
-
-BEGIN {
-    $ENV{JSON_ANY_ORDER} = "JSON Syck DWIW";
-    require JSON::Any;
-    import JSON::Any;
-    require Net::Twitter;
-    import Net::Twitter;
-}
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.7.3";
-my ($REV) = '$Rev: 354 $' =~ /(\d+)/;
+$VERSION = "1.7.4";
+my ($REV) = '$Rev: 358 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -28,7 +21,7 @@ my ($REV) = '$Rev: 354 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-08 14:46:04 -0800 (Thu, 08 Jan 2009) $',
+    changed => '$Date: 2009-01-13 21:02:17 -0800 (Tue, 13 Jan 2009) $',
 );
 
 my $window;
@@ -907,9 +900,10 @@ sub event_send_text {
 
     # if the window where we got our text was the twitter window, and the user
     # wants to be lazy, tweet away!
-    if ( ($awin->get_active_name() eq $window->{name})
-         and Irssi::settings_get_bool("tweet_window_input") ) {
-        &cmd_tweet($line, $server, $win);
+    if ( ( $awin->get_active_name() eq $window->{name} )
+        and Irssi::settings_get_bool("tweet_window_input") )
+    {
+        &cmd_tweet( $line, $server, $win );
     }
 }
 
