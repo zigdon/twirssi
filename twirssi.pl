@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.7.4";
-my ($REV) = '$Rev: 358 $' =~ /(\d+)/;
+$VERSION = "1.7.5";
+my ($REV) = '$Rev: 374 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 358 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-13 21:02:17 -0800 (Tue, 13 Jan 2009) $',
+    changed => '$Date: 2009-01-19 23:31:12 -0800 (Mon, 19 Jan 2009) $',
 );
 
 my $window;
@@ -597,8 +597,11 @@ sub do_updates {
 
     unless ( ref $tweets ) {
         if ( $obj->can("get_error") ) {
+            my $error;
+            eval { $error = JSON::Any->jsonToObj( $obj->get_error() ) };
+            if ($@) { $error = $obj->get_error() }
             print $fh "type:debug API Error during friends_timeline call: ",
-              JSON::Any->jsonToObj( $obj->get_error() ), "  Aborted.\n";
+              "$error  Aborted.\n";
         } else {
             print $fh
               "type:debug API Error during friends_timeline call. Aborted.\n";
