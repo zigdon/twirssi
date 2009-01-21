@@ -933,6 +933,11 @@ Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
 
+if (!$window) {
+  $window = Irssi::Windowitem::window_create (Irssi::settings_get_str('twitter_window'), 1);
+  $window->set_name (Irssi::settings_get_str('twitter_window'));
+}
+
 if ($window) {
     Irssi::command_bind( "dm",               "cmd_direct" );
     Irssi::command_bind( "dm_as",            "cmd_direct_as" );
