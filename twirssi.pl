@@ -611,7 +611,7 @@ sub do_updates {
 
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
-        $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cC/g;
+        $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
         $text =~ s/[\n\r]/ /g;
         my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
@@ -627,7 +627,7 @@ sub do_updates {
 
             if ($context) {
                 my $ctext = decode_entities( $context->{text} );
-                $ctext =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cC/g;
+                $ctext =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
                 $ctext =~ s/[\n\r]/ /g;
                 printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
                   $context->{id}, $username,
@@ -664,7 +664,7 @@ sub do_updates {
           if exists $friends{ $t->{user}{screen_name} };
 
         my $text = decode_entities( $t->{text} );
-        $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cC/g;
+        $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
         $text =~ s/[\n\r]/ /g;
         printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
@@ -684,7 +684,7 @@ sub do_updates {
 
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
-        $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cC/g;
+        $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
         $text =~ s/[\n\r]/ /g;
         printf $fh "id:%d account:%s nick:%s type:dm %s\n",
           $t->{id}, $username, $t->{sender_screen_name}, $text;
