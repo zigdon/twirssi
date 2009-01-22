@@ -1030,3 +1030,4 @@ if ($window) {
           . " or change the value of twitter_window.  Then, reload twirssi." );
 }
 
+# vim: set sts=4 expandtab:
