@@ -740,7 +740,7 @@ sub monitor_child {
             } elsif ( $meta{type} eq 'dm' ) {
                 push @lines, [$meta{type}, $account, $meta{nick}, $_];
             } elsif ( $meta{type} eq 'error' ) {
-                push @lines, [$_];
+                $window->print("ERROR: $_", MSGLEVEL_PUBLIC);
             } elsif ( $meta{type} eq 'debug' ) {
                 print "$_" if &debug,;
             } else {
@@ -911,7 +911,6 @@ Irssi::theme_register([
     'twirssi_tweet', '[$0%B@$1%n$2] $3',
     'twirssi_reply', '[$0\--> %B@$1%n$2] $3',
     'twirssi_dm',    '[$0%B@$1%n (%WDM%n)] $2',
-    'twirssi_error', 'ERROR: $0',
 ]);
 
 Irssi::settings_add_str( "twirssi", "twitter_window",     "twitter" );
