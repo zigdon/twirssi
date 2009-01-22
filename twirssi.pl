@@ -734,16 +734,13 @@ sub monitor_child {
             }
 
             if ( $meta{type} eq 'tweet' ) {
-                $window->printformat(MSGLEVEL_PUBLIC, 'twirssi_tweet',
-                  $account, $meta{nick}, $marker, $_);
+                push @lines, [$meta{type}, $account, $meta{nick}, $marker, $_];
             } elsif ( $meta{type} eq 'reply' ) {
-                $window->printformat(MSGLEVEL_PUBLIC, 'twirssi_reply',
-                  $account, $meta{nick}, $marker, $_);
+                push @lines, [$meta{type}, $account, $meta{nick}, $marker, $_];
             } elsif ( $meta{type} eq 'dm' ) {
-                $window->printformat(MSGLEVEL_PUBLIC, 'twirssi_dm',
-                  $account, $meta{nick}, $_);
+                push @lines, [$meta{type}, $account, $meta{nick}, $_];
             } elsif ( $meta{type} eq 'error' ) {
-                $window->print("ERROR: $_", MSGLEVEL_PUBLIC);
+                push @lines, [$_];
             } elsif ( $meta{type} eq 'debug' ) {
                 print "$_" if &debug,;
             } else {
@@ -763,6 +760,10 @@ sub monitor_child {
 
         if ($new_last_poll) {
             print "new last_poll = $new_last_poll" if &debug;
+            for my $line ( @lines ) {
+                $window->printformat(MSGLEVEL_PUBLIC, "twirssi_".@$line[0],
+                  @$line[1,2,3,4]);
+            }
 
             close FILE;
             unlink $filename
@@ -910,6 +911,7 @@ Irssi::theme_register([
     'twirssi_tweet', '[$0%B@$1%n$2] $3',
     'twirssi_reply', '[$0\--> %B@$1%n$2] $3',
     'twirssi_dm',    '[$0%B@$1%n (%WDM%n)] $2',
+    'twirssi_error', 'ERROR: $0',
 ]);
 
 Irssi::settings_add_str( "twirssi", "twitter_window",     "twitter" );
