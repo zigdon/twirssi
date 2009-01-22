@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.7.5";
-my ($REV) = '$Rev: 374 $' =~ /(\d+)/;
+$VERSION = "1.7.6";
+my ($REV) = '$Rev: 379 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 374 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-19 23:31:12 -0800 (Mon, 19 Jan 2009) $',
+    changed => '$Date: 2009-01-21 09:50:42 -0800 (Wed, 21 Jan 2009) $',
 );
 
 my $window;
@@ -875,7 +875,9 @@ sub sig_complete {
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
     {    # /twitter_reply gets a nick:num
-        @$complist = grep /^\Q$word/i, sort keys %{ $id_map{__indexes} };
+        $word =~ s/^@//;
+        @$complist = map { "$_:$id_map{__indexes}{$_}" } grep /^\Q$word/i,
+          sort keys %{ $id_map{__indexes} };
     }
 
     # /tweet, /tweet_as, /dm, /dm_as - complete @nicks (and nicks as the first
@@ -928,6 +930,11 @@ Irssi::settings_add_bool( "twirssi", "twirssi_track_replies",     1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
+
+if (!$window) {
+  $window = Irssi::Windowitem::window_create (Irssi::settings_get_str('twitter_window'), 1);
+  $window->set_name (Irssi::settings_get_str('twitter_window'));
+}
 
 if ($window) {
     Irssi::command_bind( "dm",               "cmd_direct" );
