@@ -734,11 +734,11 @@ sub monitor_child {
             }
 
             if ( $meta{type} eq 'tweet' ) {
-                push @lines, [$meta{type}, $account, $meta{nick}, $marker, $_];
+                push @lines, [MSGLEVEL_PUBLIC, $meta{type}, $account, $meta{nick}, $marker, $_];
             } elsif ( $meta{type} eq 'reply' ) {
-                push @lines, [$meta{type}, $account, $meta{nick}, $marker, $_];
+                push @lines, [MSGLEVEL_PUBLIC, $meta{type}, $account, $meta{nick}, $marker, $_];
             } elsif ( $meta{type} eq 'dm' ) {
-                push @lines, [$meta{type}, $account, $meta{nick}, $_];
+                push @lines, [MSGLEVEL_MSGS, $meta{type}, $account, $meta{nick}, $_];
             } elsif ( $meta{type} eq 'error' ) {
                 $window->print("ERROR: $_", MSGLEVEL_PUBLIC);
             } elsif ( $meta{type} eq 'debug' ) {
@@ -761,8 +761,8 @@ sub monitor_child {
         if ($new_last_poll) {
             print "new last_poll = $new_last_poll" if &debug;
             for my $line ( @lines ) {
-                $window->printformat(MSGLEVEL_PUBLIC, "twirssi_".@$line[0],
-                  @$line[1,2,3,4]);
+                $window->printformat(@$line[0], "twirssi_".@$line[1],
+                  @$line[2,3,4,5]);
             }
 
             close FILE;
