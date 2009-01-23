@@ -707,6 +707,7 @@ sub monitor_child {
         while (<FILE>) {
             chomp;
             last if /^__friends__/;
+            my $hilight = 0;
             my %meta;
             foreach my $key (qw/id account nick type/) {
                 if (s/^$key:(\S+)\s*//) {
@@ -733,12 +734,16 @@ sub monitor_child {
                 $marker                            = ":$marker";
             }
 
+            if ( $_ =~ /\@$meta{account}\W/ ) {
+                $hilight = MSGLEVEL_HILIGHT;
+            }
+
             if ( $meta{type} eq 'tweet' ) {
-                push @lines, [MSGLEVEL_PUBLIC, $meta{type}, $account, $meta{nick}, $marker, $_];
+                push @lines, [(MSGLEVEL_PUBLIC | $hilight), $meta{type}, $account, $meta{nick}, $marker, $_];
             } elsif ( $meta{type} eq 'reply' ) {
-                push @lines, [MSGLEVEL_PUBLIC, $meta{type}, $account, $meta{nick}, $marker, $_];
+                push @lines, [(MSGLEVEL_PUBLIC | $hilight), $meta{type}, $account, $meta{nick}, $marker, $_];
             } elsif ( $meta{type} eq 'dm' ) {
-                push @lines, [MSGLEVEL_MSGS, $meta{type}, $account, $meta{nick}, $_];
+                push @lines, [(MSGLEVEL_MSGS | $hilight), $meta{type}, $account, $meta{nick}, $_];
             } elsif ( $meta{type} eq 'error' ) {
                 $window->print("ERROR: $_", MSGLEVEL_PUBLIC);
             } elsif ( $meta{type} eq 'debug' ) {
