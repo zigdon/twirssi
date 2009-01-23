@@ -34,6 +34,24 @@ my %friends;
 my $last_poll = time - 300;
 my %tweet_cache;
 my %id_map;
+my %irssi_to_mirc_colors = (
+    '%k'    => '01',
+    '%r'    => '05',
+    '%g'    => '03',
+    '%y'    => '07',
+    '%b'    => '02',
+    '%m'    => '06',
+    '%c'    => '10',
+    '%w'    => '15',
+    '%K'    => '14',
+    '%R'    => '04',
+    '%G'    => '09',
+    '%Y'    => '08',
+    '%B'    => '12',
+    '%M'    => '13',
+    '%C'    => '11',
+    '%W'    => '00',
+);
 
 sub cmd_direct {
     my ( $data, $server, $win ) = @_;
@@ -734,7 +752,8 @@ sub monitor_child {
                 $marker                            = ":$marker";
             }
 
-            if ( $_ =~ /\@$meta{account}\W/ ) {
+            my $hilight_color = $irssi_to_mirc_colors{Irssi::settings_get_str("hilight_color")};
+            if ( $_ =~ s/\@($meta{account})\W/\cC$hilight_color\@$1\cO/g ) {
                 $hilight = MSGLEVEL_HILIGHT;
             }
 
