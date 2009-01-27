@@ -753,7 +753,8 @@ sub monitor_child {
             }
 
             my $hilight_color = $irssi_to_mirc_colors{Irssi::settings_get_str("hilight_color")};
-            if ( $_ =~ s/\@($meta{account})\W/\cC$hilight_color\@$1\cO/g ) {
+            if ( $_ =~ /\@($meta{account})\W/ ) {
+                $meta{nick} = "\cC$hilight_color$meta{nick}\cO";
                 $hilight = MSGLEVEL_HILIGHT;
             }
 
