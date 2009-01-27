@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.7.6";
-my ($REV) = '$Rev: 379 $' =~ /(\d+)/;
+$VERSION = "1.7.7";
+my ($REV) = '$Rev: 422 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 379 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-21 09:50:42 -0800 (Wed, 21 Jan 2009) $',
+    changed => '$Date: 2009-01-26 08:19:42 -0800 (Mon, 26 Jan 2009) $',
 );
 
 my $window;
@@ -127,7 +127,7 @@ sub cmd_tweet_as {
 
     return unless &valid_username($username);
 
-    if ( Irssi::settings_get_str("short_url_provider") ) {
+    if ( &too_long($data) and Irssi::settings_get_str("short_url_provider") ) {
         foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
             eval {
                 my $short = makeashorterlink($url);
@@ -860,11 +860,12 @@ sub update_away {
 }
 
 sub too_long {
-    my $data = shift;
+    my $data    = shift;
+    my $noalert = shift;
 
     if ( length $data > 140 ) {
-        &notice(
-            "Tweet too long (" . length($data) . " characters) - aborted" );
+        &notice( "Tweet too long (" . length($data) . " characters) - aborted" )
+          unless $noalert;
         return 1;
     }
 
@@ -956,11 +957,13 @@ Irssi::settings_add_bool( "twirssi", "twirssi_first_run",         1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_track_replies",     1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
-$window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
 
-if (!$window) {
-  $window = Irssi::Windowitem::window_create (Irssi::settings_get_str('twitter_window'), 1);
-  $window->set_name (Irssi::settings_get_str('twitter_window'));
+$window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
+if ( !$window ) {
+    $window =
+      Irssi::Windowitem::window_create(
+        Irssi::settings_get_str('twitter_window'), 1 );
+    $window->set_name( Irssi::settings_get_str('twitter_window') );
 }
 
 if ($window) {
