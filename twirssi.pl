@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "1.7.7";
-my ($REV) = '$Rev: 422 $' =~ /(\d+)/;
+$VERSION = "1.7.8";
+my ($REV) = '$Rev: 435 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 422 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://tinyurl.com/twirssi',
-    changed => '$Date: 2009-01-26 08:19:42 -0800 (Mon, 26 Jan 2009) $',
+    changed => '$Date: 2009-01-27 16:40:26 -0800 (Tue, 27 Jan 2009) $',
 );
 
 my $window;
@@ -35,22 +35,22 @@ my $last_poll = time - 300;
 my %tweet_cache;
 my %id_map;
 my %irssi_to_mirc_colors = (
-    '%k'    => '01',
-    '%r'    => '05',
-    '%g'    => '03',
-    '%y'    => '07',
-    '%b'    => '02',
-    '%m'    => '06',
-    '%c'    => '10',
-    '%w'    => '15',
-    '%K'    => '14',
-    '%R'    => '04',
-    '%G'    => '09',
-    '%Y'    => '08',
-    '%B'    => '12',
-    '%M'    => '13',
-    '%C'    => '11',
-    '%W'    => '00',
+    '%k' => '01',
+    '%r' => '05',
+    '%g' => '03',
+    '%y' => '07',
+    '%b' => '02',
+    '%m' => '06',
+    '%c' => '10',
+    '%w' => '15',
+    '%K' => '14',
+    '%R' => '04',
+    '%G' => '09',
+    '%Y' => '08',
+    '%B' => '12',
+    '%M' => '13',
+    '%C' => '11',
+    '%W' => '00',
 );
 
 sub cmd_direct {
@@ -752,20 +752,33 @@ sub monitor_child {
                 $marker                            = ":$marker";
             }
 
-            my $hilight_color = $irssi_to_mirc_colors{Irssi::settings_get_str("hilight_color")};
+            my $hilight_color =
+              $irssi_to_mirc_colors{ Irssi::settings_get_str("hilight_color") };
             if ( $_ =~ /\@($meta{account})\W/ ) {
                 $meta{nick} = "\cC$hilight_color$meta{nick}\cO";
                 $hilight = MSGLEVEL_HILIGHT;
             }
 
             if ( $meta{type} eq 'tweet' ) {
-                push @lines, [(MSGLEVEL_PUBLIC | $hilight), $meta{type}, $account, $meta{nick}, $marker, $_];
+                push @lines,
+                  [
+                    ( MSGLEVEL_PUBLIC | $hilight ),
+                    $meta{type}, $account, $meta{nick}, $marker, $_
+                  ];
             } elsif ( $meta{type} eq 'reply' ) {
-                push @lines, [(MSGLEVEL_PUBLIC | $hilight), $meta{type}, $account, $meta{nick}, $marker, $_];
+                push @lines,
+                  [
+                    ( MSGLEVEL_PUBLIC | $hilight ),
+                    $meta{type}, $account, $meta{nick}, $marker, $_
+                  ];
             } elsif ( $meta{type} eq 'dm' ) {
-                push @lines, [(MSGLEVEL_MSGS | $hilight), $meta{type}, $account, $meta{nick}, $_];
+                push @lines,
+                  [
+                    ( MSGLEVEL_MSGS | $hilight ),
+                    $meta{type}, $account, $meta{nick}, $_
+                  ];
             } elsif ( $meta{type} eq 'error' ) {
-                push @lines, [MSGLEVEL_MSGS, $_];
+                push @lines, [ MSGLEVEL_MSGS, $_ ];
             } elsif ( $meta{type} eq 'debug' ) {
                 print "$_" if &debug,;
             } else {
@@ -785,9 +798,12 @@ sub monitor_child {
 
         if ($new_last_poll) {
             print "new last_poll = $new_last_poll" if &debug;
-            for my $line ( @lines ) {
-                $window->printformat(@$line[0], "twirssi_".@$line[1],
-                  @$line[2,3,4,5]);
+            for my $line (@lines) {
+                $window->printformat(
+                    @$line[0],
+                    "twirssi_" . @$line[1],
+                    @$line[ 2, 3, 4, 5 ]
+                );
             }
 
             close FILE;
@@ -933,12 +949,14 @@ sub event_send_text {
 
 Irssi::signal_add( "send text", "event_send_text" );
 
-Irssi::theme_register([
-    'twirssi_tweet', '[$0%B@$1%n$2] $3',
-    'twirssi_reply', '[$0\--> %B@$1%n$2] $3',
-    'twirssi_dm',    '[$0%B@$1%n (%WDM%n)] $2',
-    'twirssi_error', 'ERROR: $0',
-]);
+Irssi::theme_register(
+    [
+        'twirssi_tweet', '[$0%B@$1%n$2] $3',
+        'twirssi_reply', '[$0\--> %B@$1%n$2] $3',
+        'twirssi_dm',    '[$0%B@$1%n (%WDM%n)] $2',
+        'twirssi_error', 'ERROR: $0',
+    ]
+);
 
 Irssi::settings_add_str( "twirssi", "twitter_window",     "twitter" );
 Irssi::settings_add_str( "twirssi", "bitlbee_server",     "bitlbee" );
