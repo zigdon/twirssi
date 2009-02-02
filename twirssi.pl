@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.0";
-my ($REV) = '$Rev: 443 $' =~ /(\d+)/;
+$VERSION = "2.0.1";
+my ($REV) = '$Rev: 449 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 443 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-01-29 18:25:38 -0800 (Thu, 29 Jan 2009) $',
+    changed => '$Date: 2009-02-02 09:49:45 -0800 (Mon, 02 Feb 2009) $',
 );
 
 my $window;
@@ -127,7 +127,9 @@ sub cmd_tweet_as {
 
     return unless &valid_username($username);
 
-    if ( &too_long($data) and Irssi::settings_get_str("short_url_provider") ) {
+    if ( &too_long( $data, 1 )
+        and Irssi::settings_get_str("short_url_provider") )
+    {
         foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
             eval {
                 my $short = makeashorterlink($url);
@@ -309,6 +311,7 @@ sub cmd_logout {
     my ( $data, $server, $win ) = @_;
 
     $data =~ s/^\s+|\s+$//g;
+    $data = $user unless $data;
     return unless &valid_username($data);
 
     if ($data) {
@@ -418,6 +421,12 @@ sub cmd_add_search {
 
     $data =~ s/^\s+|\s+$//;
     $data = lc $data;
+
+    unless ($data) {
+        &notice("Usage: /twitter_subscribe <topic>");
+        return;
+    }
+
     if ( exists $id_map{__searches}{$user}{$data} ) {
         &notice("Already had a subscription for '$data'");
         return;
@@ -437,6 +446,12 @@ sub cmd_del_search {
     }
     $data =~ s/^\s+|\s+$//;
     $data = lc $data;
+
+    unless ($data) {
+        &notice("Usage: /twitter_unsubscribe <topic>");
+        return;
+    }
+
     unless ( exists $id_map{__searches}{$user}{$data} ) {
         &notice("No subscription found for '$data'");
         return;
@@ -696,8 +711,7 @@ sub do_updates {
 
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
-        $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
-        $text =~ s/[\n\r]/ /g;
+        $text = &hilight($text);
         my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
             and $t->{in_reply_to_screen_name} ne $username
@@ -712,8 +726,7 @@ sub do_updates {
 
             if ($context) {
                 my $ctext = decode_entities( $context->{text} );
-                $ctext =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
-                $ctext =~ s/[\n\r]/ /g;
+                $ctext = &hilight($ctext);
                 printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
@@ -722,7 +735,7 @@ sub do_updates {
                 print $fh "type:debug request to get context failed: $@";
             } else {
                 print $fh
-"type:debug Failed to get context from $t->{in_reply_to_screen_name}"
+"type:debug Failed to get context from $t->{in_reply_to_screen_name}\n"
                   if &debug;
             }
         }
@@ -749,8 +762,7 @@ sub do_updates {
           if exists $friends{ $t->{user}{screen_name} };
 
         my $text = decode_entities( $t->{text} );
-        $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
-        $text =~ s/[\n\r]/ /g;
+        $text = &hilight($text);
         printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
     }
@@ -769,8 +781,7 @@ sub do_updates {
 
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
-        $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
-        $text =~ s/[\n\r]/ /g;
+        $text = &hilight($text);
         printf $fh "id:%d account:%s nick:%s type:dm %s\n",
           $t->{id}, $username, $t->{sender_screen_name}, $text;
     }
@@ -779,6 +790,8 @@ sub do_updates {
     if ( $obj->can('search') and $id_map{__searches}{$username} ) {
         my $search;
         foreach my $topic ( sort keys %{ $id_map{__searches}{$username} } ) {
+            print $fh "type:debug searching for $topic since ",
+              "$id_map{__searches}{$username}{$topic}\n";
             eval {
                 $search = $obj->search(
                     {
@@ -796,7 +809,8 @@ sub do_updates {
 
             unless ( $search->{max_id} ) {
                 print $fh
-"type:debug Invalid search results when searching for $topic.  Aborted.\n";
+"type:debug Invalid search results when searching for $topic.",
+                  "  Aborted.\n";
                 return 1;
             }
 
@@ -806,9 +820,7 @@ sub do_updates {
 
             foreach my $t ( reverse @{ $search->{results} } ) {
                 my $text = decode_entities( $t->{text} );
-                $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
-                $text =~ s/(^|\W)\#([-\w]+)/$1\cC5\#$2\cO/g;
-                $text =~ s/[\n\r]/ /g;
+                $text = &hilight($text);
                 printf $fh "id:%d account:%s nick:%s type:search topic:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic, $text;
             }
@@ -862,7 +874,7 @@ sub monitor_child {
 
             my $hilight_color =
               $irssi_to_mirc_colors{ Irssi::settings_get_str("hilight_color") };
-            if ( $_ =~ /\@($meta{account})\W/ ) {
+            if ( $_ =~ /\@$meta{account}\W/i ) {
                 $meta{nick} = "\cC$hilight_color$meta{nick}\cO";
                 $hilight = MSGLEVEL_HILIGHT;
             }
@@ -887,8 +899,15 @@ sub monitor_child {
                     $meta{type}, $account, $meta{nick}, $_
                   ];
             } elsif ( $meta{type} eq 'searchid' ) {
-                $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
-                  $meta{id};
+                print "Search '$meta{topic}' returned id $meta{id}";
+                if ( $meta{id} >=
+                    $id_map{__searches}{ $meta{account} }{ $meta{topic} } )
+                {
+                    $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
+                      $meta{id};
+                } else {
+                    print "Search '$meta{topic}' returned invalid id $meta{id}";
+                }
                 print "Search '$meta{topic}' id set to $meta{id}" if &debug;
             } elsif ( $meta{type} eq 'error' ) {
                 push @lines, [ MSGLEVEL_MSGS, $_ ];
@@ -1064,6 +1083,16 @@ sub get_poll_time {
     my $poll = Irssi::settings_get_int("twitter_poll_interval");
     return $poll if $poll >= 60;
     return 60;
+}
+
+sub hilight {
+    my $text = shift;
+
+    $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
+    $text =~ s/(^|\W)\#([-\w]+)/$1\cC5\#$2\cO/g;
+    $text =~ s/[\n\r]/ /g;
+
+    return $text;
 }
 
 Irssi::signal_add( "send text", "event_send_text" );
