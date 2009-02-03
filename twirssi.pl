@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.0.1";
-my ($REV) = '$Rev: 449 $' =~ /(\d+)/;
+$VERSION = "2.0.2";
+my ($REV) = '$Rev: 452 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 449 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-02 09:49:45 -0800 (Mon, 02 Feb 2009) $',
+    changed => '$Date: 2009-02-03 10:38:51 -0800 (Tue, 03 Feb 2009) $',
 );
 
 my $window;
@@ -219,9 +219,12 @@ sub cmd_reply_as {
         return;
     }
 
-    # remove any @nick at the beginning of the reply, as we'll add it anyway
-    $data =~ s/^\s*\@?$nick\s*//;
-    $data = "\@$nick " . $data;
+    if ( Irssi::settings_get_bool("twirssi_replies_autonick") ) {
+
+        # remove any @nick at the beginning of the reply, as we'll add it anyway
+        $data =~ s/^\s*\@?$nick\s*//;
+        $data = "\@$nick " . $data;
+    }
 
     if ( Irssi::settings_get_str("short_url_provider") ) {
         foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
@@ -314,21 +317,15 @@ sub cmd_logout {
     $data = $user unless $data;
     return unless &valid_username($data);
 
-    if ($data) {
-        &notice("Logging out $data...");
-        $twits{$data}->end_session();
-        delete $twits{$data};
+    &notice("Logging out $data...");
+    $twits{$data}->end_session();
+    delete $twits{$data};
+    undef $twit;
+    if ( keys %twits ) {
+        &cmd_switch( ( keys %twits )[0], $server, $win );
     } else {
-        &notice("Logging out $user...");
-        $twit->end_session();
-        undef $twit;
-        delete $twits{$user};
-        if ( keys %twits ) {
-            &cmd_switch( ( keys %twits )[0], $server, $win );
-        } else {
-            Irssi::timeout_remove($poll) if $poll;
-            undef $poll;
-        }
+        Irssi::timeout_remove($poll) if $poll;
+        undef $poll;
     }
 }
 
@@ -899,13 +896,13 @@ sub monitor_child {
                     $meta{type}, $account, $meta{nick}, $_
                   ];
             } elsif ( $meta{type} eq 'searchid' ) {
-                print "Search '$meta{topic}' returned id $meta{id}";
+                print "Search '$meta{topic}' returned id $meta{id}" if &debug;
                 if ( $meta{id} >=
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } )
                 {
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
                       $meta{id};
-                } else {
+                } elsif (&debug) {
                     print "Search '$meta{topic}' returned invalid id $meta{id}";
                 }
                 print "Search '$meta{topic}' id set to $meta{id}" if &debug;
@@ -1123,6 +1120,7 @@ Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_debug",             0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_first_run",         1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_track_replies",     1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_replies_autonick",  1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 
