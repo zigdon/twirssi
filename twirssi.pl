@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.0.2";
-my ($REV) = '$Rev: 453 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 454 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 453 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-03 23:48:19 -0800 (Tue, 03 Feb 2009) $',
+    changed => '$Date: 2009-02-04 13:35:29 -0800 (Wed, 04 Feb 2009) $',
 );
 
 my $window;
@@ -850,8 +850,11 @@ sub monitor_child {
                 }
             }
 
-            next if exists $meta{id} and exists $tweet_cache{ $meta{id} };
-            $tweet_cache{ $meta{id} } = time;
+            if (not $meta{type} or $meta{type} ne 'searchid') {
+                next if exists $meta{id} and exists $tweet_cache{ $meta{id} };
+                $tweet_cache{ $meta{id} } = time;
+            }
+
             my $account = "";
             if ( $meta{account} ne $user ) {
                 $account = "$meta{account}: ";
@@ -889,7 +892,7 @@ sub monitor_child {
                     $meta{type}, $account, $meta{topic},
                     $meta{nick}, $marker,  $_
                   ];
-                if ( $meta{id} >=
+                if ( $meta{id} >
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } )
                 {
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
@@ -911,7 +914,6 @@ sub monitor_child {
                 } elsif (&debug) {
                     print "Search '$meta{topic}' returned invalid id $meta{id}";
                 }
-                print "Search '$meta{topic}' id set to $meta{id}" if &debug;
             } elsif ( $meta{type} eq 'error' ) {
                 push @lines, [ MSGLEVEL_MSGS, $_ ];
             } elsif ( $meta{type} eq 'debug' ) {
