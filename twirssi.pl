@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.0.2";
-my ($REV) = '$Rev: 452 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 453 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 452 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-03 10:38:51 -0800 (Tue, 03 Feb 2009) $',
+    changed => '$Date: 2009-02-03 23:48:19 -0800 (Tue, 03 Feb 2009) $',
 );
 
 my $window;
@@ -889,6 +889,12 @@ sub monitor_child {
                     $meta{type}, $account, $meta{topic},
                     $meta{nick}, $marker,  $_
                   ];
+                if ( $meta{id} >=
+                    $id_map{__searches}{ $meta{account} }{ $meta{topic} } )
+                {
+                    $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
+                      $meta{id};
+                }
             } elsif ( $meta{type} eq 'dm' ) {
                 push @lines,
                   [
