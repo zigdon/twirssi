@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.0.3";
-my ($REV) = '$Rev: 475 $' =~ /(\d+)/;
+$VERSION = "2.0.4";
+my ($REV) = '$Rev: 476 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 475 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-16 20:36:03 -0800 (Mon, 16 Feb 2009) $',
+    changed => '$Date: 2009-02-16 20:50:17 -0800 (Mon, 16 Feb 2009) $',
 );
 
 my $window;
@@ -1099,11 +1099,12 @@ sub hilight {
     if ( Irssi::settings_get_str("twirssi_nick_color") ) {
         my $c = Irssi::settings_get_str("twirssi_nick_color");
         $c = $irssi_to_mirc_colors{$c};
-        $text =~ s/(^|\W)\@([-\w]+)/$1\cC$c\@$2\cO/g;
+        $text =~ s/(^|\W)\@([-\w]+)/$1\cC$c\@$2\cO/g if $c;
     }
     if ( Irssi::settings_get_str("twirssi_topic_color") ) {
         my $c = Irssi::settings_get_str("twirssi_topic_color");
-        $text =~ s/(^|\W)\#([-\w]+)/$1\cC$c\#$2\cO/g;
+        $c = $irssi_to_mirc_colors{$c};
+        $text =~ s/(^|\W)\#([-\w]+)/$1\cC$c\#$2\cO/g if $c;
     }
     $text =~ s/[\n\r]/ /g;
 
