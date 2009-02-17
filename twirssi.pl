@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.0.2";
-my ($REV) = '$Rev: 454 $' =~ /(\d+)/;
+$VERSION = "2.0.3";
+my ($REV) = '$Rev: 475 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 454 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-04 13:35:29 -0800 (Wed, 04 Feb 2009) $',
+    changed => '$Date: 2009-02-16 20:36:03 -0800 (Mon, 16 Feb 2009) $',
 );
 
 my $window;
@@ -90,12 +90,12 @@ sub cmd_direct_as {
     };
 
     if ($@) {
-        &notice("DM caused an error.  Aborted");
+        &notice("DM caused an error: $@.  Aborted");
         return;
+    } else {
+        &notice("DM sent to $target");
+        $nicks{$target} = time;
     }
-
-    &notice("DM sent to $target");
-    $nicks{$target} = time;
 }
 
 sub cmd_tweet {
@@ -118,6 +118,7 @@ sub cmd_tweet_as {
     return unless &logged_in($twit);
 
     $data =~ s/^\s+|\s+$//;
+    $data =~ s/\s\s+/ /g;
     my ( $username, $data ) = split ' ', $data, 2;
 
     unless ( $username and $data ) {
@@ -850,7 +851,7 @@ sub monitor_child {
                 }
             }
 
-            if (not $meta{type} or $meta{type} ne 'searchid') {
+            if ( not $meta{type} or $meta{type} ne 'searchid' ) {
                 next if exists $meta{id} and exists $tweet_cache{ $meta{id} };
                 $tweet_cache{ $meta{id} } = time;
             }
@@ -874,7 +875,9 @@ sub monitor_child {
 
             my $hilight_color =
               $irssi_to_mirc_colors{ Irssi::settings_get_str("hilight_color") };
-            if ( ($_ =~ /\@$meta{account}\W/i) && Irssi::settings_get_bool("twirssi_hilights") ) {
+            if ( ( $_ =~ /\@$meta{account}\W/i )
+                && Irssi::settings_get_bool("twirssi_hilights") )
+            {
                 $meta{nick} = "\cC$hilight_color$meta{nick}\cO";
                 $hilight = MSGLEVEL_HILIGHT;
             }
@@ -1093,8 +1096,15 @@ sub get_poll_time {
 sub hilight {
     my $text = shift;
 
-    $text =~ s/(^|\W)\@([-\w]+)/$1\cC12\@$2\cO/g;
-    $text =~ s/(^|\W)\#([-\w]+)/$1\cC5\#$2\cO/g;
+    if ( Irssi::settings_get_str("twirssi_nick_color") ) {
+        my $c = Irssi::settings_get_str("twirssi_nick_color");
+        $c = $irssi_to_mirc_colors{$c};
+        $text =~ s/(^|\W)\@([-\w]+)/$1\cC$c\@$2\cO/g;
+    }
+    if ( Irssi::settings_get_str("twirssi_topic_color") ) {
+        my $c = Irssi::settings_get_str("twirssi_topic_color");
+        $text =~ s/(^|\W)\#([-\w]+)/$1\cC$c\#$2\cO/g;
+    }
     $text =~ s/[\n\r]/ /g;
 
     return $text;
@@ -1122,6 +1132,8 @@ Irssi::settings_add_str( "twirssi", "twitter_usernames", undef );
 Irssi::settings_add_str( "twirssi", "twitter_passwords", undef );
 Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
     ".irssi/scripts/twirssi.json" );
+Irssi::settings_add_str( "twirssi", "twirssi_nick_color",  "%B" );
+Irssi::settings_add_str( "twirssi", "twirssi_topic_color", "%r" );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
 Irssi::settings_add_bool( "twirssi", "show_reply_context",        0 );
 Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
