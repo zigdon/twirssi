@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.0.4";
-my ($REV) = '$Rev: 476 $' =~ /(\d+)/;
+$VERSION = "2.0.5";
+my ($REV) = '$Rev: 480 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 476 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-16 20:50:17 -0800 (Mon, 16 Feb 2009) $',
+    changed => '$Date: 2009-02-18 13:41:52 -0800 (Wed, 18 Feb 2009) $',
 );
 
 my $window;
@@ -976,12 +976,23 @@ sub monitor_child {
 
     close FILE;
 
-    if ( $attempt < 12 ) {
+    if ( $attempt < 24 ) {
         Irssi::timeout_add_once( 5000, 'monitor_child',
             [ $filename, $attempt + 1 ] );
     } else {
-        &notice("Giving up on polling $filename");
+        print "Giving up on polling $filename" if &debug;
         unlink $filename unless &debug;
+
+        return unless Irssi::settings_get_bool("twirssi_notify_timeouts");
+
+        my $since;
+        my @time = localtime($last_poll);
+        if ( time - $last_poll < 24 * 60 * 60 ) {
+            $since = sprintf( "%d:%02d", @time[ 2, 1 ] );
+        } else {
+            $since = scalar localtime($last_poll);
+        }
+        &notice("Haven't been able to get updated tweets since $since");
     }
 }
 
@@ -1143,6 +1154,7 @@ Irssi::settings_add_bool( "twirssi", "twirssi_first_run",         1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_track_replies",     1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_replies_autonick",  1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
+Irssi::settings_add_bool( "twirssi", "twirssi_notify_timeouts",   1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_hilights",          1 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 
