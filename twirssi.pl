@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.0.5";
-my ($REV) = '$Rev: 480 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 481 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 480 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-18 13:41:52 -0800 (Wed, 18 Feb 2009) $',
+    changed => '$Date: 2009-02-19 14:22:45 -0800 (Thu, 19 Feb 2009) $',
 );
 
 my $window;
@@ -81,20 +81,25 @@ sub cmd_direct_as {
     return unless &valid_username($username);
 
     eval {
-        unless ( $twits{$username}
+        if ( $twits{$username}
             ->new_direct_message( { user => $target, text => $text } ) )
         {
+            &notice("DM sent to $target");
+            $nicks{$target} = time;
+        } else {
+            my $error;
+            eval {
+                $error = JSON::Any->jsonToObj( $twits{$username}->get_error() );
+                $error = $error->{error};
+            };
+            die $error if $error;
             &notice("DM to $target failed");
-            return;
         }
     };
 
     if ($@) {
-        &notice("DM caused an error: $@.  Aborted");
+        &notice("DM caused an error: $@");
         return;
-    } else {
-        &notice("DM sent to $target");
-        $nicks{$target} = time;
     }
 }
 
@@ -141,16 +146,18 @@ sub cmd_tweet_as {
 
     return if &too_long($data);
 
+    my $success = 1;
     eval {
         unless ( $twits{$username}->update($data) )
         {
             &notice("Update failed");
-            return;
+            $success = 0;
         }
     };
+    return unless $success;
 
     if ($@) {
-        &notice("Update caused an error.  Aborted.");
+        &notice("Update caused an error: $@.  Aborted.");
         return;
     }
 
@@ -238,6 +245,7 @@ sub cmd_reply_as {
 
     return if &too_long($data);
 
+    my $success = 1;
     eval {
         unless (
             $twits{$username}->update(
@@ -249,12 +257,13 @@ sub cmd_reply_as {
           )
         {
             &notice("Update failed");
-            return;
+            $success = 0;
         }
     };
+    return unless $success;
 
     if ($@) {
-        &notice("Update caused an error.  Aborted");
+        &notice("Update caused an error: $@.  Aborted");
         return;
     }
 
@@ -281,13 +290,15 @@ sub gen_cmd {
             return;
         }
 
+        my $success = 1;
         eval {
             unless ( $twit->$api_name($data) )
             {
                 &notice("$api_name failed");
-                return;
+                $success = 0;
             }
         };
+        return unless $success;
 
         if ($@) {
             &notice("$api_name caused an error.  Aborted.");
@@ -689,7 +700,8 @@ sub do_updates {
     };
 
     if ($@) {
-        print $fh "type:debug Error during friends_timeline call.  Aborted.\n";
+        print $fh
+          "type:debug Error during friends_timeline call: $@.  Aborted.\n";
         return 1;
     }
 
