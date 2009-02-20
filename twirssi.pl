@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.0.5";
-my ($REV) = '$Rev: 481 $' =~ /(\d+)/;
+$VERSION = "2.0.6";
+my ($REV) = '$Rev: 483 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 481 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-19 14:22:45 -0800 (Thu, 19 Feb 2009) $',
+    changed => '$Date: 2009-02-20 14:37:28 -0800 (Fri, 20 Feb 2009) $',
 );
 
 my $window;
@@ -234,12 +234,14 @@ sub cmd_reply_as {
         $data = "\@$nick " . $data;
     }
 
-    if ( Irssi::settings_get_str("short_url_provider") ) {
-        foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
-            eval {
-                my $short = makeashorterlink($url);
-                $data =~ s/\Q$url/$short/g;
-            };
+    if ( &too_long( $data, 1 ) ) {
+        if ( Irssi::settings_get_str("short_url_provider") ) {
+            foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
+                eval {
+                    my $short = makeashorterlink($url);
+                    $data =~ s/\Q$url/$short/g;
+                };
+            }
         }
     }
 
@@ -497,13 +499,6 @@ sub cmd_upgrade {
     unless ( -w $loc ) {
         &notice(
 "$loc isn't writable, can't upgrade.  Perhaps you need to /set twirssi_location?"
-        );
-        return;
-    }
-
-    if ( not -x "/usr/bin/md5sum" and not $data ) {
-        &notice(
-"/usr/bin/md5sum can't be found - try '/twirssi_upgrade nomd5' to skip MD5 verification"
         );
         return;
     }
