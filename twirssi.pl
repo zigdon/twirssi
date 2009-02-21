@@ -6,7 +6,7 @@ use HTML::Entities;
 use File::Temp;
 use LWP::Simple;
 use Data::Dumper;
-use Net::Twitter;
+use Net::Identica;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
@@ -373,7 +373,7 @@ sub cmd_login {
 
     %friends = %nicks = ();
 
-    $twit = Net::Twitter->new(
+    $twit = Net::Identica->new(
         username => $user,
         password => $pass,
         source   => "twirssi"
@@ -425,7 +425,7 @@ sub cmd_add_search {
     my ( $data, $server, $win ) = @_;
 
     unless ( $twit and $twit->can('search') ) {
-        &notice("ERROR: Your version of Net::Twitter ($Net::Twitter::VERSION) "
+        &notice("ERROR: Your version of Net::Identica ($Net::Identica::VERSION) "
               . "doesn't support searches." );
         return;
     }
@@ -451,7 +451,7 @@ sub cmd_del_search {
     my ( $data, $server, $win ) = @_;
 
     unless ( $twit and $twit->can('search') ) {
-        &notice("ERROR: Your version of Net::Twitter ($Net::Twitter::VERSION) "
+        &notice("ERROR: Your version of Net::Identica ($Net::Identica::VERSION) "
               . "doesn't support searches." );
         return;
     }
@@ -1207,7 +1207,7 @@ if ($window) {
         "twirssi_version",
         sub {
             &notice("Twirssi v$VERSION (r$REV); "
-                  . "Net::Twitter v$Net::Twitter::VERSION. "
+                  . "Net::Identica v$Net::Identica::VERSION. "
                   . "JSON in use: "
                   . JSON::Any::handler()
                   . ".  See details at http://twirssi.com/" );
