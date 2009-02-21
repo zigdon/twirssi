@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.0.6";
-my ($REV) = '$Rev: 483 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 484 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 483 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-20 14:37:28 -0800 (Fri, 20 Feb 2009) $',
+    changed => '$Date: 2009-02-21 13:53:25 -0800 (Sat, 21 Feb 2009) $',
 );
 
 my $window;
@@ -634,6 +634,7 @@ sub get_updates {
     return unless &logged_in($twit);
 
     my ( $fh, $filename ) = File::Temp::tempfile();
+    binmode($fh, ":utf8");
     my $pid = fork();
 
     if ($pid) {    # parent
