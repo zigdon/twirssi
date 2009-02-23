@@ -6,23 +6,22 @@ use HTML::Entities;
 use File::Temp;
 use LWP::Simple;
 use Data::Dumper;
-use Net::Identica;
 use Net::Twitter;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.0.6";
-my ($REV) = '$Rev: 484 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 485 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
     name        => 'twirssi',
-    description => 'Send twitter/identica updates using /tweet or /dent.  '
+    description => 'Send twitter updates using /tweet.  '
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-21 13:53:25 -0800 (Sat, 21 Feb 2009) $',
+    changed => '$Date: 2009-02-23 14:17:26 -0800 (Mon, 23 Feb 2009) $',
 );
 
 my $window;
@@ -35,6 +34,7 @@ my %nicks;
 my %friends;
 my %tweet_cache;
 my %id_map;
+my $failwhale = 0;
 my %irssi_to_mirc_colors = (
     '%k' => '01',
     '%r' => '05',
@@ -325,7 +325,7 @@ sub cmd_switch {
     }
 }
 
-sub cmd_logout_twitter {
+sub cmd_logout {
     my ( $data, $server, $win ) = @_;
 
     $data =~ s/^\s+|\s+$//g;
@@ -344,32 +344,13 @@ sub cmd_logout_twitter {
     }
 }
 
-sub cmd_logout_identica {
-    my ( $data, $server, $win ) = @_;
-
-    $data =~ s/^\s+|\s+$//g;
-    $data = $user unless $data;
-    return unless &valid_username($data);
-
-    &notice("Logging out $data...");
-    $twits{$data}->end_session();
-    delete $twits{$data};
-    undef $twit;
-    if ( keys %twits ) {
-        &cmd_switch( ( keys %twits )[0], $server, $win );
-    } else {
-        Irssi::timeout_remove($poll) if $poll;
-        undef $poll;
-    }
-}
-
-sub cmd_login_twitter {
+sub cmd_login {
     my ( $data, $server, $win ) = @_;
     my $pass;
     if ($data) {
         ( $user, $pass ) = split ' ', $data, 2;
-    } elsif ( my $autouser = Irssi::settings_get_str("twitter_usernames_twitter")
-        and my $autopass = Irssi::settings_get_str("twitter_passwords_twitter") )
+    } elsif ( my $autouser = Irssi::settings_get_str("twitter_usernames")
+        and my $autopass = Irssi::settings_get_str("twitter_passwords") )
     {
         my @user = split /\s*,\s*/, $autouser;
         my @pass = split /\s*,\s*/, $autopass;
@@ -381,13 +362,13 @@ sub cmd_login_twitter {
             while ( @user and @pass ) {
                 $u = shift @user;
                 $p = shift @pass;
-                &cmd_login_twitter("$u $p");
+                &cmd_login("$u $p");
             }
             return;
         }
     } else {
         &notice("/twitter_login requires either a username and password "
-              . "or twitter_usernames_twitter and twitter_passwords_twitter to be set." );
+              . "or twitter_usernames and twitter_passwords to be set." );
         return;
     }
 
@@ -441,85 +422,7 @@ sub cmd_login_twitter {
     }
 }
 
-sub cmd_login_identica {
-    my ( $data, $server, $win ) = @_;
-    my $pass;
-    if ($data) {
-        ( $user, $pass ) = split ' ', $data, 2;
-    } elsif ( my $autouser = Irssi::settings_get_str("twitter_usernames_identica")
-        and my $autopass = Irssi::settings_get_str("twitter_passwords_identica") )
-    {
-        my @user = split /\s*,\s*/, $autouser;
-        my @pass = split /\s*,\s*/, $autopass;
-        if ( @user != @pass ) {
-            &notice("Number of usernames doesn't match "
-                  . "the number of passwords - auto-login failed" );
-        } else {
-            my ( $u, $p );
-            while ( @user and @pass ) {
-                $u = shift @user;
-                $p = shift @pass;
-                &cmd_login_identica("$u $p");
-            }
-            return;
-        }
-    } else {
-        &notice("/identica_login requires either a username and password "
-              . "or twitter_usernames_identica and twitter_passwords_identica to be set." );
-        return;
-    }
-
-    %friends = %nicks = ();
-
-    $twit = Net::Identica->new(
-        username => $user,
-        password => $pass,
-        source   => "twirssi"
-    );
-
-    unless ( $twit->verify_credentials() ) {
-        &notice("Login as $user failed");
-        $twit = undef;
-        if ( keys %twits ) {
-            &cmd_switch( ( keys %twits )[0], $server, $win );
-        }
-        return;
-    }
-
-    if ($twit) {
-        my $rate_limit = $twit->rate_limit_status();
-        if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
-            &notice(
-                "Rate limit exceeded, try again after $rate_limit->{reset_time}"
-            );
-            $twit = undef;
-            return;
-        }
-
-        $twits{$user} = $twit;
-        Irssi::timeout_remove($poll) if $poll;
-        $poll = Irssi::timeout_add( &get_poll_time * 1000, \&get_updates, "" );
-        &notice("Logged in as $user, loading friends list...");
-        &load_friends();
-        &notice( "loaded friends: ", scalar keys %friends );
-        if ( Irssi::settings_get_bool("twirssi_first_run") ) {
-            Irssi::settings_set_bool( "twirssi_first_run", 0 );
-            unless ( exists $friends{twirssi} ) {
-                &notice("Welcome to twirssi!"
-                      . "  Perhaps you should add \@twirssi to your friends list,"
-                      . " so you can be notified when a new version is release?"
-                      . "  Just type /twitter_friend twirssi." );
-            }
-        }
-        %nicks = %friends;
-        $nicks{$user} = 0;
-        &get_updates;
-    } else {
-        &notice("Login failed");
-    }
-}
-
-sub cmd_add_search_twitter {
+sub cmd_add_search {
     my ( $data, $server, $win ) = @_;
 
     unless ( $twit and $twit->can('search') ) {
@@ -545,33 +448,7 @@ sub cmd_add_search_twitter {
     &notice("Added subscription for '$data'");
 }
 
-sub cmd_add_search_identica {
-    my ( $data, $server, $win ) = @_;
-
-    unless ( $twit and $twit->can('search') ) {
-        &notice("ERROR: Your version of Net::Identica ($Net::Identica::VERSION) "
-              . "doesn't support searches." );
-        return;
-    }
-
-    $data =~ s/^\s+|\s+$//;
-    $data = lc $data;
-
-    unless ($data) {
-        &notice("Usage: /twitter_subscribe <topic>");
-        return;
-    }
-
-    if ( exists $id_map{__searches}{$user}{$data} ) {
-        &notice("Already had a subscription for '$data'");
-        return;
-    }
-
-    $id_map{__searches}{$user}{$data} = 1;
-    &notice("Added subscription for '$data'");
-}
-
-sub cmd_del_search_twitter {
+sub cmd_del_search {
     my ( $data, $server, $win ) = @_;
 
     unless ( $twit and $twit->can('search') ) {
@@ -584,31 +461,6 @@ sub cmd_del_search_twitter {
 
     unless ($data) {
         &notice("Usage: /twitter_unsubscribe <topic>");
-        return;
-    }
-
-    unless ( exists $id_map{__searches}{$user}{$data} ) {
-        &notice("No subscription found for '$data'");
-        return;
-    }
-
-    delete $id_map{__searches}{$user}{$data};
-    &notice("Removed subscription for '$data'");
-}
-
-sub cmd_del_search_identica {
-    my ( $data, $server, $win ) = @_;
-
-    unless ( $twit and $twit->can('search') ) {
-        &notice("ERROR: Your version of Net::Identica ($Net::Identica::VERSION) "
-              . "doesn't support searches." );
-        return;
-    }
-    $data =~ s/^\s+|\s+$//;
-    $data = lc $data;
-
-    unless ($data) {
-        &notice("Usage: /identica_unsubscribe <topic>");
         return;
     }
 
@@ -1127,6 +979,7 @@ sub monitor_child {
                     &notice("Failed to write replies to $file: $!");
                 }
             }
+            $failwhale = 0;
             return;
         }
     }
@@ -1148,6 +1001,21 @@ sub monitor_child {
             $since = sprintf( "%d:%02d", @time[ 2, 1 ] );
         } else {
             $since = scalar localtime($last_poll);
+        }
+
+        if (not $failwhale and time - $last_poll > 60*60) {
+            foreach my $whale (
+                q{     v  v        v},
+                q{     |  |  v     |  v},
+                q{     | .-, |     |  |},
+                q{  .--./ /  |  _.---.| },
+                q{   '-. (__..-"       \\},
+                q{      \\          a    |},
+                q{       ',.__.   ,__.-'/},
+                q{         '--/_.'----'`}) {
+                &notice($whale);
+            }
+            $failwhale = 1;
         }
         &notice("Haven't been able to get updated tweets since $since");
     }
@@ -1328,22 +1196,14 @@ if ($window) {
     Irssi::command_bind( "dm",                         "cmd_direct" );
     Irssi::command_bind( "dm_as",                      "cmd_direct_as" );
     Irssi::command_bind( "tweet",                      "cmd_tweet" );
-    Irssi::command_bind( "dent",                       "cmd_tweet" );
     Irssi::command_bind( "tweet_as",                   "cmd_tweet_as" );
-    Irssi::command_bind( "dent_as",                   "cmd_tweet_as" );
     Irssi::command_bind( "twitter_reply",              "cmd_reply" );
-    Irssi::command_bind( "identica_reply",             "cmd_reply" );
     Irssi::command_bind( "twitter_reply_as",           "cmd_reply_as" );
-    Irssi::command_bind( "identica_reply_as",          "cmd_reply_as" );
-    Irssi::command_bind( "twitter_login",              "cmd_login_twitter" );
-    Irssi::command_bind( "twitter_logout",             "cmd_logout_twitter" );
-    Irssi::command_bind( "identica_login",             "cmd_login_identica" );
-    Irssi::command_bind( "identica_logout",            "cmd_logout_identica" );
+    Irssi::command_bind( "twitter_login",              "cmd_login" );
+    Irssi::command_bind( "twitter_logout",             "cmd_logout" );
     Irssi::command_bind( "twitter_switch",             "cmd_switch" );
-    Irssi::command_bind( "twitter_subscribe",          "cmd_add_search_twitter" );
-    Irssi::command_bind( "identica_subscribe",         "cmd_add_search_identica" );
-    Irssi::command_bind( "twitter_unsubscribe",        "cmd_del_search_twitter" );
-    Irssi::command_bind( "identica_unsubscribe",       "cmd_del_search_identica" );
+    Irssi::command_bind( "twitter_subscribe",          "cmd_add_search" );
+    Irssi::command_bind( "twitter_unsubscribe",        "cmd_del_search" );
     Irssi::command_bind( "twitter_list_subscriptions", "cmd_list_search" );
     Irssi::command_bind( "twirssi_upgrade",            "cmd_upgrade" );
     if ( Irssi::settings_get_bool("twirssi_use_reply_aliases") ) {
@@ -1365,8 +1225,7 @@ if ($window) {
         "twirssi_version",
         sub {
             &notice("Twirssi v$VERSION (r$REV); "
-                  . "Net::Identica v$Net::Identica::VERSION. "
-		  . "Net::Twitter v$Net::Twitter::VERSION."
+                  . "Net::Twitter v$Net::Twitter::VERSION. "
                   . "JSON in use: "
                   . JSON::Any::handler()
                   . ".  See details at http://twirssi.com/" );
@@ -1394,7 +1253,7 @@ if ($window) {
     &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N (r$REV)");
     &notice("   %C(_(\\%N           http://twirssi.com/ for full docs");
     &notice(
-        "    %Y||%C `%N Log in with /twitter_login or /identica_login, send updates with /tweet or /dent");
+        "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet");
 
     my $file = Irssi::settings_get_str("twirssi_replies_store");
     if ( $file and -r $file ) {
@@ -1424,16 +1283,10 @@ if ($window) {
         }
     }
 
-    if (    my $autouser = Irssi::settings_get_str("twitter_usernames_twitter")
-        and my $autopass = Irssi::settings_get_str("twitter_passwords_twitter") )
+    if (    my $autouser = Irssi::settings_get_str("twitter_usernames")
+        and my $autopass = Irssi::settings_get_str("twitter_passwords") )
     {
-        &cmd_login_twitter();
-    }
-
-    if (    my $autouser = Irssi::settings_get_str("twitter_usernames_identica")
-        and my $autopass = Irssi::settings_get_str("twitter_passwords_identica") )
-    {
-        &cmd_login_identica();
+        &cmd_login();
     }
 
 } else {
@@ -1442,3 +1295,5 @@ if ($window) {
           . Irssi::settings_get_str('twitter_window')
           . " or change the value of twitter_window.  Then, reload twirssi." );
 }
+
+# vim: set sts=4 expandtab:
