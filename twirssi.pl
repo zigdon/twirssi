@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.0.6";
-my ($REV) = '$Rev: 487 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 488 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 487 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-24 11:27:26 -0800 (Tue, 24 Feb 2009) $',
+    changed => '$Date: 2009-02-24 13:57:57 -0800 (Tue, 24 Feb 2009) $',
 );
 
 my $window;
@@ -416,7 +416,7 @@ sub cmd_login {
         }
         %nicks = %friends;
         $nicks{$user} = 0;
-        &get_updates;
+        return 1;
     } else {
         &notice("Login failed");
     }
@@ -844,8 +844,15 @@ sub monitor_child {
     print scalar localtime, " - checking child log at $filename ($attempt)"
       if &debug;
     my $new_last_poll;
+
+    # first time we run we don't want to print out *everything*, so we just
+    # pretend
+    my $suppress = 0;
+    $suppress = 1 unless keys %tweet_cache;
+
     if ( open FILE, $filename ) {
         my @lines;
+        my %new_cache;
         while (<FILE>) {
             chomp;
             last if /^__friends__/;
@@ -858,8 +865,11 @@ sub monitor_child {
             }
 
             if ( not $meta{type} or $meta{type} ne 'searchid' ) {
-                next if exists $meta{id} and exists $tweet_cache{ $meta{id} };
-                $tweet_cache{ $meta{id} } = time;
+                $new_cache{ $meta{id} } = time;
+
+                if ( exists $meta{id} and exists $tweet_cache{ $meta{id} } ) {
+                    next;
+                }
             }
 
             my $account = "";
@@ -944,18 +954,26 @@ sub monitor_child {
 
         if ($new_last_poll) {
             print "new last_poll = $new_last_poll" if &debug;
-            for my $line (@lines) {
-                $window->printformat(
-                    $line->[0],
-                    "twirssi_" . $line->[1],
-                    @$line[ 2 .. $#$line ]
-                );
+            if ($suppress) {
+                print "First call, not printing updates" if &debug;
+            } else {
+                foreach my $line (@lines) {
+                    $window->printformat(
+                        $line->[0],
+                        "twirssi_" . $line->[1],
+                        @$line[ 2 .. $#$line ]
+                    );
+                }
             }
 
             close FILE;
             unlink $filename
               or warn "Failed to remove $filename: $!"
               unless &debug;
+
+            # commit the pending cache lines to the actual cache, now that
+            # we've printed our output
+            %tweet_cache = ( %tweet_cache, %new_cache );
 
             # keep enough cached tweets, to make sure we don't show duplicates.
             foreach ( keys %tweet_cache ) {
@@ -1218,6 +1236,11 @@ if ($window) {
             print "nicks: ",   join ", ", sort keys %nicks;
             print "searches: ", Dumper \%{ $id_map{__searches} };
             print "last poll: $last_poll";
+            if ( open DUMP, ">/tmp/twirssi.cache.txt" ) {
+                print DUMP Dumper \%tweet_cache;
+                close DUMP;
+                print "cache written out to /tmp/twirssi.cache.txt";
+            }
         }
     );
     Irssi::command_bind(
@@ -1286,6 +1309,7 @@ if ($window) {
         and my $autopass = Irssi::settings_get_str("twitter_passwords") )
     {
         &cmd_login();
+        &get_updates;
     }
 
 } else {
