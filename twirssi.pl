@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.0.6";
-my ($REV) = '$Rev: 485 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 487 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 485 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-23 14:17:26 -0800 (Mon, 23 Feb 2009) $',
+    changed => '$Date: 2009-02-24 11:27:26 -0800 (Tue, 24 Feb 2009) $',
 );
 
 my $window;
@@ -34,7 +34,7 @@ my %nicks;
 my %friends;
 my %tweet_cache;
 my %id_map;
-my $failwhale = 0;
+my $failwhale            = 0;
 my %irssi_to_mirc_colors = (
     '%k' => '01',
     '%r' => '05',
@@ -635,7 +635,7 @@ sub get_updates {
     return unless &logged_in($twit);
 
     my ( $fh, $filename ) = File::Temp::tempfile();
-    binmode($fh, ":utf8");
+    binmode( $fh, ":utf8" );
     my $pid = fork();
 
     if ($pid) {    # parent
@@ -691,10 +691,7 @@ sub do_updates {
 
     print scalar localtime, " - Polling for updates for $username" if &debug;
     my $tweets;
-    eval {
-        $tweets = $obj->friends_timeline(
-            { since => HTTP::Date::time2str($last_poll) } );
-    };
+    eval { $tweets = $obj->friends_timeline(); };
 
     if ($@) {
         print $fh
@@ -962,7 +959,7 @@ sub monitor_child {
 
             # keep enough cached tweets, to make sure we don't show duplicates.
             foreach ( keys %tweet_cache ) {
-                next if $tweet_cache{$_} >= $last_poll;
+                next if $tweet_cache{$_} >= $last_poll - 3600;
                 delete $tweet_cache{$_};
             }
             $last_poll = $new_last_poll;
@@ -1003,7 +1000,7 @@ sub monitor_child {
             $since = scalar localtime($last_poll);
         }
 
-        if (not $failwhale and time - $last_poll > 60*60) {
+        if ( not $failwhale and time - $last_poll > 60 * 60 ) {
             foreach my $whale (
                 q{     v  v        v},
                 q{     |  |  v     |  v},
@@ -1012,7 +1009,9 @@ sub monitor_child {
                 q{   '-. (__..-"       \\},
                 q{      \\          a    |},
                 q{       ',.__.   ,__.-'/},
-                q{         '--/_.'----'`}) {
+                q{         '--/_.'----'`}
+              )
+            {
                 &notice($whale);
             }
             $failwhale = 1;
