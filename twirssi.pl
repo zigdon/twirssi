@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.1.1";
-my ($REV) = '$Rev: 490 $' =~ /(\d+)/;
+$VERSION = "2.1.1beta";
+my ($REV) = '$Rev: 491 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 490 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-25 10:21:27 -0800 (Wed, 25 Feb 2009) $',
+    changed => '$Date: 2009-02-25 10:44:26 -0800 (Wed, 25 Feb 2009) $',
 );
 
 my $window;
@@ -505,7 +505,7 @@ sub cmd_upgrade {
     }
 
     my $md5;
-    unless ($data) {
+    unless ( $data or Irssi::settings_get_bool("twirssi_upgrade_beta") ) {
         eval { use Digest::MD5; };
 
         if ($@) {
@@ -539,7 +539,10 @@ sub cmd_upgrade {
         }
     }
 
-    my $URL = "http://twirssi.com/twirssi.pl";
+    my $URL =
+      Irssi::settings_get_bool("twirssi_upgrade_beta")
+      ? "http://github.com/zigdon/twirssi/raw/master/twirssi.pl"
+      : "http://twirssi.com/twirssi.pl";
     &notice("Downloading twirssi from $URL");
     LWP::Simple::getstore( $URL, "$loc.upgrade" );
 
@@ -1192,6 +1195,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
     ".irssi/scripts/twirssi.json" );
 Irssi::settings_add_str( "twirssi", "twirssi_nick_color",  "%B" );
 Irssi::settings_add_str( "twirssi", "twirssi_topic_color", "%r" );
+Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
 Irssi::settings_add_bool( "twirssi", "show_reply_context",        0 );
 Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
