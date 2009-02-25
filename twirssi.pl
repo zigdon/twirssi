@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.1.0";
-my ($REV) = '$Rev: 489 $' =~ /(\d+)/;
+$VERSION = "2.1.1";
+my ($REV) = '$Rev: 490 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 489 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-24 17:04:58 -0800 (Tue, 24 Feb 2009) $',
+    changed => '$Date: 2009-02-25 10:21:27 -0800 (Wed, 25 Feb 2009) $',
 );
 
 my $window;
@@ -911,7 +911,9 @@ sub monitor_child {
                     $meta{type}, $account, $meta{topic},
                     $meta{nick}, $marker,  $_
                   ];
-                if ( $meta{id} >
+                if (
+                    exists $id_map{__searches}{ $meta{account} }{ $meta{topic} }
+                    and $meta{id} >
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } )
                 {
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
@@ -925,7 +927,9 @@ sub monitor_child {
                   ];
             } elsif ( $meta{type} eq 'searchid' ) {
                 print "Search '$meta{topic}' returned id $meta{id}" if &debug;
-                if ( $meta{id} >=
+                if (
+                    exists $id_map{__searches}{ $meta{account} }{ $meta{topic} }
+                    and $meta{id} >=
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } )
                 {
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
@@ -1289,6 +1293,7 @@ if ($window) {
                 my $num = keys %{ $id_map{__indexes} };
                 &notice( sprintf "Loaded old replies from %d contact%s.",
                     $num, ( $num == 1 ? "" : "s" ) );
+                &cmd_list_search;
             };
         } else {
             &notice("Failed to load old replies from $file: $!");
