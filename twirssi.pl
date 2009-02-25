@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.1beta";
-my ($REV) = '$Rev: 492 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 493 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 492 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-25 14:39:58 -0800 (Wed, 25 Feb 2009) $',
+    changed => '$Date: 2009-02-25 14:44:03 -0800 (Wed, 25 Feb 2009) $',
 );
 
 my $window;
@@ -546,7 +546,7 @@ sub cmd_upgrade {
     &notice("Downloading twirssi from $URL");
     LWP::Simple::getstore( $URL, "$loc.upgrade" );
 
-    unless ($data) {
+    unless ( $data or Irssi::settings_get_bool("twirssi_upgrade_beta") ) {
         unless ( open( NEW, "$loc.upgrade" ) ) {
             &notice(
 "Failed to read $loc.upgrade.  Check that /set twirssi_location is set to the correct location."
