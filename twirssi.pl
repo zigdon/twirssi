@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.1beta";
-my ($REV) = '$Rev: 491 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 492 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 491 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-25 10:44:26 -0800 (Wed, 25 Feb 2009) $',
+    changed => '$Date: 2009-02-25 14:39:58 -0800 (Wed, 25 Feb 2009) $',
 );
 
 my $window;
@@ -868,6 +868,10 @@ sub monitor_child {
             }
 
             if ( not $meta{type} or $meta{type} ne 'searchid' ) {
+                if ( exists $meta{id} and exists $new_cache{ $meta{id} } ) {
+                    next;
+                }
+
                 $new_cache{ $meta{id} } = time;
 
                 if ( exists $meta{id} and exists $tweet_cache{ $meta{id} } ) {
