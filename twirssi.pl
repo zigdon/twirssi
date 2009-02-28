@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.1.1";
-my ($REV) = '$Rev: 494 $' =~ /(\d+)/;
+$VERSION = "2.1.2beta";
+my ($REV) = '$Rev: 497 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 494 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-25 15:20:08 -0800 (Wed, 25 Feb 2009) $',
+    changed => '$Date: 2009-02-28 11:24:31 -0800 (Sat, 28 Feb 2009) $',
 );
 
 my $window;
@@ -1215,6 +1215,10 @@ Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 $last_poll = time - &get_poll_time;
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
 if ( !$window ) {
+    Irssi::active_win()
+      ->print( "Couldn't find a window named '"
+          . Irssi::settings_get_str('twitter_window')
+          . "', trying to create it." );
     $window =
       Irssi::Windowitem::window_create(
         Irssi::settings_get_str('twitter_window'), 1 );
