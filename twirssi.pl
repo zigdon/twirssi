@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.2beta";
-my ($REV) = '$Rev: 497 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 499 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 497 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-02-28 11:24:31 -0800 (Sat, 28 Feb 2009) $',
+    changed => '$Date: 2009-03-02 12:51:50 -0800 (Mon, 02 Mar 2009) $',
 );
 
 my $window;
@@ -1002,7 +1002,7 @@ sub monitor_child {
                     print JSON JSON::Any->objToJson( \%id_map );
                     close JSON;
                 } else {
-                    &notice("Failed to write replies to $file: $!");
+                    &ccrap("Failed to write replies to $file: $!");
                 }
             }
             $failwhale = 0;
@@ -1041,11 +1041,11 @@ sub monitor_child {
                 q{         '--/_.'----'`}
               )
             {
-                &notice($whale);
+                &ccrap($whale);
             }
             $failwhale = 1;
         }
-        &notice("Haven't been able to get updated tweets since $since");
+        &ccrap("Haven't been able to get updated tweets since $since");
     }
 }
 
@@ -1055,6 +1055,10 @@ sub debug {
 
 sub notice {
     $window->print( "%R***%n @_", MSGLEVEL_PUBLIC );
+}
+
+sub ccrap {
+    $window->print( "%R***%n @_", MSGLEVEL_CLIENTCRAP );
 }
 
 sub update_away {
@@ -1070,7 +1074,7 @@ sub update_away {
             $server->send_raw("away :$data");
             return 1;
         } else {
-            &notice( "Can't find bitlbee server.",
+            &ccrap( "Can't find bitlbee server.",
                 "Update bitlbee_server or disable tweet_to_away" );
             return 0;
         }
