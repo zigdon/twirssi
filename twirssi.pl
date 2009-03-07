@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.2beta";
-my ($REV) = '$Rev: 499 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 519 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 499 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-02 12:51:50 -0800 (Mon, 02 Mar 2009) $',
+    changed => '$Date: 2009-03-07 13:30:43 -0800 (Sat, 07 Mar 2009) $',
 );
 
 my $window;
@@ -737,6 +737,12 @@ sub do_updates {
                 printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
+                if ($context->{truncated}) {
+                    printf $fh "id:%d account:%s nick:%s type:ellispis %s\n",
+                      $context->{id}."-url", $username,
+                      $context->{user}{screen_name}, 
+                      "http://twitter.com/$context->{user}{screen_name}/status/$context->{id}";
+                }
                 $reply = "reply";
             } elsif ($@) {
                 print $fh "type:debug request to get context failed: $@";
@@ -751,6 +757,12 @@ sub do_updates {
               and not Irssi::settings_get_bool("show_own_tweets");
         printf $fh "id:%d account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
+        if ($t->{truncated}) {
+            printf $fh "id:%d account:%s nick:%s type:ellispis %s\n",
+              $t->{id}."-url", $username,
+              $t->{user}{screen_name}, 
+              "http://twitter.com/$t->{user}{screen_name}/status/$t->{id}";
+        }
     }
 
     print scalar localtime, " - Polling for replies" if &debug;
@@ -772,6 +784,12 @@ sub do_updates {
         $text = &hilight($text);
         printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
+        if ($t->{truncated}) {
+            printf $fh "id:%d account:%s nick:%s type:ellispis %s\n",
+              $t->{id}."-url", $username,
+              $t->{user}{screen_name}, 
+              "http://twitter.com/$t->{user}{screen_name}/status/$t->{id}";
+        }
     }
 
     print scalar localtime, " - Polling for DMs" if &debug;
