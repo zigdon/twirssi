@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.2beta";
-my ($REV) = '$Rev: 519 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 520 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 519 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-07 13:30:43 -0800 (Sat, 07 Mar 2009) $',
+    changed => '$Date: 2009-03-07 13:31:54 -0800 (Sat, 07 Mar 2009) $',
 );
 
 my $window;
@@ -1145,8 +1145,10 @@ sub sig_complete {
       )
     {    # /twitter_reply gets a nick:num
         $word =~ s/^@//;
-        @$complist = map { "$_:$id_map{__indexes}{$_}" } grep /^\Q$word/i,
-          sort keys %{ $id_map{__indexes} };
+        @$complist = map { "$_:$id_map{__indexes}{$_}" } 
+          sort {$nicks{$b} <=> $nicks{$a}}
+          grep /^\Q$word/i,
+          keys %{ $id_map{__indexes} };
     }
 
     # /tweet, /tweet_as, /dm, /dm_as - complete @nicks (and nicks as the first
