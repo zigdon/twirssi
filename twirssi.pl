@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.2beta";
-my ($REV) = '$Rev: 520 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 521 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 520 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-07 13:31:54 -0800 (Sat, 07 Mar 2009) $',
+    changed => '$Date: 2009-03-07 13:50:54 -0800 (Sat, 07 Mar 2009) $',
 );
 
 my $window;
@@ -738,7 +738,7 @@ sub do_updates {
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
                 if ($context->{truncated}) {
-                    printf $fh "id:%d account:%s nick:%s type:ellispis %s\n",
+                    printf $fh "id:%s account:%s nick:%s type:ellispis %s\n",
                       $context->{id}."-url", $username,
                       $context->{user}{screen_name}, 
                       "http://twitter.com/$context->{user}{screen_name}/status/$context->{id}";
@@ -758,7 +758,7 @@ sub do_updates {
         printf $fh "id:%d account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
         if ($t->{truncated}) {
-            printf $fh "id:%d account:%s nick:%s type:ellispis %s\n",
+            printf $fh "id:%s account:%s nick:%s type:ellispis %s\n",
               $t->{id}."-url", $username,
               $t->{user}{screen_name}, 
               "http://twitter.com/$t->{user}{screen_name}/status/$t->{id}";
@@ -785,7 +785,7 @@ sub do_updates {
         printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
         if ($t->{truncated}) {
-            printf $fh "id:%d account:%s nick:%s type:ellispis %s\n",
+            printf $fh "id:%s account:%s nick:%s type:ellispis %s\n",
               $t->{id}."-url", $username,
               $t->{user}{screen_name}, 
               "http://twitter.com/$t->{user}{screen_name}/status/$t->{id}";
@@ -928,6 +928,12 @@ sub monitor_child {
                   [
                     ( MSGLEVEL_PUBLIC | $hilight ),
                     $meta{type}, $account, $meta{nick}, $marker, $_
+                  ];
+            } elsif ( $meta{type} eq 'ellispis' ) {
+                push @lines,
+                  [
+                    MSGLEVEL_PUBLIC,
+                    "tweet", $account, $meta{nick}, "", $_
                   ];
             } elsif ( $meta{type} eq 'search' ) {
                 push @lines,
