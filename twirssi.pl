@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.2beta";
-my ($REV) = '$Rev: 521 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 522 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 521 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-07 13:50:54 -0800 (Sat, 07 Mar 2009) $',
+    changed => '$Date: 2009-03-07 14:07:25 -0800 (Sat, 07 Mar 2009) $',
 );
 
 my $window;
@@ -354,14 +354,26 @@ sub cmd_login {
     {
         my @user = split /\s*,\s*/, $autouser;
         my @pass = split /\s*,\s*/, $autopass;
-        if ( @user != @pass ) {
+        
+        # if a password ends with a '\', it was meant to escape the comma, and
+        # it should be concatinated with the next one
+        my @unescaped;
+        while (@pass) {
+            my $p = shift @pass;
+            while ($p =~ /\\$/ and @pass) {
+                $p .= ",". shift @pass;
+            }
+            push @unescaped, $p;
+        }
+
+        if ( @user != @unescaped ) {
             &notice("Number of usernames doesn't match "
                   . "the number of passwords - auto-login failed" );
         } else {
             my ( $u, $p );
-            while ( @user and @pass ) {
+            while ( @user and @unescaped ) {
                 $u = shift @user;
-                $p = shift @pass;
+                $p = shift @unescaped;
                 &cmd_login("$u $p");
             }
             return;
