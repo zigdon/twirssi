@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.3beta";
-my ($REV) = '$Rev: 546 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 547 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 546 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-13 10:37:30 -0700 (Fri, 13 Mar 2009) $',
+    changed => '$Date: 2009-03-13 10:38:17 -0700 (Fri, 13 Mar 2009) $',
 );
 
 my $window;
@@ -336,14 +336,14 @@ sub cmd_login {
     {
         my @user = split /\s*,\s*/, $autouser;
         my @pass = split /\s*,\s*/, $autopass;
-        
+
         # if a password ends with a '\', it was meant to escape the comma, and
         # it should be concatinated with the next one
         my @unescaped;
         while (@pass) {
             my $p = shift @pass;
-            while ($p =~ /\\$/ and @pass) {
-                $p .= ",". shift @pass;
+            while ( $p =~ /\\$/ and @pass ) {
+                $p .= "," . shift @pass;
             }
             push @unescaped, $p;
         }
@@ -731,11 +731,11 @@ sub do_updates {
                 printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
-                if ($context->{truncated}) {
+                if ( $context->{truncated} ) {
                     printf $fh "id:%s account:%s nick:%s type:ellispis %s\n",
-                      $context->{id}."-url", $username,
-                      $context->{user}{screen_name}, 
-                      "http://twitter.com/$context->{user}{screen_name}/status/$context->{id}";
+                      $context->{id} . "-url", $username,
+                      $context->{user}{screen_name},
+"http://twitter.com/$context->{user}{screen_name}/status/$context->{id}";
                 }
                 $reply = "reply";
             } elsif ($@) {
@@ -751,10 +751,10 @@ sub do_updates {
               and not Irssi::settings_get_bool("show_own_tweets");
         printf $fh "id:%d account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
-        if ($t->{truncated}) {
+        if ( $t->{truncated} ) {
             printf $fh "id:%s account:%s nick:%s type:ellispis %s\n",
-              $t->{id}."-url", $username,
-              $t->{user}{screen_name}, 
+              $t->{id} . "-url", $username,
+              $t->{user}{screen_name},
               "http://twitter.com/$t->{user}{screen_name}/status/$t->{id}";
         }
     }
@@ -778,10 +778,10 @@ sub do_updates {
         $text = &hilight($text);
         printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
-        if ($t->{truncated}) {
+        if ( $t->{truncated} ) {
             printf $fh "id:%s account:%s nick:%s type:ellispis %s\n",
-              $t->{id}."-url", $username,
-              $t->{user}{screen_name}, 
+              $t->{id} . "-url", $username,
+              $t->{user}{screen_name},
               "http://twitter.com/$t->{user}{screen_name}/status/$t->{id}";
         }
     }
@@ -925,10 +925,7 @@ sub monitor_child {
                   ];
             } elsif ( $meta{type} eq 'ellispis' ) {
                 push @lines,
-                  [
-                    MSGLEVEL_PUBLIC,
-                    "tweet", $account, $meta{nick}, "", $_
-                  ];
+                  [ MSGLEVEL_PUBLIC, "tweet", $account, $meta{nick}, "", $_ ];
             } elsif ( $meta{type} eq 'search' ) {
                 push @lines,
                   [
@@ -1145,8 +1142,8 @@ sub sig_complete {
       )
     {    # /twitter_reply gets a nick:num
         $word =~ s/^@//;
-        @$complist = map { "$_:$id_map{__indexes}{$_}" } 
-          sort {$nicks{$b} <=> $nicks{$a}}
+        @$complist = map { "$_:$id_map{__indexes}{$_}" }
+          sort { $nicks{$b} <=> $nicks{$a} }
           grep /^\Q$word/i,
           keys %{ $id_map{__indexes} };
     }
@@ -1203,15 +1200,17 @@ sub shorten {
     my $data = shift;
 
     my $provider = Irssi::settings_get_str("short_url_provider");
-    if ( &too_long( $data, 1 ) and $provider )
-    {
+    if ( &too_long( $data, 1 ) and $provider ) {
         my @args;
-        if ($provider eq 'Bitly') {
-            @args[1,2] = split ',', Irssi::settings_get_str("short_url_args"), 2;
-            unless (@args == 3) {
-                &ccrap("WWW::Shorten::Bitly requires a username and API key.",
-                       "Set short_url_args to username,API_key or change your",
-                       "short_url_provider.");
+        if ( $provider eq 'Bitly' ) {
+            @args[ 1, 2 ] = split ',',
+              Irssi::settings_get_str("short_url_args"), 2;
+            unless ( @args == 3 ) {
+                &ccrap(
+                    "WWW::Shorten::Bitly requires a username and API key.",
+                    "Set short_url_args to username,API_key or change your",
+                    "short_url_provider."
+                );
                 return $data;
             }
         }
@@ -1245,12 +1244,12 @@ Irssi::theme_register(
 );
 
 Irssi::settings_add_int( "twirssi", "twitter_poll_interval", 300 );
-Irssi::settings_add_str( "twirssi", "twitter_window",     "twitter" );
-Irssi::settings_add_str( "twirssi", "bitlbee_server",     "bitlbee" );
-Irssi::settings_add_str( "twirssi", "short_url_provider", "TinyURL" );
-Irssi::settings_add_str( "twirssi", "short_url_args",         undef );
-Irssi::settings_add_str( "twirssi", "twitter_usernames", undef );
-Irssi::settings_add_str( "twirssi", "twitter_passwords", undef );
+Irssi::settings_add_str( "twirssi", "twitter_window",      "twitter" );
+Irssi::settings_add_str( "twirssi", "bitlbee_server",      "bitlbee" );
+Irssi::settings_add_str( "twirssi", "short_url_provider",  "TinyURL" );
+Irssi::settings_add_str( "twirssi", "short_url_args",      undef );
+Irssi::settings_add_str( "twirssi", "twitter_usernames",   undef );
+Irssi::settings_add_str( "twirssi", "twitter_passwords",   undef );
 Irssi::settings_add_str( "twirssi", "twirssi_nick_color",  "%B" );
 Irssi::settings_add_str( "twirssi", "twirssi_topic_color", "%r" );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
@@ -1375,8 +1374,10 @@ if ($window) {
         eval "use WWW::Shorten::$provider;";
 
         if ($@) {
-            &notice( "Failed to load WWW::Shorten::$provider - either clear",
-                     "short_url_provider or install the CPAN module");
+            &notice(
+                "Failed to load WWW::Shorten::$provider - either clear",
+                "short_url_provider or install the CPAN module"
+            );
         }
     }
 
