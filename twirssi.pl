@@ -11,8 +11,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.1.2";
-my ($REV) = '$Rev: 523 $' =~ /(\d+)/;
+$VERSION = "2.1.3beta";
+my ($REV) = '$Rev: 546 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 523 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-07 14:09:03 -0800 (Sat, 07 Mar 2009) $',
+    changed => '$Date: 2009-03-13 10:37:30 -0700 (Fri, 13 Mar 2009) $',
 );
 
 my $window;
@@ -134,16 +134,7 @@ sub cmd_tweet_as {
 
     return unless &valid_username($username);
 
-    if ( &too_long( $data, 1 )
-        and Irssi::settings_get_str("short_url_provider") )
-    {
-        foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
-            eval {
-                my $short = makeashorterlink($url);
-                $data =~ s/\Q$url/$short/g;
-            };
-        }
-    }
+    $data = &shorten($data);
 
     return if &too_long($data);
 
@@ -235,16 +226,7 @@ sub cmd_reply_as {
         $data = "\@$nick " . $data;
     }
 
-    if ( &too_long( $data, 1 ) ) {
-        if ( Irssi::settings_get_str("short_url_provider") ) {
-            foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
-                eval {
-                    my $short = makeashorterlink($url);
-                    $data =~ s/\Q$url/$short/g;
-                };
-            }
-        }
-    }
+    $data = &shorten($data);
 
     return if &too_long($data);
 
@@ -1217,6 +1199,39 @@ sub hilight {
     return $text;
 }
 
+sub shorten {
+    my $data = shift;
+
+    my $provider = Irssi::settings_get_str("short_url_provider");
+    if ( &too_long( $data, 1 ) and $provider )
+    {
+        my @args;
+        if ($provider eq 'Bitly') {
+            @args[1,2] = split ',', Irssi::settings_get_str("short_url_args"), 2;
+            unless (@args == 3) {
+                &ccrap("WWW::Shorten::Bitly requires a username and API key.",
+                       "Set short_url_args to username,API_key or change your",
+                       "short_url_provider.");
+                return $data;
+            }
+        }
+
+        foreach my $url ( $data =~ /(https?:\/\/\S+[\w\/])/g ) {
+            eval {
+                $args[0] = $url;
+                my $short = makeashorterlink(@args);
+                if ($short) {
+                    $data =~ s/\Q$url/$short/g;
+                } else {
+                    &notice("Failed to shorten $url!");
+                }
+            };
+        }
+    }
+
+    return $data;
+}
+
 Irssi::signal_add( "send text", "event_send_text" );
 
 Irssi::theme_register(
@@ -1233,14 +1248,15 @@ Irssi::settings_add_int( "twirssi", "twitter_poll_interval", 300 );
 Irssi::settings_add_str( "twirssi", "twitter_window",     "twitter" );
 Irssi::settings_add_str( "twirssi", "bitlbee_server",     "bitlbee" );
 Irssi::settings_add_str( "twirssi", "short_url_provider", "TinyURL" );
-Irssi::settings_add_str( "twirssi", "twirssi_location",
-    ".irssi/scripts/twirssi.pl" );
+Irssi::settings_add_str( "twirssi", "short_url_args",         undef );
 Irssi::settings_add_str( "twirssi", "twitter_usernames", undef );
 Irssi::settings_add_str( "twirssi", "twitter_passwords", undef );
-Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
-    ".irssi/scripts/twirssi.json" );
 Irssi::settings_add_str( "twirssi", "twirssi_nick_color",  "%B" );
 Irssi::settings_add_str( "twirssi", "twirssi_topic_color", "%r" );
+Irssi::settings_add_str( "twirssi", "twirssi_location",
+    ".irssi/scripts/twirssi.pl" );
+Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
+    ".irssi/scripts/twirssi.json" );
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
 Irssi::settings_add_bool( "twirssi", "show_reply_context",        0 );
@@ -1355,12 +1371,12 @@ if ($window) {
     }
 
     if ( my $provider = Irssi::settings_get_str("short_url_provider") ) {
+        &notice("Loading WWW::Shorten::$provider...");
         eval "use WWW::Shorten::$provider;";
 
         if ($@) {
-            &notice(
-"Failed to load WWW::Shorten::$provider - either clear short_url_provider or install the CPAN module"
-            );
+            &notice( "Failed to load WWW::Shorten::$provider - either clear",
+                     "short_url_provider or install the CPAN module");
         }
     }
 
