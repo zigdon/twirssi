@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.3beta";
-my ($REV) = '$Rev: 547 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 548 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 547 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-13 10:38:17 -0700 (Fri, 13 Mar 2009) $',
+    changed => '$Date: 2009-03-13 10:45:47 -0700 (Fri, 13 Mar 2009) $',
 );
 
 my $window;
@@ -1200,7 +1200,14 @@ sub shorten {
     my $data = shift;
 
     my $provider = Irssi::settings_get_str("short_url_provider");
-    if ( &too_long( $data, 1 ) and $provider ) {
+    if (
+        (
+            Irssi::settings_get_bool("twirssi_always_shorten")
+            or &too_long( $data, 1 )
+        )
+        and $provider
+      )
+    {
         my @args;
         if ( $provider eq 'Bitly' ) {
             @args[ 1, 2 ] = split ',',
@@ -1267,6 +1274,7 @@ Irssi::settings_add_bool( "twirssi", "twirssi_replies_autonick",  1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_notify_timeouts",   1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_hilights",          1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_always_shorten",    0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 
 $last_poll = time - &get_poll_time;
