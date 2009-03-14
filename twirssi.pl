@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.3beta";
-my ($REV) = '$Rev: 549 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 550 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 549 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-14 14:06:07 -0700 (Sat, 14 Mar 2009) $',
+    changed => '$Date: 2009-03-14 14:10:35 -0700 (Sat, 14 Mar 2009) $',
 );
 
 my $window;
@@ -1272,7 +1272,9 @@ sub normalize_username {
     my $user = shift;
 
     my ( $username, $service ) = split /\@/, $user, 2;
-    unless ($service) {
+    if ($service) {
+        $service = ucfirst lc $service;
+    } else {
         $service =
           ucfirst lc Irssi::settings_get_str("twirssi_default_service");
         unless ( exists $twits{"$username\@$service"} ) {
