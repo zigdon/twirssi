@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.3beta";
-my ($REV) = '$Rev: 551 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 554 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 551 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-15 18:00:12 -0700 (Sun, 15 Mar 2009) $',
+    changed => '$Date: 2009-03-15 23:09:56 -0700 (Sun, 15 Mar 2009) $',
 );
 
 my $window;
@@ -938,8 +938,8 @@ sub monitor_child {
 
             my $hilight_color =
               $irssi_to_mirc_colors{ Irssi::settings_get_str("hilight_color") };
-            if ( ( $_ =~ /\@$meta{account}\W/i )
-                && Irssi::settings_get_bool("twirssi_hilights") )
+            if ( $_ eq '@'.substr($meta{account}, 0, index($meta{account}, "@"))
+                and Irssi::settings_get_bool("twirssi_hilights") )
             {
                 $meta{nick} = "\cC$hilight_color$meta{nick}\cO";
                 $hilight = MSGLEVEL_HILIGHT;
