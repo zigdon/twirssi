@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.1.3beta";
-my ($REV) = '$Rev: 550 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 551 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 550 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-14 14:10:35 -0700 (Sat, 14 Mar 2009) $',
+    changed => '$Date: 2009-03-15 18:00:12 -0700 (Sun, 15 Mar 2009) $',
 );
 
 my $window;
@@ -1361,6 +1361,7 @@ if ($window) {
     Irssi::command_bind( "twitter_unsubscribe",        "cmd_del_search" );
     Irssi::command_bind( "twitter_list_subscriptions", "cmd_list_search" );
     Irssi::command_bind( "twirssi_upgrade",            "cmd_upgrade" );
+    Irssi::command_bind( "twitter_updates",            "get_updates" );
     if ( Irssi::settings_get_bool("twirssi_use_reply_aliases") ) {
         Irssi::command_bind( "reply",    "cmd_reply" );
         Irssi::command_bind( "reply_as", "cmd_reply_as" );
@@ -1408,7 +1409,14 @@ if ($window) {
             sub { &notice("Stopped following $_[0]"); delete $nicks{ $_[0] }; }
         )
     );
-    Irssi::command_bind( "twitter_updates", "get_updates" );
+    Irssi::command_bind(
+        "twitter_device_updates",
+        &gen_cmd(
+            "/twitter_device_updates none|im|sms",
+            "update_delivery_device",
+            sub { &notice("Device updated to $_[0]"); }
+        )
+    );
     Irssi::signal_add_last( 'complete word' => \&sig_complete );
 
     &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N (r$REV)");
