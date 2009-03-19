@@ -10,8 +10,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.2.0";
-my ($REV) = '$Rev: 559 $' =~ /(\d+)/;
+$VERSION = "2.2.1beta";
+my ($REV) = '$Rev: 569 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 559 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-16 15:34:12 -0700 (Mon, 16 Mar 2009) $',
+    changed => '$Date: 2009-03-19 11:44:03 -0700 (Thu, 19 Mar 2009) $',
 );
 
 my $window;
@@ -747,15 +747,14 @@ sub do_updates {
             if ($context) {
                 my $ctext = decode_entities( $context->{text} );
                 $ctext = &hilight($ctext);
+                if ( $context->{truncated} and ref($obj) ne 'Net::Identica' ) {
+                    $ctext .=
+                        " -- http://twitter.com/$context->{user}{screen_name}"
+                      . "/status/$context->{id}";
+                }
                 printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
-                if ( $context->{truncated} and ref($obj) ne 'Net::Identica' ) {
-                    printf $fh "id:%s account:%s nick:%s type:ellispis %s\n",
-                      $context->{id} . "-url", $username,
-                      $context->{user}{screen_name},
-"http://twitter.com/$context->{user}{screen_name}/status/$context->{id}";
-                }
                 $reply = "reply";
             } elsif ($@) {
                 print $fh "type:debug request to get context failed: $@";
@@ -768,14 +767,12 @@ sub do_updates {
         next
           if $t->{user}{screen_name} eq $username
               and not Irssi::settings_get_bool("show_own_tweets");
+        if ( $t->{truncated} and ref($obj) ne 'Net::Identica' ) {
+            $text .= " -- http://twitter.com/$t->{user}{screen_name}"
+              . "/status/$t->{id}";
+        }
         printf $fh "id:%d account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
-        if ( $t->{truncated} and ref($obj) ne 'Net::Identica' ) {
-            printf $fh "id:%s account:%s nick:%s type:ellispis %s\n",
-              $t->{id} . "-url", $username,
-              $t->{user}{screen_name},
-              "http://twitter.com/$t->{user}{screen_name}/status/$t->{id}";
-        }
     }
 
     print scalar localtime, " - Polling for replies" if &debug;
@@ -795,14 +792,12 @@ sub do_updates {
 
         my $text = decode_entities( $t->{text} );
         $text = &hilight($text);
+        if ( $t->{truncated} ) {
+            $text .= " -- http://twitter.com/$t->{user}{screen_name}"
+              . "/status/$t->{id}";
+        }
         printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
-        if ( $t->{truncated} ) {
-            printf $fh "id:%s account:%s nick:%s type:ellispis %s\n",
-              $t->{id} . "-url", $username,
-              $t->{user}{screen_name},
-              "http://twitter.com/$t->{user}{screen_name}/status/$t->{id}";
-        }
     }
 
     print scalar localtime, " - Polling for DMs" if &debug;
@@ -953,9 +948,6 @@ sub monitor_child {
                     ( MSGLEVEL_PUBLIC | $hilight ),
                     $meta{type}, $account, $meta{nick}, $marker, $_
                   ];
-            } elsif ( $meta{type} eq 'ellispis' ) {
-                push @lines,
-                  [ MSGLEVEL_PUBLIC, "tweet", $account, $meta{nick}, "", $_ ];
             } elsif ( $meta{type} eq 'search' ) {
                 push @lines,
                   [
