@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.1beta";
-my ($REV) = '$Rev: 569 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 597 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 569 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-03-19 11:44:03 -0700 (Thu, 19 Mar 2009) $',
+    changed => '$Date: 2009-04-05 19:22:22 -0700 (Sun, 05 Apr 2009) $',
 );
 
 my $window;
@@ -104,6 +104,105 @@ sub cmd_direct_as {
     }
 }
 
+sub cmd_retweet {
+    my ( $data, $server, $win ) = @_;
+
+    return unless &logged_in($twit);
+
+    $data =~ s/^\s+|\s+$//;
+    unless ($data) {
+        &notice("Usage: /retweet <nick[:num]> [comment]");
+        return;
+    }
+
+    my ( $id, $data ) = split ' ', $data, 2;
+
+    &cmd_retweet_as( "$user $id $data", $server, $win );
+}
+
+sub cmd_retweet_as {
+    my ( $data, $server, $win ) = @_;
+
+    unless ( Irssi::settings_get_bool("twirssi_track_replies") ) {
+        &notice("twirssi_track_replies is required in order to reteet.");
+        return;
+    }
+
+    return unless &logged_in($twit);
+
+    $data =~ s/^\s+|\s+$//;
+    my ( $username, $id, $data ) = split ' ', $data, 3;
+
+    unless ( $username ) {
+        &notice("Usage: /retweet_as <username> <nick[:num]> [comment]");
+        return;
+    }
+
+    return unless $username = &valid_username($username);
+
+    my $nick;
+    $id =~ s/[^\w\d\-:]+//g;
+    ( $nick, $id ) = split /:/, $id;
+    unless ( exists $id_map{ lc $nick } ) {
+        &notice("Can't find a tweet from $nick to retweet!");
+        return;
+    }
+
+    $id = $id_map{__indexes}{$nick} unless $id;
+    unless ( $id_map{ lc $nick }[$id] ) {
+        &notice("Can't find a tweet numbered $id from $nick to retweet!");
+        return;
+    }
+
+    unless ( $id_map{__tweets}{ lc $nick }[$id] ) {
+        &notice("The text of this tweet isn't saved, sorry!");
+        return;
+    }
+
+# Irssi::settings_add_str( "twirssi", "twirssi_retweet_format", 'RT $n: $t ${-- $c$}' );
+    my $text = Irssi::settings_get_str("twirssi_retweet_format");
+    $text =~ s/\$n/$nick/g;
+    if ($data) {
+        $text =~ s/\${|\$}//g;
+        $text =~ s/\$c/$data/;
+    } else {
+        $text =~ s/\${.*?\$}//;
+    }
+    $text =~ s/\$t/$id_map{__tweets}{ lc $nick }[$id]/;
+
+    $data = &shorten($text);
+
+    return if &too_long($data);
+
+    my $success = 1;
+    eval {
+        unless (
+            $twits{$username}->update(
+                {
+                    status                => $data,
+                    in_reply_to_status_id => $id_map{ lc $nick }[$id]
+                }
+            )
+          )
+        {
+            &notice("Update failed");
+            $success = 0;
+        }
+    };
+    return unless $success;
+
+    if ($@) {
+        &notice("Update caused an error: $@.  Aborted");
+        return;
+    }
+
+    foreach ( $data =~ /@([-\w]+)/ ) {
+        $nicks{$1} = time;
+    }
+
+    &notice("Retweet sent");
+}
+
 sub cmd_tweet {
     my ( $data, $server, $win ) = @_;
 
@@ -173,10 +272,9 @@ sub cmd_reply {
         return;
     }
 
-    $data =~ s/^\s+|\s+$//;
     my ( $id, $data ) = split ' ', $data, 2;
     unless ( $id and $data ) {
-        &notice("Usage: /reply_as <nick[:num]> <update>");
+        &notice("Usage: /reply <nick[:num]> <update>");
         return;
     }
 
@@ -926,9 +1024,10 @@ sub monitor_child {
                 and $meta{id} )
             {
                 $marker = ( $id_map{__indexes}{ $meta{nick} } + 1 ) % 100;
-                $id_map{ lc $meta{nick} }[$marker] = $meta{id};
-                $id_map{__indexes}{ $meta{nick} }  = $marker;
-                $marker                            = ":$marker";
+                $id_map{ lc $meta{nick} }[$marker]           = $meta{id};
+                $id_map{__indexes}{ $meta{nick} }            = $marker;
+                $id_map{__tweets}{ lc $meta{nick} }[$marker] = $_;
+                $marker                                      = ":$marker";
             }
 
             my $hilight_color =
@@ -1160,7 +1259,7 @@ sub sig_complete {
     my ( $complist, $window, $word, $linestart, $want_space ) = @_;
 
     if (
-        $linestart =~ /^\/twitter_reply(?:_as)?\s*$/
+        $linestart =~ /^\/(?:retweet|twitter_reply)(?:_as)?\s*$/
         or ( Irssi::settings_get_bool("twirssi_use_reply_aliases")
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
@@ -1310,6 +1409,8 @@ Irssi::settings_add_str( "twirssi", "twitter_passwords",       undef );
 Irssi::settings_add_str( "twirssi", "twirssi_default_service", "Twitter" );
 Irssi::settings_add_str( "twirssi", "twirssi_nick_color",      "%B" );
 Irssi::settings_add_str( "twirssi", "twirssi_topic_color",     "%r" );
+Irssi::settings_add_str( "twirssi", "twirssi_retweet_format",
+    'RT $n: "$t" ${-- $c$}' );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
     ".irssi/scripts/twirssi.pl" );
 Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
@@ -1346,6 +1447,8 @@ if ($window) {
     Irssi::command_bind( "dm_as",                      "cmd_direct_as" );
     Irssi::command_bind( "tweet",                      "cmd_tweet" );
     Irssi::command_bind( "tweet_as",                   "cmd_tweet_as" );
+    Irssi::command_bind( "retweet",                    "cmd_retweet" );
+    Irssi::command_bind( "retweet_as",                 "cmd_retweet_as" );
     Irssi::command_bind( "twitter_reply",              "cmd_reply" );
     Irssi::command_bind( "twitter_reply_as",           "cmd_reply_as" );
     Irssi::command_bind( "twitter_login",              "cmd_login" );
