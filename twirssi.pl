@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.1beta";
-my ($REV) = '$Rev: 597 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 599 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 597 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-04-05 19:22:22 -0700 (Sun, 05 Apr 2009) $',
+    changed => '$Date: 2009-04-07 07:49:19 -0700 (Tue, 07 Apr 2009) $',
 );
 
 my $window;
@@ -161,7 +161,7 @@ sub cmd_retweet_as {
 
 # Irssi::settings_add_str( "twirssi", "twirssi_retweet_format", 'RT $n: $t ${-- $c$}' );
     my $text = Irssi::settings_get_str("twirssi_retweet_format");
-    $text =~ s/\$n/$nick/g;
+    $text =~ s/\$n/\@$nick/g;
     if ($data) {
         $text =~ s/\${|\$}//g;
         $text =~ s/\$c/$data/;
