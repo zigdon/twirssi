@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.1beta";
-my ($REV) = '$Rev: 599 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 607 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 599 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-04-07 07:49:19 -0700 (Tue, 07 Apr 2009) $',
+    changed => '$Date: 2009-04-09 21:22:55 -0700 (Thu, 09 Apr 2009) $',
 );
 
 my $window;
@@ -133,7 +133,7 @@ sub cmd_retweet_as {
     $data =~ s/^\s+|\s+$//;
     my ( $username, $id, $data ) = split ' ', $data, 3;
 
-    unless ( $username ) {
+    unless ($username) {
         &notice("Usage: /retweet_as <username> <nick[:num]> [comment]");
         return;
     }
@@ -765,8 +765,9 @@ sub get_updates {
         my $new_poll = time;
 
         my $error = 0;
+        my %context_cache;
         foreach ( keys %twits ) {
-            $error += &do_updates( $fh, $_, $twits{$_} );
+            $error++ unless &do_updates( $fh, $_, $twits{$_}, \%context_cache );
         }
 
         my ( $added, $removed ) = &load_friends($fh);
@@ -784,9 +785,9 @@ sub get_updates {
 
         if ($error) {
             print $fh "type:debug Update encountered errors.  Aborted\n";
-            print $fh $last_poll;
+            print $fh "-- $last_poll";
         } else {
-            print $fh $new_poll;
+            print $fh "-- $new_poll";
         }
         close $fh;
         exit;
@@ -795,36 +796,47 @@ sub get_updates {
 }
 
 sub do_updates {
-    my ( $fh, $username, $obj ) = @_;
+    my ( $fh, $username, $obj, $cache ) = @_;
 
     my $rate_limit = $obj->rate_limit_status();
     if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
         &notice("Rate limit exceeded for $username");
-        return 1;
+        return undef;
     }
 
     print scalar localtime, " - Polling for updates for $username" if &debug;
     my $tweets;
-    eval { $tweets = $obj->friends_timeline(); };
+    my $new_poll_id = 0;
+    eval {
+        if ( $id_map{__last_id}{$username}{timeline} )
+        {
+            $tweets = $obj->friends_timeline(
+                { since_id => $id_map{__last_id}{$username}{timeline} } );
+        } else {
+            $tweets = $obj->friends_timeline();
+        }
+    };
 
     if ($@) {
-        print $fh
-          "type:debug Error during friends_timeline call: $@.  Aborted.\n";
-        return 1;
+        print $fh "type:debug Error during friends_timeline call: Aborted.\n";
+        print $fh "type:debug : $_\n" foreach split /\n/, Dumper($@);
+        return undef;
     }
 
     unless ( ref $tweets ) {
         if ( $obj->can("get_error") ) {
-            my $error;
+            my $error = "Unknown error";
             eval { $error = JSON::Any->jsonToObj( $obj->get_error() ) };
-            if ($@) { $error = $obj->get_error() }
-            print $fh "type:debug API Error during friends_timeline call: ",
-              "$error  Aborted.\n";
+            unless ($@) { $error = $obj->get_error() }
+            print $fh
+              "type:debug API Error during friends_timeline call: Aborted\n";
+            print $fh "type:debug : $_\n" foreach split /\n/, Dumper($error);
+
         } else {
             print $fh
               "type:debug API Error during friends_timeline call. Aborted.\n";
         }
-        return 1;
+        return undef;
     }
 
     foreach my $t ( reverse @$tweets ) {
@@ -838,9 +850,14 @@ sub do_updates {
         {
             $nicks{ $t->{in_reply_to_screen_name} } = time;
             my $context;
-            eval {
-                $context = $obj->show_status( $t->{in_reply_to_status_id} );
-            };
+            unless ( $cache->{ $t->{in_reply_to_status_id} } ) {
+                eval {
+                    $cache->{ $t->{in_reply_to_status_id} } =
+                      $obj->show_status( $t->{in_reply_to_status_id} );
+                };
+
+            }
+            $context = $cache->{ $t->{in_reply_to_status_id} };
 
             if ($context) {
                 my $ctext = decode_entities( $context->{text} );
@@ -854,12 +871,6 @@ sub do_updates {
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
                 $reply = "reply";
-            } elsif ($@) {
-                print $fh "type:debug request to get context failed: $@";
-            } else {
-                print $fh
-"type:debug Failed to get context from $t->{in_reply_to_screen_name}\n"
-                  if &debug;
             }
         }
         next
@@ -871,17 +882,27 @@ sub do_updates {
         }
         printf $fh "id:%d account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
+        $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
+    printf $fh "id:%d account:%s type:last_id timeline\n",
+      $new_poll_id, $username;
 
     print scalar localtime, " - Polling for replies" if &debug;
+    $new_poll_id = 0;
     eval {
-        $tweets = $obj->replies( { since => HTTP::Date::time2str($last_poll) } )
-          || [];
+        if ( $id_map{__last_id}{$username}{reply} )
+        {
+            $tweets = $obj->replies(
+                { since_id => $id_map{__last_id}{$username}{reply} } )
+              || [];
+        } else {
+            $tweets = $obj->replies() || [];
+        }
     };
 
     if ($@) {
         print $fh "type:debug Error during replies call.  Aborted.\n";
-        return 1;
+        return undef;
     }
 
     foreach my $t ( reverse @$tweets ) {
@@ -896,18 +917,26 @@ sub do_updates {
         }
         printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
+        $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
+    printf $fh "id:%d account:%s type:last_id reply\n", $new_poll_id, $username;
 
     print scalar localtime, " - Polling for DMs" if &debug;
+    $new_poll_id = 0;
     eval {
-        $tweets =
-          $obj->direct_messages( { since => HTTP::Date::time2str($last_poll) } )
-          || [];
+        if ( $id_map{__last_id}{$username}{dm} )
+        {
+            $tweets = $obj->direct_messages(
+                { since_id => $id_map{__last_id}{$username}{dm} } )
+              || [];
+        } else {
+            $tweets = $obj->direct_messages() || [];
+        }
     };
 
     if ($@) {
         print $fh "type:debug Error during direct_messages call.  Aborted.\n";
-        return 1;
+        return undef;
     }
 
     foreach my $t ( reverse @$tweets ) {
@@ -915,7 +944,9 @@ sub do_updates {
         $text = &hilight($text);
         printf $fh "id:%d account:%s nick:%s type:dm %s\n",
           $t->{id}, $username, $t->{sender_screen_name}, $text;
+        $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
+    printf $fh "id:%d account:%s type:last_id dm\n", $new_poll_id, $username;
 
     print scalar localtime, " - Polling for subscriptions" if &debug;
     if ( $obj->can('search') and $id_map{__searches}{$username} ) {
@@ -935,14 +966,13 @@ sub do_updates {
             if ($@) {
                 print $fh
                   "type:debug Error during search($topic) call.  Aborted.\n";
-                return 1;
+                return undef;
             }
 
             unless ( $search->{max_id} ) {
-                print $fh
-"type:debug Invalid search results when searching for $topic.",
-                  "  Aborted.\n";
-                return 1;
+                print $fh "type:debug Invalid search results when searching",
+                  " for $topic. Aborted.\n";
+                return undef;
             }
 
             $id_map{__searches}{$username}{$topic} = $search->{max_id};
@@ -954,13 +984,16 @@ sub do_updates {
                 $text = &hilight($text);
                 printf $fh "id:%d account:%s nick:%s type:search topic:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic, $text;
+                $new_poll_id = $t->{id}
+                  if not $new_poll_id
+                      or $t->{id} < $new_poll_id;
             }
         }
     }
 
     print scalar localtime, " - Done" if &debug;
 
-    return 0;
+    return 1;
 }
 
 sub monitor_child {
@@ -970,7 +1003,7 @@ sub monitor_child {
 
     print scalar localtime, " - checking child log at $filename ($attempt)"
       if &debug;
-    my $new_last_poll;
+    my ($new_last_poll);
 
     # first time we run we don't want to print out *everything*, so we just
     # pretend
@@ -985,13 +1018,14 @@ sub monitor_child {
             last if /^__friends__/;
             my $hilight = 0;
             my %meta;
+
             foreach my $key (qw/id account nick type topic/) {
                 if (s/^$key:(\S+)\s*//) {
                     $meta{$key} = $1;
                 }
             }
 
-            if ( not $meta{type} or $meta{type} ne 'searchid' ) {
+            if ( not $meta{type} or $meta{type} !~ /searchid|last_id/ ) {
                 if ( exists $meta{id} and exists $new_cache{ $meta{id} } ) {
                     next;
                 }
@@ -1004,17 +1038,17 @@ sub monitor_child {
             }
 
             my $account = "";
-            if ( lc $meta{account} ne lc "$user\@$defservice" ) {
-                $meta{account} =~ s/\@(\w+)$//;
-                my $service = $1;
-                if (
-                    lc $service eq
-                    lc Irssi::settings_get_str("twirssi_default_service") )
-                {
-                    $account = "$meta{account}: ";
-                } else {
-                    $account = "$meta{account}\@$service: ";
-                }
+            $meta{account} =~ s/\@(\w+)$//;
+            $meta{service} = $1;
+            if (
+                lc $meta{service} eq
+                lc Irssi::settings_get_str("twirssi_default_service") )
+            {
+                $account = "$meta{account}: "
+                  if lc "$meta{account}\@$meta{service}" ne lc
+                      "$user\@$defservice";
+            } else {
+                $account = "$meta{account}\@$meta{service}: ";
             }
 
             my $marker = "";
@@ -1080,6 +1114,11 @@ sub monitor_child {
                 } elsif (&debug) {
                     print "Search '$meta{topic}' returned invalid id $meta{id}";
                 }
+            } elsif ( $meta{type} eq 'last_id' ) {
+                $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} =
+                  $meta{id}
+                  if $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
+                      $meta{id};
             } elsif ( $meta{type} eq 'error' ) {
                 push @lines, [ MSGLEVEL_MSGS, $_ ];
             } elsif ( $meta{type} eq 'debug' ) {
@@ -1091,8 +1130,8 @@ sub monitor_child {
 
         %friends = ();
         while (<FILE>) {
-            if (/^\d+$/) {
-                $new_last_poll = $_;
+            if (/^-- (\d+)$/) {
+                ($new_last_poll) = ($1);
                 last;
             }
             my ( $f, $t ) = split ' ', $_;
@@ -1100,7 +1139,8 @@ sub monitor_child {
         }
 
         if ($new_last_poll) {
-            print "new last_poll = $new_last_poll" if &debug;
+            print "new last_poll    = $new_last_poll" if &debug;
+            print "new last_poll_id = ", Dumper( $id_map{__last_id} ) if &debug;
             if ($suppress) {
                 print "First call, not printing updates" if &debug;
             } else {
