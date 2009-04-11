@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.1beta";
-my ($REV) = '$Rev: 607 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 610 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 607 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-04-09 21:22:55 -0700 (Thu, 09 Apr 2009) $',
+    changed => '$Date: 2009-04-10 23:30:55 -0700 (Fri, 10 Apr 2009) $',
 );
 
 my $window;
@@ -810,8 +810,7 @@ sub do_updates {
     eval {
         if ( $id_map{__last_id}{$username}{timeline} )
         {
-            $tweets = $obj->friends_timeline(
-                { since_id => $id_map{__last_id}{$username}{timeline} } );
+            $tweets = $obj->friends_timeline( { count => 100 } );
         } else {
             $tweets = $obj->friends_timeline();
         }
