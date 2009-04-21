@@ -10,8 +10,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.2.2beta";
-my ($REV) = '$Rev: 614 $' =~ /(\d+)/;
+$VERSION = "2.2.2";
+my ($REV) = '$Rev: 615 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 614 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-04-20 20:24:00 -0700 (Mon, 20 Apr 2009) $',
+    changed => '$Date: 2009-04-20 20:26:08 -0700 (Mon, 20 Apr 2009) $',
 );
 
 my $window;
