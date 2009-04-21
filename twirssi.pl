@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.2beta";
-my ($REV) = '$Rev: 612 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 614 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 612 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-04-17 16:02:53 -0700 (Fri, 17 Apr 2009) $',
+    changed => '$Date: 2009-04-20 20:24:00 -0700 (Mon, 20 Apr 2009) $',
 );
 
 my $window;
@@ -552,12 +552,12 @@ sub cmd_add_search {
         return;
     }
 
-    if ( exists $id_map{__searches}{$user}{$data} ) {
+    if ( exists $id_map{__searches}{"$user\@$defservice"}{$data} ) {
         &notice("Already had a subscription for '$data'");
         return;
     }
 
-    $id_map{__searches}{$user}{$data} = 1;
+    $id_map{__searches}{"$user\@$defservice"}{$data} = 1;
     &notice("Added subscription for '$data'");
 }
 
@@ -577,12 +577,12 @@ sub cmd_del_search {
         return;
     }
 
-    unless ( exists $id_map{__searches}{$user}{$data} ) {
+    unless ( exists $id_map{__searches}{"$user\@$defservice"}{$data} ) {
         &notice("No subscription found for '$data'");
         return;
     }
 
-    delete $id_map{__searches}{$user}{$data};
+    delete $id_map{__searches}{"$user\@$defservice"}{$data};
     &notice("Removed subscription for '$data'");
 }
 
