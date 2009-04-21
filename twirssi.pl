@@ -10,8 +10,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.2.2";
-my ($REV) = '$Rev: 615 $' =~ /(\d+)/;
+$VERSION = "2.2.3beta";
+my ($REV) = '$Rev: 616 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 615 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-04-20 20:26:08 -0700 (Mon, 20 Apr 2009) $',
+    changed => '$Date: 2009-04-21 12:20:40 -0700 (Tue, 21 Apr 2009) $',
 );
 
 my $window;
@@ -30,6 +30,7 @@ my $user;
 my $defservice;
 my $poll;
 my $last_poll;
+my $last_friends_poll = time;
 my %nicks;
 my %friends;
 my %tweet_cache;
@@ -770,14 +771,22 @@ sub get_updates {
             $error++ unless &do_updates( $fh, $_, $twits{$_}, \%context_cache );
         }
 
-        my ( $added, $removed ) = &load_friends($fh);
-        if ( $added + $removed ) {
-            print $fh "type:debug %R***%n Friends list updated: ",
-              join( ", ",
-                sprintf( "%d added",   $added ),
-                sprintf( "%d removed", $removed ) ),
-              "\n";
+        if (
+            time - $last_friends_poll >
+            Irssi::settings_get_int('twitter_friends_poll') )
+        {
+            my ( $added, $removed ) = &load_friends($fh);
+            if ( $added + $removed ) {
+                print $fh "type:debug %R***%n Friends list updated: ",
+                  join( ", ",
+                    sprintf( "%d added",   $added ),
+                    sprintf( "%d removed", $removed ) ),
+                  "\n";
+            }
+
+            $last_friends_poll = time;
         }
+
         print $fh "__friends__\n";
         foreach ( sort keys %friends ) {
             print $fh "$_ $friends{$_}\n";
@@ -1461,6 +1470,9 @@ Irssi::settings_add_str( "twirssi", "twirssi_location",
     ".irssi/scripts/twirssi.pl" );
 Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
     ".irssi/scripts/twirssi.json" );
+
+Irssi::settings_add_int( "twirssi", "twitter_friends_poll", 600 );
+
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
 Irssi::settings_add_bool( "twirssi", "show_reply_context",        0 );
