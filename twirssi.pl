@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.3beta";
-my ($REV) = '$Rev: 616 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 618 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 616 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-04-21 12:20:40 -0700 (Tue, 21 Apr 2009) $',
+    changed => '$Date: 2009-04-22 16:03:14 -0700 (Wed, 22 Apr 2009) $',
 );
 
 my $window;
@@ -30,12 +30,14 @@ my $user;
 my $defservice;
 my $poll;
 my $last_poll;
-my $last_friends_poll = time;
+my $last_friends_poll = 0;
 my %nicks;
 my %friends;
 my %tweet_cache;
 my %id_map;
-my $failwhale            = 0;
+my $failwhale  = 0;
+my $first_call = 1;
+
 my %irssi_to_mirc_colors = (
     '%k' => '01',
     '%r' => '05',
@@ -771,10 +773,12 @@ sub get_updates {
             $error++ unless &do_updates( $fh, $_, $twits{$_}, \%context_cache );
         }
 
+        print $fh "__friends__\n";
         if (
             time - $last_friends_poll >
             Irssi::settings_get_int('twitter_friends_poll') )
         {
+            print $fh "__updated ", time, "\n";
             my ( $added, $removed ) = &load_friends($fh);
             if ( $added + $removed ) {
                 print $fh "type:debug %R***%n Friends list updated: ",
@@ -783,11 +787,8 @@ sub get_updates {
                     sprintf( "%d removed", $removed ) ),
                   "\n";
             }
-
-            $last_friends_poll = time;
         }
 
-        print $fh "__friends__\n";
         foreach ( sort keys %friends ) {
             print $fh "$_ $friends{$_}\n";
         }
@@ -1015,15 +1016,17 @@ sub monitor_child {
 
     # first time we run we don't want to print out *everything*, so we just
     # pretend
-    my $suppress = 0;
-    $suppress = 1 unless keys %tweet_cache;
 
     if ( open FILE, $filename ) {
         my @lines;
         my %new_cache;
         while (<FILE>) {
-            chomp;
             last if /^__friends__/;
+            unless (/\n$/) {    # skip partial lines
+                                # print "Skipping partial line: $_" if &debug;
+                next;
+            }
+            chomp;
             my $hilight = 0;
             my %meta;
 
@@ -1113,8 +1116,9 @@ sub monitor_child {
             } elsif ( $meta{type} eq 'searchid' ) {
                 print "Search '$meta{topic}' returned id $meta{id}" if &debug;
                 if (
+                    not
                     exists $id_map{__searches}{ $meta{account} }{ $meta{topic} }
-                    and $meta{id} >=
+                    or $meta{id} >=
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } )
                 {
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
@@ -1138,6 +1142,12 @@ sub monitor_child {
 
         %friends = ();
         while (<FILE>) {
+            if (/^__updated (\d+)$/) {
+                $last_friends_poll = $1;
+                print "Friend list updated" if &debug;
+                next;
+            }
+
             if (/^-- (\d+)$/) {
                 ($new_last_poll) = ($1);
                 last;
@@ -1149,7 +1159,7 @@ sub monitor_child {
         if ($new_last_poll) {
             print "new last_poll    = $new_last_poll" if &debug;
             print "new last_poll_id = ", Dumper( $id_map{__last_id} ) if &debug;
-            if ($suppress) {
+            if ($first_call) {
                 print "First call, not printing updates" if &debug;
             } else {
                 foreach my $line (@lines) {
@@ -1189,7 +1199,8 @@ sub monitor_child {
                     &ccrap("Failed to write replies to $file: $!");
                 }
             }
-            $failwhale = 0;
+            $failwhale  = 0;
+            $first_call = 0;
             return;
         }
     }
