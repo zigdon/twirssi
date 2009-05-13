@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.3beta";
-my ($REV) = '$Rev: 619 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 636 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 619 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-04-25 11:08:58 -0700 (Sat, 25 Apr 2009) $',
+    changed => '$Date: 2009-05-13 15:34:34 -0700 (Wed, 13 May 2009) $',
 );
 
 my $window;
@@ -801,6 +801,8 @@ sub get_updates {
         }
         close $fh;
         exit;
+    } else {
+        &ccrap("Failed to fork for updating: $!");
     }
     print scalar localtime, " - get_updates ends" if &debug;
 }
