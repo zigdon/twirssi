@@ -10,8 +10,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.2.3";
-my ($REV) = '$Rev: 643 $' =~ /(\d+)/;
+$VERSION = "2.2.4beta";
+my ($REV) = '$Rev: 647 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 643 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-05-21 14:13:27 -0700 (Thu, 21 May 2009) $',
+    changed => '$Date: 2009-06-04 16:02:51 -0700 (Thu, 04 Jun 2009) $',
 );
 
 my $window;
@@ -1532,6 +1532,7 @@ if ($window) {
     Irssi::command_bind( "twitter_list_subscriptions", "cmd_list_search" );
     Irssi::command_bind( "twirssi_upgrade",            "cmd_upgrade" );
     Irssi::command_bind( "twitter_updates",            "get_updates" );
+    Irssi::command_bind( "bitlbee_away",               "update_away" );
     if ( Irssi::settings_get_bool("twirssi_use_reply_aliases") ) {
         Irssi::command_bind( "reply",    "cmd_reply" );
         Irssi::command_bind( "reply_as", "cmd_reply_as" );
