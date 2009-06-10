@@ -1382,7 +1382,7 @@ sub hilight {
     if ( Irssi::settings_get_str("twirssi_topic_color") ) {
         my $c = Irssi::settings_get_str("twirssi_topic_color");
         $c = $irssi_to_mirc_colors{$c};
-        $text =~ s/(^|\W)\#([-\w]+)/$1\cC$c\#$2\cO/g if $c;
+        $text =~ s/(^|\W)(\#|\!)([-\w]+)/$1\cC$c$2$3\cO/g if $c;
     }
     $text =~ s/[\n\r]/ /g;
 
