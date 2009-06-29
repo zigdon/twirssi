@@ -1,0 +1,25 @@
+<h3>In a terminal:</h3>
+<ul>
+  <li>Install a current version of <a
+      href="http://search.cpan.org/perldoc?Net::Twitter">Net::Twitter</a>.
+      Versions earlier than 1.17 are not supported.  If you are running 1.17,
+      upgrade or apply this <a href="net-twitter.patch">patch</a>.  If you
+      don't have root access, you can still install the modules using <a
+      href="http://sial.org/howto/perl/life-with-cpan/non-root">this guide</a>.<li>
+  <li>Create a directory for irssi scripts, if it doesn't already exist:
+      <code>mkdir ~/.irssi/scripts</code></li>
+  <li>Change to that directory: <code>cd ~/.irssi/scripts</code></li>
+  <li>Remove any old version of the script: <code>rm twirssi.pl</code></li>
+  <li>Download the latest version: <code>wget http://twirssi.com/twirssi.pl</code></li>
+  <li>If you want it to automatically load with irssi, create an autorun dir:
+      <code>mkdir autorun</code></li>
+  <li>And create a symlink in it: <code>ln -s ../twirssi.pl autorun</code></li>
+</ul>
+
+<h3>In irssi:</h3>
+<ul>
+  <li>If you don't already have a twitter window, create a new window:
+      <code>/win new hidden</code></li>
+  <li>Name the new window: <code>/win name twitter</code></li>
+</ul>
+

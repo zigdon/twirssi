@@ -1,0 +1,341 @@
+<ul>
+<li><strong>v.2.2.4BETA - currently under development</strong><br />
+      <li>Rename /twitter_friend and /twitter_unfriend to /twitter_follow and
+          /twitter_unfollow</li>
+      <li>BETA versions are always available at <a
+          href="http://github.com/zigdon/twirssi/tree/master">github</a>.  You
+          can also upgrade a running twirssi install by setting
+          twirssi_upgrade_beta to true, and using /twirssi_upgrade.</li></ul></li>
+<li><strong>v.2.2.3 - 14:00 21-May-2009</strong><br />
+  <ul>
+      <li>Reduce the frequency we check friends list updates, controlled by
+          twitter_friends_poll.  By default set to 10 minutes.</li>
+      <li>Fixed nick hilighting thanks to a pointer from @g45g.</li>
+      <li>Don't show the "Haven't been able to get updates since..." after the
+          first 10 minutes of failure.</li>
+      <li>Don't tie retweets with their originating tweet, as that would cause
+          them to not be displayed to people who haven't already seen the
+          original.  #fixreplies.</li>
+      <li>View it <a href="twirssi-2.2.3.html">here</a>,
+      download version 2.2.3 <a href="twirssi-2.2.3.pl">here</a>.</li></ul></li>
+<li><strong>v.2.2.2 - 20:30 20-Apr-2009</strong><br />
+  <ul>
+      <li>Added tab-complete for /twitter_unfriend</li>
+      <li>Fix searches, thanks to @Olatho finding a bug.  Note that existing
+          searches should be removed before upgrading, and re-added after.</li>
+      <li>View it <a href="twirssi-2.2.2.html">here</a>,
+      download version 2.2.2 <a href="twirssi-2.2.2.pl">here</a>.</li></ul></li>
+<li><strong>v.2.2.1 - 00:00 11-Apr-2009</strong><br />
+  <ul>
+      <li>Stopped using <code>since</code> as a parameter as Twitter suddenly
+          dropped support for it.</li>
+      <li>Reduce number of times context calls are made to Twitter</li>
+      <li>Added /retweet and /retweet_as commands.  See docs for usage
+          details.</li>
+      <li>View it <a href="twirssi-2.2.1.html">here</a>,
+      download version 2.2.1 <a href="twirssi-2.2.1.pl">here</a>.</li></ul></li>
+<li><strong>v.2.2.0 - 15:30 16-Mar-2009</strong><br />
+  <ul>
+      <li>Added initial support for Identi.ca.  Whenever a username is
+          specified, you can now say username@twitter or username@identica.</li>
+      <li>Added support for bit.ly as a URL shortener by adding a new setting,
+          short_url_args, where you can enter your bit.ly username and API
+          key.</li>
+      <li>New setting added, twirssi_default_service - should be either Twitter
+          or Identica.  Used when a username is specified without a @service,
+          though some smarts are in place to try to guess correctly.</li>
+      <li>New command /twitter_device_updates allow starting and stopping of
+          SMS messages from twitter.</li>
+      <li>View it <a href="twirssi-2.2.0.html">here</a>,
+      download version 2.2.0 <a href="twirssi-2.2.0.pl">here</a>.</li></ul></li>
+<li><strong>v2.1.2 - 14:00 07-Mar-2009</strong><br />
+  <ul>
+      <li>Truncated tweets will now include the URL to follow to see the full
+          text.</li>
+      <li>If your password contains a comma, you can now escape it in
+          twitter_passwords with a '\'.</li>
+      <li>When using /twitter_reply, tab complete should now suggest nicks in
+          the order of most-recently-tweeted first.</li>
+      <li>Some twirssi generated messages now will no longer count as activity
+          in the twitter window.</li>
+      <li>View it <a href="twirssi-2.1.2.html">here</a>,
+      download version 2.1.2 <a href="twirssi-2.1.2.pl">here</a>.</li></ul></li>
+<li><strong>v2.1.1 - 15:00 25-Feb-2009</strong><br />
+  <ul>
+      <li>New setting, twirssi_upgrade_beta, will cause /twirssi_upgrade to
+          grab the latest BETA version if true.  Defaults to off.</li>
+      <li>Duplicate tweets within the same update will no longer be displayed
+          (such as search results matching a tweet already being followed</li>
+      <li>Bug fix - random search subscriptions will no longer appear</li>
+      <li>View it <a href="twirssi-2.1.1.html">here</a>,
+      download version 2.1.1 <a href="twirssi-2.1.1.pl">here</a>.</li></ul></li>
+<li><strong>v2.1.0 - 17:00 24-Feb-2009</strong><br />
+  <ul>
+      <li>Fix Unicode support for incoming tweets (outgoing always
+          worked).</li>
+      <li>Improve behaviour when twitter is lagged, will result in much fewer
+          lost tweets.</li>
+      <li>Add pretty fail-whale art when twitter is very broken.</li>
+      <li>Shorten URLs only when needed in @replies too, not just in normal
+          tweets.</li>
+      <li>View it <a href="twirssi-2.1.0.html">here</a>,
+      download version 2.1.0 <a href="twirssi-2.1.0.pl">here</a>.</li></ul></li>
+<li><strong>v2.0.5 - 14:00 19-Feb-2009</strong><br />
+  <ul>
+      <li>New settings, twirssi_notify_timeouts, controls if twitter API
+          timeouts should be reported at all.  Changed the text of the message to
+          be more user friendly.</li>
+      <li>Internal code layout changes.</li>
+      <li>View it <a href="twirssi-2.0.5.html">here</a>,
+      download version 2.0.5 <a href="twirssi-2.0.5.pl">here</a>.</li></ul></li>
+<li><strong>v2.0.4 - 20:00 16-Feb-2009</strong><br />
+  <ul>
+      <li>Minor fix allowing displaying @nick and #topic colors
+          completely.</li>
+      <li>View it <a href="twirssi-2.0.4.html">here</a>,
+      download version 2.0.4 <a href="twirssi-2.0.4.pl">here</a>.</li></ul></li>
+<li><strong>v2.0.3 - 20:00 16-Feb-2009</strong><br />
+  <ul>
+      <li>Fixed a few bugs that would claim that a DM was sent when it
+          wasn't really.</li>
+      <li>Automatically reduce multiple spaces to one.</li>
+      <li>New setting, twirssi_hilights, controlls if your own @nick mentioned
+          should make hilight the line.</li>
+      <li>New settings, twirssi_nick_color and twirssi_topic_color, allow
+          selecting what colors should @nicks and #topics use.</li>
+      <li>View it <a href="twirssi-2.0.3.html">here</a>,
+      download version 2.0.3 <a href="twirssi-2.0.3.pl">here</a>.</li></ul></li>
+<li><strong>v2.0.2 - 11:00 05-Feb-2009</strong><br />
+  <ul>
+      <li>Fixed a few bugs that would have led to missed or duplicate search
+          results</li>
+      <li>Added a new setting, twirssi_replies_autonick, that can disable
+          automatically adding @nick to the beginning of @replies</li>
+      <li>View it <a href="twirssi-2.0.2.html">here</a>,
+      download version 2.0.2 <a href="twirssi-2.0.2.pl">here</a>.</li></ul></li>
+
+<li><strong>v2.0.1 - 10:00 02-Feb-2009</strong><br />
+  <ul>
+      <li>Fixed a bug that would cause tweets to disappear if they're a reply
+          to a tweet we can't see.</li>
+      <li>Fixed a bug that would show #topic searches to show the same results
+          multiple times</li>
+      <li>Fixed a bug that would cause duplicate errors to show up when a tweet
+          containing a URL is too long</li>
+      <li>View it <a href="twirssi-2.0.1.html">here</a>
+      (<a href="http://tinyurl.com/dclxj3">git</a>),
+      download version 2.0.1 <a href="twirssi-2.0.1.pl">here</a>.</li></ul></li>
+
+<li><strong>v2.0 - 18:30 29-Jan-2009</strong><br />
+  <ul>
+      <li>Add support for Net::Twitter 2.x search commands.</li>
+      <li>Allow adjusting the polling interval by setting
+          twitter_poll_interval</li> 
+      <li>Allow subscribing to topics (or any search keyword) with
+          /twitter_subscribe, /twitter_unsubscribe.</li> 
+      <li>Use /twitter_list_subscriptions to see all current searches</li>
+      <li>View it <a href="twirssi-2.0.html">here</a>
+      (<a href="http://tinyurl.com/twirssi-2-0">git</a>),
+      download version 2.0 <a href="twirssi-2.0.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.7.8 - 17:00 27-Jan-2009</strong><br />
+  <ul>
+      <li>Change the way tweets are printed, using irssi's formats.  As a side
+          effect, should support proper nick hilighting.</li>
+      <li>View it <a href="twirssi-1.7.8.html">here</a>
+      (<a href="http://tinyurl.com/aa772x">git</a>),
+      download version 1.7.8 <a href="twirssi-1.7.8.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.7.7 - 08:00 26-Jan-2009</strong><br />
+  <ul>
+      <li>Auto-create the twitter window if it doesn't exist.</li>
+      <li>Don't shorten URLs unless we need the space.</li>
+      <li>View it <a href="twirssi-1.7.7.html">here</a>
+      (<a href="http://tinyurl.com/abuo94">git</a>),
+      download version 1.7.7 <a href="twirssi-1.7.7.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.7.6 - 10:00 21-Jan-2009</strong><br />
+  <ul>
+      <li>Fix tab-complete for /twitter_reply - it will now include the latest
+          :nn for whatever it's completing, and strip out leading @ signs</li>
+      <li>View it <a href="twirssi-1.7.6.html">here</a>
+      (<a href="http://tinyurl.com/8u52rg">git</a>),
+      download version 1.7.6 <a href="twirssi-1.7.6.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.7.5 - 23:30 20-Jan-2009</strong><br />
+  <ul>
+      <li>Minor fix for an additional source of Lost Terminal errors</li>
+      <li>View it <a href="twirssi-1.7.5.html">here</a>
+      (<a href="http://tinyurl.com/8u52rg">git</a>),
+      download version 1.7.5 <a href="twirssi-1.7.5.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.7.4 - 21:00 13-Jan-2009</strong><br />
+  <ul>
+      <li>New option, tweet_window_input (off by default) to allow writing to
+          the twitter window directly for tweets.</li>
+      <li>Remove the ban on JSON::XS as it wasn't related to the Lost Terminal problem.</li>
+      <li>View it <a href="twirssi-1.7.4.html">here</a>
+      (<a href="http://tinyurl.com/8o9bum">git</a>),
+      download version 1.7.4 <a href="twirssi-1.7.4.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.7.3 - 15:00 08-Jan-2009</strong><br />
+  <ul>
+      <li>Minor code cleanups</li>
+      <li>Catch another place where a bad reply from twitter could cause a Lost
+          Terminal problem</li>
+      <li>Remove any embedded newlines in incoming tweets</li>
+      <li>View it <a href="twirssi-1.7.3.html">here</a>
+      (<a href="http://github.com/zigdon/twirssi/tree/d45fb40111af895f017bfa0d7e0f2bc9e988f2c9">git</a>),
+      download version 1.7.3 <a href="twirssi-1.7.3.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.7.2 - 20:00 06-Jan-2009</strong><br />
+  <ul>
+      <li>Minor updates to how messages are printed</li>
+      <li>Try to avoid using JSON::XS in hopes of getting rid of the Terminal
+          Lost bug once and for all.  /twirssi_version will now report which
+          JSON module is being used.</li>
+      <li>View it <a href="twirssi-1.7.2.html">here</a>, download version 1.7.2 <a 
+href="twirssi-1.7.2.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.7.1 - 07:00 06-Jan-2009</strong><br />
+  <ul>
+      <li>Minor typos fixed</li>
+      <li>Fixed a small bug that forced using lower case nicks in replies, even
+          though the tab complete did it right.</li>
+      <li>View it <a href="twirssi-1.7.1.html">here</a>, download version 1.7.1 <a 
+href="twirssi-1.7.1.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.7 - 18:00 05-Jan-2009</strong><br />
+  <ul>
+      <li>Replies should now work even if you reload twirssi (saved in the
+          location set by twirssi_replies_store)</li>
+      <li>Further attempts to deal with errors originating from Twitter or
+          Net::Twitter in a graceful fasion</li>
+      <li>View it <a href="twirssi-1.7.html">here</a>, download version 1.7 <a 
+href="twirssi-1.7.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.6.1 - 08:00 05-Jan-2009</strong><br />
+  <ul>
+      <li>Minor update, might help people running into the Lost Terminal
+          problem (trying to workaround a possible bug in newer
+          Net::Twitter)</li>
+      <li>View it <a href="twirssi-1.6.1.html">here</a>, download version 1.6.1 <a 
+href="twirssi-1.6.1.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.6 - 19:00 04-Jan-2009</strong><br />
+  <ul>
+      <li>Add a /twitter_reply (and optionally a /reply) command, allowing
+          @replies to be tied to particular tweets.  See new settings
+          twirssi_track_replies (default on), twirssi_use_reply_aliases
+          (default off).</li>
+      <li>Fixed a bug that would cause zombies on Gentoo (and other linux
+          distros) to accumulate over time</li>
+      <li>Updated to show new url (http://twirssi.com).</li>
+      <li>View it <a href="twirssi-1.6.html">here</a>, download version 1.6 <a 
+href="twirssi-1.6.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.5.1 - Noon 22-Dec-2008</strong><br />
+  <ul>
+      <li>Minor bug fix - Stop claiming we failed to autologin, when we in fact did succeed.</li>
+      <li>View it <a href="twirssi-1.5.1.html">here</a>, download version 1.5.1 <a 
+href="twirssi-1.5.1.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.5 - Noon 22-Dec-2008</strong><br />
+  <ul>
+      <li>Refuse updates longer than 140 characters.</li>
+      <li>Do auto-login if /login is called without args.<li>
+      <li>Minor bug fix - Maintain a cache of the last 10 minutes of tweets, to avoid duplicates.</li>
+      <li>View it <a href="twirssi-1.5.html">here</a>, download version 1.5 <a href="twirssi-1.5.pl">here</a>.</li></ul></li>
+
+<li><strong>v1.4 - 13:00 21-Dec-2008</strong><br />
+  <ul>
+      <li>New settings - twitter_usernames and twitter_passwords.  Each stores
+      a list of users and passwords to log in as, comma separated.</li>
+      <li>View it <a href="twirssi-1.4.html">here</a>, download version 1.4 <a href="twirssi-1.4.pl">here</a>.</li></ul></li>
+<li><strong>v1.3 - 15:00 17-Dec-2008</strong><br />
+  <ul>
+
+      <li>Minor bugfix - if the short_url_provider is cleared in runtime, stop calling makeashorterlink immediately.</li>
+      <li>New command - /twirssi_upgrade, with try to automatically get and install the latest version of twirssi (to 
+twirssi_location, defaults to .irssi/scripts/twirssi.pl)</li>
+      <li>View it <a href="twirssi-1.3.html">here</a>, download version 1.3 <a href="twirssi-1.3.pl">here</a>.</li></ul></li>
+<li><strong>v1.2 - 11:00 17-Dec-2008</strong><br />
+  <ul>
+
+      <li>Bugfix - if twitter is a little bit slow, make sure we keep waiting
+      until the updates are all there.</li>
+      <li>Minor bugfix - don't claim we have 0 friends, we have friend, we're cool!</li>
+      <li>Detect and report if we're exceeding our rate limit on login</li>
+      <li>View it <a href="twirssi-1.2.html">here</a>, download version 1.2 <a href="twirssi-1.2.pl">here</a>.</li></ul></li>
+<li><strong>v1.1 - 17:00 14-Dec-2008</strong><br />
+
+  <ul>
+      <li>Support for multiple accounts</li>
+      <li>Commands added: /tweet_as /dm_as /twitter_switch /twitter_logout</li>
+      <li>View it <a href="twirssi-1.1.html">here</a>, download version 1.1 <a href="twirssi-1.1.pl">here</a>.</li></ul></li>
+<li><strong>v1.0 - Noon 11-Dec-2008</strong><br />
+
+  <ul>
+      <li>We now have a logo, thanks to @relsqui!</li>
+      <li>View it <a href="twirssi-1.0.html">here</a>, download version 1.0 <a href="twirssi-1.0.pl">here</a>.</li></ul></li>
+<li><strong>v0.9 - 10:00 11-Dec-2008</strong><br />
+  <ul>
+      <li>Show @replies from people who you are not following (note that with
+      the current Net::Twitter, there's a bug that breaks this a little.  Patch
+      to Net::Twitter <a href="http://rt.cpan.org/Ticket/Display.html?id=41635">sent</a>.</li>
+
+      <li>Add an option to hide your own tweets</li>
+      <li>Tab-complete will remember @nicks of people you tweeted at, heard of in other tweets</li>
+      <li>Add /twirssi_version command</li>
+      <li>View it <a href="twirssi-0.9.html">here</a>, download version 0.9 <a href="twirssi-0.9.pl">here</a>.</li></ul></li>
+<li><strong>v0.8 - 18:00 10-Dec-2008</strong><br />
+
+  <ul>
+      <li>Optionally, when someone you're following is @replying to someone
+      you're not, show what prompted the reply (see show_reply_context)</li>
+      <li>Tab-complete will now prepend a '@' only when completing a /tweet, not a /dm</li>
+      <li>Following someone will automatically add them to your tab complete list</li>
+      <li>View it <a href="twirssi-0.8.html">here</a>, download version 0.8 <a href="twirssi-0.8.pl">here</a>.</li></ul></li>
+
+<li><strong>v0.7 - 14:00 06-Dec-2008</strong><br />
+  <ul>
+      <li>Automatically make short urls (see short_url_provider)</li>
+      <li>View it <a href="twirssi-0.7.html">here</a>, download version 0.7 <a href="twirssi-0.7.pl">here</a>.</li></ul></li>
+<li><strong>v0.6 - 13:00 06-Dec-2008</strong><br />
+  <ul>
+
+      <li>Add tab-completions for /tweet and /dm</li>
+      <li>View it <a href="twirssi-0.6.html">here</a>, download version 0.6 <a href="twirssi-0.6.pl">here</a>.</li></ul></li>
+<li><strong>v0.5 - Noon 05-Dec-2008</strong><br />
+  <ul>
+      <li>Add a /dm command to simplify sending of direct messages</li>
+
+      <li>Add /twitter_friend and /twitter_unfriend</li>
+      <li>View it <a href="twirssi-0.5.html">here</a>, download version 0.5 <a href="twirssi-0.5.pl">here</a>.</li></ul></li>
+<li><strong>v0.4 - 11:00 04-Dec-2008 (PST)</strong><br />
+  <ul>
+      <li>Check for updates in the background, avoid hanging irssi if twitter is slow</li>
+
+      <li>Check that posted tweets actually post</li>
+      <li>Check that login information was valid</li>
+      <li>Change level of printed messages from MSG to PUBLIC</li>
+      <li>View it <a href="twirssi-0.4.html">here</a>, download version 0.4 <a href="twirssi-0.4.pl">here</a>.</li></ul></li>
+<li><strong>v0.3 - 19:00 02-Dec-2008 (PST)</strong><br />
+
+  <ul><li>Add Twitter API ID</li>
+      <li>Add option (/set tweet_to_away on) to set bitlbee away message to
+      non-@reply tweets.</li>
+      <li>View it <a href="twirssi-0.3.html">here</a>, download version 0.3 <a href="twirssi-0.3.pl">here</a>.</li></ul></li>
+<li><strong>v0.2 - 08:00 02-Dec-2008 (PST)</strong><br />
+  <ul><li>Added colors as needed</li>
+
+      <li>Polling adjusted to always show updates since the last poll (and not hardcoded 5 minutes)</li>
+      <li>View it <a href="twirssi-0.2.html">here</a>, download version 0.2 <a href="twirssi-0.2.pl">here</a>.</li></ul></li>
+</li>
+<li><strong>v0.1 - Midnight 02-Dec-2008 (PST)</strong><br />
+  <ul><li>Initial version, polling, tweeting, accepting DMs.</li>
+      <li>View it <a href="twirssi-0.1.html">here</a>, download version 0.1 <a href="twirssi-0.1.pl">here</a>.</li></ul></li>
+
+</li>
+</ul>
+
