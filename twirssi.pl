@@ -527,7 +527,7 @@ sub cmd_login {
                 &notice("Welcome to twirssi!"
                       . "  Perhaps you should add \@twirssi to your friends list,"
                       . " so you can be notified when a new version is release?"
-                      . "  Just type /twitter_friend twirssi." );
+                      . "  Just type /twitter_follow twirssi." );
             }
         }
         %nicks = %friends;
@@ -1565,18 +1565,18 @@ if ($window) {
         }
     );
     Irssi::command_bind(
-        "twitter_friend",
+        "twitter_follow",
         &gen_cmd(
-            "/twitter_friend <username>",
+            "/twitter_follow <username>",
             "create_friend",
             sub { &notice("Following $_[0]"); $nicks{ $_[0] } = time; }
         )
     );
     Irssi::command_bind(
-        "twitter_unfriend",
+        "twitter_unfollow",
         &gen_cmd(
             "/twitter_unfriend <username>",
-            "destroy_friend",
+            "destroy_follow",
             sub { &notice("Stopped following $_[0]"); delete $nicks{ $_[0] }; }
         )
     );
