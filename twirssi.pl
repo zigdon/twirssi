@@ -10,8 +10,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.2.4beta";
-my ($REV) = '$Rev: 652 $' =~ /(\d+)/;
+$VERSION = "2.2.4";
+my ($REV) = '$Rev: 658 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 652 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-06-29 14:36:38 -0700 (Mon, 29 Jun 2009) $',
+    changed => '$Date: 2009-07-01 14:32:22 -0700 (Wed, 01 Jul 2009) $',
 );
 
 my $window;
@@ -878,7 +878,7 @@ sub do_updates {
                         " -- http://twitter.com/$context->{user}{screen_name}"
                       . "/status/$context->{id}";
                 }
-                printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
+                printf $fh "id:%u account:%s nick:%s type:tweet %s\n",
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
                 $reply = "reply";
@@ -891,11 +891,11 @@ sub do_updates {
             $text .= " -- http://twitter.com/$t->{user}{screen_name}"
               . "/status/$t->{id}";
         }
-        printf $fh "id:%d account:%s nick:%s type:%s %s\n",
+        printf $fh "id:%u account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
-    printf $fh "id:%d account:%s type:last_id timeline\n",
+    printf $fh "id:%u account:%s type:last_id timeline\n",
       $new_poll_id, $username;
 
     print scalar localtime, " - Polling for replies" if &debug;
@@ -926,11 +926,11 @@ sub do_updates {
             $text .= " -- http://twitter.com/$t->{user}{screen_name}"
               . "/status/$t->{id}";
         }
-        printf $fh "id:%d account:%s nick:%s type:tweet %s\n",
+        printf $fh "id:%u account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
-    printf $fh "id:%d account:%s type:last_id reply\n", $new_poll_id, $username;
+    printf $fh "id:%u account:%s type:last_id reply\n", $new_poll_id, $username;
 
     print scalar localtime, " - Polling for DMs" if &debug;
     $new_poll_id = 0;
@@ -953,11 +953,11 @@ sub do_updates {
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
         $text = &hilight($text);
-        printf $fh "id:%d account:%s nick:%s type:dm %s\n",
+        printf $fh "id:%u account:%s nick:%s type:dm %s\n",
           $t->{id}, $username, $t->{sender_screen_name}, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
-    printf $fh "id:%d account:%s type:last_id dm\n", $new_poll_id, $username;
+    printf $fh "id:%u account:%s type:last_id dm\n", $new_poll_id, $username;
 
     print scalar localtime, " - Polling for subscriptions" if &debug;
     if ( $obj->can('search') and $id_map{__searches}{$username} ) {
@@ -987,13 +987,13 @@ sub do_updates {
             }
 
             $id_map{__searches}{$username}{$topic} = $search->{max_id};
-            printf $fh "id:%d account:%s type:searchid topic:%s\n",
+            printf $fh "id:%u account:%s type:searchid topic:%s\n",
               $search->{max_id}, $username, $topic;
 
             foreach my $t ( reverse @{ $search->{results} } ) {
                 my $text = decode_entities( $t->{text} );
                 $text = &hilight($text);
-                printf $fh "id:%d account:%s nick:%s type:search topic:%s %s\n",
+                printf $fh "id:%u account:%s nick:%s type:search topic:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic, $text;
                 $new_poll_id = $t->{id}
                   if not $new_poll_id
