@@ -10,8 +10,8 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.2.4";
-my ($REV) = '$Rev: 658 $' =~ /(\d+)/;
+$VERSION = "2.2.5beta";
+my ($REV) = '$Rev: 659 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 658 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-07-01 14:32:22 -0700 (Wed, 01 Jul 2009) $',
+    changed => '$Date: 2009-07-02 12:48:40 -0700 (Thu, 02 Jul 2009) $',
 );
 
 my $window;
@@ -1576,7 +1576,7 @@ if ($window) {
         "twitter_unfollow",
         &gen_cmd(
             "/twitter_unfriend <username>",
-            "destroy_follow",
+            "destroy_friend",
             sub { &notice("Stopped following $_[0]"); delete $nicks{ $_[0] }; }
         )
     );
