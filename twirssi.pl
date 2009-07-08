@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.5beta";
-my ($REV) = '$Rev: 659 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 663 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 659 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-07-02 12:48:40 -0700 (Thu, 02 Jul 2009) $',
+    changed => '$Date: 2009-07-08 16:25:21 -0700 (Wed, 08 Jul 2009) $',
 );
 
 my $window;
@@ -852,7 +852,7 @@ sub do_updates {
 
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
-        $text = &hilight($text);
+        $text =~ s/[\n\r]/ /g;
         my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
             and $t->{in_reply_to_screen_name} ne $username
@@ -872,7 +872,7 @@ sub do_updates {
 
             if ($context) {
                 my $ctext = decode_entities( $context->{text} );
-                $ctext = &hilight($ctext);
+                $ctext =~ s/[\n\r]/ /g;
                 if ( $context->{truncated} and ref($obj) ne 'Net::Identica' ) {
                     $ctext .=
                         " -- http://twitter.com/$context->{user}{screen_name}"
@@ -921,7 +921,7 @@ sub do_updates {
           if exists $friends{ $t->{user}{screen_name} };
 
         my $text = decode_entities( $t->{text} );
-        $text = &hilight($text);
+        $text =~ s/[\n\r]/ /g;
         if ( $t->{truncated} ) {
             $text .= " -- http://twitter.com/$t->{user}{screen_name}"
               . "/status/$t->{id}";
@@ -952,7 +952,7 @@ sub do_updates {
 
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
-        $text = &hilight($text);
+        $text =~ s/[\n\r]/ /g;
         printf $fh "id:%u account:%s nick:%s type:dm %s\n",
           $t->{id}, $username, $t->{sender_screen_name}, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
@@ -992,7 +992,7 @@ sub do_updates {
 
             foreach my $t ( reverse @{ $search->{results} } ) {
                 my $text = decode_entities( $t->{text} );
-                $text = &hilight($text);
+                $text =~ s/[\n\r]/ /g;
                 printf $fh "id:%u account:%s nick:%s type:search topic:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic, $text;
                 $new_poll_id = $t->{id}
@@ -1167,7 +1167,8 @@ sub monitor_child {
                     $window->printformat(
                         $line->[0],
                         "twirssi_" . $line->[1],
-                        @$line[ 2 .. $#$line ]
+                        @$line[ 2 .. $#$line-1 ],
+                        &hilight($line->[-1])
                     );
                 }
             }
