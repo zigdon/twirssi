@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.5beta";
-my ($REV) = '$Rev: 663 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 673 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +20,7 @@ my ($REV) = '$Rev: 663 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-07-08 16:25:21 -0700 (Wed, 08 Jul 2009) $',
+    changed => '$Date: 2009-07-16 16:50:30 -0700 (Thu, 16 Jul 2009) $',
 );
 
 my $window;
@@ -758,7 +758,7 @@ sub get_updates {
     my $pid = fork();
 
     if ($pid) {    # parent
-        Irssi::timeout_add_once( 5000, 'monitor_child', [ $filename, 0 ] );
+        Irssi::timeout_add_once( 5000, 'monitor_child', [ "$filename.done", 0 ] );
         Irssi::pidwait_add($pid);
     } elsif ( defined $pid ) {    # child
         close STDIN;
@@ -800,6 +800,7 @@ sub get_updates {
             print $fh "-- $new_poll";
         }
         close $fh;
+        rename $filename, "$filename.done";
         exit;
     } else {
         &ccrap("Failed to fork for updating: $!");
