@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.5beta";
-my ($REV) = '$Rev: 675 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 676 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 675 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-07-22 10:06:58 -0700 (Wed, 22 Jul 2009) $',
+    changed => '$Date: 2009-07-22 11:05:52 -0700 (Wed, 22 Jul 2009) $',
 );
 
 my $window;
@@ -183,7 +183,8 @@ sub cmd_retweet_as {
         unless (
             $twits{$username}->update(
                 {
-                    status                => $data,
+                    status => $data,
+
                     # in_reply_to_status_id => $id_map{ lc $nick }[$id]
                 }
             )
@@ -663,10 +664,17 @@ sub cmd_upgrade {
     &notice("Downloading twirssi from $URL");
     LWP::Simple::getstore( $URL, "$loc.upgrade" );
 
+    unless ( -s "$loc.upgrade" ) {
+        &notice("Failed to save $loc.upgrade."
+              . "  Check that /set twirssi_location is set to the correct location."
+        );
+        return;
+    }
+
     unless ( $data or Irssi::settings_get_bool("twirssi_upgrade_beta") ) {
         unless ( open( NEW, "$loc.upgrade" ) ) {
-            &notice(
-"Failed to read $loc.upgrade.  Check that /set twirssi_location is set to the correct location."
+            &notice("Failed to read $loc.upgrade."
+                  . "  Check that /set twirssi_location is set to the correct location."
             );
             return;
         }
@@ -759,7 +767,8 @@ sub get_updates {
     my $pid = fork();
 
     if ($pid) {    # parent
-        Irssi::timeout_add_once( 5000, 'monitor_child', [ "$filename.done", 0 ] );
+        Irssi::timeout_add_once( 5000, 'monitor_child',
+            [ "$filename.done", 0 ] );
         Irssi::pidwait_add($pid);
     } elsif ( defined $pid ) {    # child
         close STDIN;
@@ -1169,8 +1178,8 @@ sub monitor_child {
                     $window->printformat(
                         $line->[0],
                         "twirssi_" . $line->[1],
-                        @$line[ 2 .. $#$line-1 ],
-                        &hilight($line->[-1])
+                        @$line[ 2 .. $#$line - 1 ],
+                        &hilight( $line->[-1] )
                     );
                 }
             }
