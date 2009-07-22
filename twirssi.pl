@@ -6,12 +6,13 @@ use HTML::Entities;
 use File::Temp;
 use LWP::Simple;
 use Data::Dumper;
+use Encode;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.5beta";
-my ($REV) = '$Rev: 673 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 675 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -20,7 +21,7 @@ my ($REV) = '$Rev: 673 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-07-16 16:50:30 -0700 (Thu, 16 Jul 2009) $',
+    changed => '$Date: 2009-07-22 10:06:58 -0700 (Wed, 22 Jul 2009) $',
 );
 
 my $window;
@@ -1430,7 +1431,7 @@ sub shorten {
         }
     }
 
-    return $data;
+    return decode "utf8", $data;
 }
 
 sub normalize_username {
