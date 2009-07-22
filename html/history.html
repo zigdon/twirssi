@@ -1,12 +1,21 @@
 <ul>
-<li><strong>v.2.2.4BETA - currently under development</strong><br />
-      <li>Rename /twitter_friend and /twitter_unfriend to /twitter_follow and
-          /twitter_unfollow</li>
+<li><strong>v2.2.5BETA - currently under development</strong><br />
+      <li>Improved unicode support</li>
+      <li>Fix unfriend/unfollow command</li>
+      <li>Stop including irssi colors in retweeted lines</li>
+      <li>Use SSL by default, unless twirssi_avoid_ssl is set to true</li>
       <li>BETA versions are always available at <a
           href="http://github.com/zigdon/twirssi/tree/master">github</a>.  You
           can also upgrade a running twirssi install by setting
           twirssi_upgrade_beta to true, and using /twirssi_upgrade.</li></ul></li>
-<li><strong>v.2.2.3 - 14:00 21-May-2009</strong><br />
+<li><strong>v2.2.4 - 14:30 01-Jul-2009</strong><br />
+      <li>Fixed a bug that broke replies and retweets, related to the
+      twitpocalypse.</li>
+      <li>Rename /twitter_friend and /twitter_unfriend to /twitter_follow and
+          /twitter_unfollow</li>
+      <li>View it <a href="twirssi-2.2.4.html">here</a>,
+      download version 2.2.4 <a href="twirssi-2.2.4.pl">here</a>.</li></ul></li>
+<li><strong>v2.2.3 - 14:00 21-May-2009</strong><br />
   <ul>
       <li>Reduce the frequency we check friends list updates, controlled by
           twitter_friends_poll.  By default set to 10 minutes.</li>
@@ -18,14 +27,14 @@
           original.  #fixreplies.</li>
       <li>View it <a href="twirssi-2.2.3.html">here</a>,
       download version 2.2.3 <a href="twirssi-2.2.3.pl">here</a>.</li></ul></li>
-<li><strong>v.2.2.2 - 20:30 20-Apr-2009</strong><br />
+<li><strong>v2.2.2 - 20:30 20-Apr-2009</strong><br />
   <ul>
       <li>Added tab-complete for /twitter_unfriend</li>
       <li>Fix searches, thanks to @Olatho finding a bug.  Note that existing
           searches should be removed before upgrading, and re-added after.</li>
       <li>View it <a href="twirssi-2.2.2.html">here</a>,
       download version 2.2.2 <a href="twirssi-2.2.2.pl">here</a>.</li></ul></li>
-<li><strong>v.2.2.1 - 00:00 11-Apr-2009</strong><br />
+<li><strong>v2.2.1 - 00:00 11-Apr-2009</strong><br />
   <ul>
       <li>Stopped using <code>since</code> as a parameter as Twitter suddenly
           dropped support for it.</li>
@@ -34,7 +43,7 @@
           details.</li>
       <li>View it <a href="twirssi-2.2.1.html">here</a>,
       download version 2.2.1 <a href="twirssi-2.2.1.pl">here</a>.</li></ul></li>
-<li><strong>v.2.2.0 - 15:30 16-Mar-2009</strong><br />
+<li><strong>v2.2.0 - 15:30 16-Mar-2009</strong><br />
   <ul>
       <li>Added initial support for Identi.ca.  Whenever a username is
           specified, you can now say username@twitter or username@identica.</li>
