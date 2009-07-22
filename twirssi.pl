@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.5beta";
-my ($REV) = '$Rev: 676 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 677 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 676 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-07-22 11:05:52 -0700 (Wed, 22 Jul 2009) $',
+    changed => '$Date: 2009-07-22 13:58:05 -0700 (Wed, 22 Jul 2009) $',
 );
 
 my $window;
@@ -495,7 +495,8 @@ sub cmd_login {
     $twit = "Net::$service"->new(
         username => $user,
         password => $pass,
-        source   => "twirssi"
+        source   => "twirssi",
+        ssl      => Irssi::settings_get_bool("twirssi_avoid_ssl") ? 0 : 1,
     );
 
     unless ( $twit->verify_credentials() ) {
@@ -1513,6 +1514,7 @@ Irssi::settings_add_bool( "twirssi", "twirssi_notify_timeouts",   1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_hilights",          1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_always_shorten",    0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
+Irssi::settings_add_bool( "twirssi", "twirssi_avoid_ssl",         0 );
 
 $last_poll = time - &get_poll_time;
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
