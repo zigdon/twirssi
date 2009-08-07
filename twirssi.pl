@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.2.5beta";
-my ($REV) = '$Rev: 677 $' =~ /(\d+)/;
+my ($REV) = '$Rev: 687 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -21,7 +21,7 @@ my ($REV) = '$Rev: 677 $' =~ /(\d+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2009-07-22 13:58:05 -0700 (Wed, 22 Jul 2009) $',
+    changed => '$Date: 2009-08-07 01:24:53 -0700 (Fri, 07 Aug 2009) $',
 );
 
 my $window;
@@ -1032,6 +1032,7 @@ sub monitor_child {
     # pretend
 
     if ( open FILE, $filename ) {
+        bindmode FILE, ":utf8";
         my @lines;
         my %new_cache;
         while (<FILE>) {
