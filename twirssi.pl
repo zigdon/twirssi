@@ -910,7 +910,9 @@ sub do_updates {
     printf $fh "id:%u account:%s type:last_id timeline\n",
       $new_poll_id, $username;
 
-    print scalar localtime, " - Polling for replies" if &debug;
+    print scalar localtime, " - Polling for replies since ",
+      $id_map{__last_id}{$username}{reply}
+      if &debug;
     $new_poll_id = 0;
     eval {
         if ( $id_map{__last_id}{$username}{reply} )
