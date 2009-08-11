@@ -1032,7 +1032,7 @@ sub monitor_child {
     # pretend
 
     if ( open FILE, $filename ) {
-        bindmode FILE, ":utf8";
+        binmode FILE, ":utf8";
         my @lines;
         my %new_cache;
         while (<FILE>) {
@@ -1163,8 +1163,16 @@ sub monitor_child {
             }
 
             if (/^-- (\d+)$/) {
-                ($new_last_poll) = ($1);
-                last;
+                $new_last_poll = $1;
+                if ( $new_last_poll >= $last_poll ) {
+                    last;
+                } else {
+                    print "Impossible!  ",
+                      "new_last_poll=$new_last_poll < last_poll=$last_poll!"
+                      if &debug;
+                    undef $new_last_poll;
+                    next;
+                }
             }
             my ( $f, $t ) = split ' ', $_;
             $nicks{$f} = $friends{$f} = $t;
