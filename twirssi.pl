@@ -499,6 +499,15 @@ sub cmd_login {
         ssl      => Irssi::settings_get_bool("twirssi_avoid_ssl") ? 0 : 1,
     );
 
+    unless ($twit) {
+        &notice("Failed to create Net::$service object!  Aborting.");
+        return;
+    }
+
+    if ( my $timeout = Irssi::settings_get_int("twitter_timeout") ) {
+        $twit->ua->timeout($timeout);
+    }
+
     unless ( $twit->verify_credentials() ) {
         &notice("Login as $user\@$service failed");
         $twit = undef;
@@ -1511,6 +1520,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
     ".irssi/scripts/twirssi.json" );
 
 Irssi::settings_add_int( "twirssi", "twitter_friends_poll", 600 );
+Irssi::settings_add_int( "twirssi", "twitter_timeout", 30 );
 
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
