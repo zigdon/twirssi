@@ -504,7 +504,7 @@ sub cmd_login {
         return;
     }
 
-    if ( my $timeout = Irssi::settings_get_int("twitter_timeout") ) {
+    if ( my $timeout = Irssi::settings_get_int("twitter_timeout") and $twit->can('ua')) {
         $twit->ua->timeout($timeout);
     }
 
