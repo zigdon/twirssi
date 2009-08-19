@@ -1,7 +1,10 @@
 <h3>Getting Started</h3>
 <ul>
   <li>Load the script in irssi: <code>/script load twirssi.pl</code></li>
-  <li>Log in to twitter: <code>/twitter_login username password</code></li>
+  <li>Log in to twitter: <code>/twitter_login username password</code>.  To use
+      an account on <a href="http://identi.ca/">identi.ca</a>, just append
+      @identica to the user name, and make sure <code>Net::Identica</code> is
+      installed.</li>
   <li>Post updates: <code>/tweet I got twirssi working!</code></li>
   <li>Every 5 minutes, new updates from twitter will be posted to the named
   window.  To manually poll, you can always type <code>/twitter_updates</code>, though if
@@ -125,6 +128,9 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
   <li><code>twitter_friends_poll</code> - How often should the updated friends
       list be retrieved from the server.  By default, only once every 10
       minutes</li>
+  <li><code>twitter_timeout</code> - How long should we wait before giving up
+      on a twitter operation.  Should help avoid irssi pinging out of IRC
+      servers when twitter is slow.</li>
   <li><code>twitter_usernames</code> - A comma separated list of usernames to auto-login.  Note that the last one will be the default account used after startup.</li>
   <li><code>twitter_window</code> - Which irssi window should twitter updates be sent to</li>
 </ul>
