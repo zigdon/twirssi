@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.2.5";
+$VERSION = "2.2.6beta";
 my ($REV) = '$Rev: 687 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
@@ -504,7 +504,9 @@ sub cmd_login {
         return;
     }
 
-    if ( my $timeout = Irssi::settings_get_int("twitter_timeout") and $twit->can('ua')) {
+    if ( my $timeout = Irssi::settings_get_int("twitter_timeout")
+        and $twit->can('ua') )
+    {
         $twit->ua->timeout($timeout);
     }
 
@@ -1520,7 +1522,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
     ".irssi/scripts/twirssi.json" );
 
 Irssi::settings_add_int( "twirssi", "twitter_friends_poll", 600 );
-Irssi::settings_add_int( "twirssi", "twitter_timeout", 30 );
+Irssi::settings_add_int( "twirssi", "twitter_timeout",      30 );
 
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
@@ -1592,11 +1594,22 @@ if ($window) {
     Irssi::command_bind(
         "twirssi_version",
         sub {
-            &notice("Twirssi v$VERSION (r$REV); "
-                  . "Net::Twitter v$Net::Twitter::VERSION. "
+            &notice(
+                "Twirssi v$VERSION (r$REV); "
+                  . (
+                    $Net::Twitter::VERSION
+                    ? "Net::Twitter v$Net::Twitter::VERSION. "
+                    : ""
+                  )
+                  . (
+                    $Net::Identica::VERSION
+                    ? "Net::Identica v$Net::Identica::VERSION. "
+                    : ""
+                  )
                   . "JSON in use: "
                   . JSON::Any::handler()
-                  . ".  See details at http://twirssi.com/" );
+                  . ".  See details at http://twirssi.com/"
+            );
         }
     );
     Irssi::command_bind(
