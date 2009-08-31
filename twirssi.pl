@@ -1623,6 +1623,22 @@ if ($window) {
             sub { &notice("Device updated to $_[0]"); }
         )
     );
+    Irssi::command_bind(
+        "twitter_block",
+        &gen_cmd(
+            "/twitter_block <username>",
+            "create_block",
+            sub { &notice("Blocked $_[0]"); }
+        )
+    );
+    Irssi::command_bind(
+        "twitter_unblock",
+        &gen_cmd(
+            "/twitter_unblock <username>",
+            "destroy_block",
+            sub { &notice("Unblock $_[0]"); }
+        )
+    );
     Irssi::signal_add_last( 'complete word' => \&sig_complete );
 
     &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N (r$REV)");
