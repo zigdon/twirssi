@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.2.5beta";
+$VERSION = "2.2.5";
 my ($REV) = '$Rev: 687 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
