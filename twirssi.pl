@@ -38,6 +38,7 @@ my %tweet_cache;
 my %id_map;
 my $failwhale  = 0;
 my $first_call = 1;
+my $child_pid;
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -776,13 +777,13 @@ sub get_updates {
 
     my ( $fh, $filename ) = File::Temp::tempfile();
     binmode( $fh, ":utf8" );
-    my $pid = fork();
+    $child_pid = fork();
 
-    if ($pid) {    # parent
+    if ($child_pid) {    # parent
         Irssi::timeout_add_once( 5000, 'monitor_child',
             [ "$filename.done", 0 ] );
-        Irssi::pidwait_add($pid);
-    } elsif ( defined $pid ) {    # child
+        Irssi::pidwait_add($child_pid);
+    } elsif ( defined $child_pid ) {    # child
         close STDIN;
         close STDOUT;
         close STDERR;
@@ -1222,6 +1223,9 @@ sub monitor_child {
                 delete $tweet_cache{$_};
             }
             $last_poll = $new_last_poll;
+            
+            # make sure the pid is removed from the waitpid list
+            Irssi::pidwait_remove($child_pid);
 
             # save id_map hash
             if ( keys %id_map
