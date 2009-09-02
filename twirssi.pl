@@ -550,6 +550,13 @@ sub cmd_login {
         return 1;
     } else {
         &notice("Login failed");
+        if ( not Irssi::settings_get_bool("twirssi_avoid_ssl") ) {
+            &notice(
+                "It's possible you're missing one of the modules required for "
+                  . "SSL logins.  Try setting twirssi_avoid_ssl to on.  See "
+                  . "http://cpansearch.perl.org/src/GAAS/libwww-perl-5.831/README.SSL "
+                  . "for the detailed requirements." );
+        }
     }
 }
 
@@ -1223,7 +1230,7 @@ sub monitor_child {
                 delete $tweet_cache{$_};
             }
             $last_poll = $new_last_poll;
-            
+
             # make sure the pid is removed from the waitpid list
             Irssi::pidwait_remove($child_pid);
 
