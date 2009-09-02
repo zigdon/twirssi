@@ -513,6 +513,15 @@ sub cmd_login {
 
     unless ( $twit->verify_credentials() ) {
         &notice("Login as $user\@$service failed");
+
+        if ( not Irssi::settings_get_bool("twirssi_avoid_ssl") ) {
+            &notice(
+                "It's possible you're missing one of the modules required for "
+                  . "SSL logins.  Try setting twirssi_avoid_ssl to on.  See "
+                  . "http://cpansearch.perl.org/src/GAAS/libwww-perl-5.831/README.SSL "
+                  . "for the detailed requirements." );
+        }
+
         $twit = undef;
         if ( keys %twits ) {
             &cmd_switch( ( keys %twits )[0], $server, $win );
@@ -538,25 +547,12 @@ sub cmd_login {
         &notice( "loaded friends: ", scalar keys %friends );
         if ( Irssi::settings_get_bool("twirssi_first_run") ) {
             Irssi::settings_set_bool( "twirssi_first_run", 0 );
-            unless ( exists $friends{twirssi} ) {
-                &notice("Welcome to twirssi!"
-                      . "  Perhaps you should add \@twirssi to your friends list,"
-                      . " so you can be notified when a new version is release?"
-                      . "  Just type /twitter_follow twirssi." );
-            }
         }
         %nicks = %friends;
         $nicks{$user} = 0;
         return 1;
     } else {
         &notice("Login failed");
-        if ( not Irssi::settings_get_bool("twirssi_avoid_ssl") ) {
-            &notice(
-                "It's possible you're missing one of the modules required for "
-                  . "SSL logins.  Try setting twirssi_avoid_ssl to on.  See "
-                  . "http://cpansearch.perl.org/src/GAAS/libwww-perl-5.831/README.SSL "
-                  . "for the detailed requirements." );
-        }
     }
 }
 
