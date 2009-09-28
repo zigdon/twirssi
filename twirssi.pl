@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.2.6";
+$VERSION = "2.3.0beta";
 my ($REV) = '$Rev: 687 $' =~ /(\d+)/;
 %IRSSI = (
     authors     => 'Dan Boger',
@@ -39,6 +39,7 @@ my %id_map;
 my $failwhale  = 0;
 my $first_call = 1;
 my $child_pid;
+my %fix_replies_index;
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -441,6 +442,10 @@ sub cmd_login {
     my $pass;
     if ($data) {
         ( $user, $pass ) = split ' ', $data, 2;
+        unless ($pass) {
+            &notice("usage: /twitter_login <username>[\@<service>] <password>");
+            return;
+        }
     } elsif ( my $autouser = Irssi::settings_get_str("twitter_usernames")
         and my $autopass = Irssi::settings_get_str("twitter_passwords") )
     {
@@ -553,6 +558,68 @@ sub cmd_login {
         return 1;
     } else {
         &notice("Login failed");
+    }
+}
+
+sub cmd_add_follow {
+    my ( $data, $server, $win ) = @_;
+
+    unless ($data) {
+        &notice("Usage: /twitter_add_follow_extra <username>");
+        return;
+    }
+
+    $data =~ s/^\s+|\s+$//;
+    $data =~ s/^\@//;
+    $data = lc $data;
+
+    if ( exists $id_map{__fixreplies}{"$user\@$defservice"}{$data} ) {
+        &notice("Already following all replies by \@$data");
+        return;
+    }
+
+    $id_map{__fixreplies}{"$user\@$defservice"}{$data} = 1;
+    &notice("Will now follow all replies by \@$data");
+}
+
+sub cmd_del_follow {
+    my ( $data, $server, $win ) = @_;
+
+    unless ($data) {
+        &notice("Usage: /twitter_del_follow_extra <username>");
+        return;
+    }
+
+    $data =~ s/^\s+|\s+$//;
+    $data =~ s/^\@//;
+    $data = lc $data;
+
+    unless ( exists $id_map{__fixreplies}{"$user\@$defservice"}{$data} ) {
+        &notice("Wasn't following all replies by \@$data");
+        return;
+    }
+
+    delete $id_map{__fixreplies}{"$user\@$defservice"}{$data};
+    &notice("Will no longer follow all replies by \@$data");
+}
+
+sub cmd_list_follow {
+    my ( $data, $server, $win ) = @_;
+
+    my $found = 0;
+    foreach my $suser ( sort keys %{ $id_map{__fixreplies} } ) {
+        my $frusers;
+        foreach my $fruser ( sort keys %{ $id_map{__fixreplies}{$suser} } ) {
+            $frusers = $frusers ? "$frusers, $fruser" : $fruser;
+        }
+        if ($frusers) {
+            $found = 1;
+            &notice("Following all replies as \@$suser: $frusers");
+        }
+    }
+
+    unless ($found) {
+        &notice("Not following all replies by anyone");
     }
 }
 
@@ -797,7 +864,18 @@ sub get_updates {
         my %context_cache;
         foreach ( keys %twits ) {
             $error++ unless &do_updates( $fh, $_, $twits{$_}, \%context_cache );
+
+            if ($id_map{__fixreplies}{$_}) {
+                my @frusers = sort keys %{$id_map{__fixreplies}{$_}};
+
+                $error++ unless &get_timeline( $fh, $frusers[$fix_replies_index{$_}], $_, $twits{$_}, \%context_cache );
+
+                $fix_replies_index{$_}++;
+                $fix_replies_index{$_} = 0 if $fix_replies_index{$_} >= @frusers;
+                print $fh "id:$fix_replies_index{$_} account:$_ type:fix_replies_index\n";
+            }
         }
+
 
         print $fh "__friends__\n";
         if (
@@ -905,8 +983,9 @@ sub do_updates {
                         " -- http://twitter.com/$context->{user}{screen_name}"
                       . "/status/$context->{id}";
                 }
-                printf $fh "id:$context->{id} account:%s nick:%s type:tweet %s\n",
-                  $username, $context->{user}{screen_name}, $ctext;
+                printf $fh "id:%s account:%s nick:%s type:tweet %s\n",
+                  $context->{id}, $username,
+                  $context->{user}{screen_name}, $ctext;
                 $reply = "reply";
             }
         }
@@ -917,12 +996,12 @@ sub do_updates {
             $text .= " -- http://twitter.com/$t->{user}{screen_name}"
               . "/status/$t->{id}";
         }
-        printf $fh "id:$t->{id} account:%s nick:%s type:%s %s\n",
-          $username, $t->{user}{screen_name}, $reply, $text;
+        printf $fh "id:%s account:%s nick:%s type:%s %s\n",
+          $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
-    printf $fh "id:$new_poll_id account:%s type:last_id timeline\n",
-       $username;
+    printf $fh "id:%s account:%s type:last_id timeline\n",
+      $new_poll_id, $username;
 
     print scalar localtime, " - Polling for replies since ",
       $id_map{__last_id}{$username}{reply}
@@ -954,11 +1033,11 @@ sub do_updates {
             $text .= " -- http://twitter.com/$t->{user}{screen_name}"
               . "/status/$t->{id}";
         }
-        printf $fh "id:$t->{id} account:%s nick:%s type:tweet %s\n",
-           $username, $t->{user}{screen_name}, $text;
+        printf $fh "id:%s account:%s nick:%s type:tweet %s\n",
+          $t->{id}, $username, $t->{user}{screen_name}, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
-    printf $fh "id:$new_poll_id account:%s type:last_id reply\n", $username;
+    printf $fh "id:%s account:%s type:last_id reply\n", $new_poll_id, $username;
 
     print scalar localtime, " - Polling for DMs" if &debug;
     $new_poll_id = 0;
@@ -981,11 +1060,11 @@ sub do_updates {
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
         $text =~ s/[\n\r]/ /g;
-        printf $fh "id:$t->{id} account:%s nick:%s type:dm %s\n",
-          $username, $t->{sender_screen_name}, $text;
+        printf $fh "id:%s account:%s nick:%s type:dm %s\n",
+          $t->{id}, $username, $t->{sender_screen_name}, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
-    printf $fh "id:$new_poll_id account:%s type:last_id dm\n", $username;
+    printf $fh "id:%s account:%s type:last_id dm\n", $new_poll_id, $username;
 
     print scalar localtime, " - Polling for subscriptions" if &debug;
     if ( $obj->can('search') and $id_map{__searches}{$username} ) {
@@ -1015,14 +1094,14 @@ sub do_updates {
             }
 
             $id_map{__searches}{$username}{$topic} = $search->{max_id};
-            printf $fh "id:$search->{max_id} account:%s type:searchid topic:%s\n",
-              $username, $topic;
+            printf $fh "id:%s account:%s type:searchid topic:%s\n",
+              $search->{max_id}, $username, $topic;
 
             foreach my $t ( reverse @{ $search->{results} } ) {
                 my $text = decode_entities( $t->{text} );
                 $text =~ s/[\n\r]/ /g;
-                printf $fh "id:$t->{id} account:%s nick:%s type:search topic:%s %s\n",
-                  $username, $t->{from_user}, $topic, $text;
+                printf $fh "id:%s account:%s nick:%s type:search topic:%s %s\n",
+                  $t->{id}, $username, $t->{from_user}, $topic, $text;
                 $new_poll_id = $t->{id}
                   if not $new_poll_id
                       or $t->{id} < $new_poll_id;
@@ -1031,6 +1110,70 @@ sub do_updates {
     }
 
     print scalar localtime, " - Done" if &debug;
+
+    return 1;
+}
+
+sub get_timeline {
+    my ( $fh, $target, $username, $obj, $cache ) = @_;
+    print $fh "type:debug get_timeline($fix_replies_index{$username}=$target) started.  username = $username\n";
+    my $tweets;
+    eval {
+        $tweets = $obj->user_timeline({id => $target});
+    };
+
+    if ($@) {
+        print $fh "type:debug Error during user_timeline($target) call: Aborted.\n";
+        print $fh "type:debug : $_\n" foreach split /\n/, Dumper($@);
+        return undef;
+    }
+
+    unless ($tweets) {
+        print $fh "type:debug user_timeline($target) call returned undef!  Aborted\n";
+        return 1;
+    }
+
+    foreach my $t ( reverse @$tweets ) {
+        my $text = decode_entities( $t->{text} );
+        $text =~ s/[\n\r]/ /g;
+        my $reply = "tweet";
+        if (    Irssi::settings_get_bool("show_reply_context")
+            and $t->{in_reply_to_screen_name} ne $username
+            and $t->{in_reply_to_screen_name}
+            and not exists $friends{ $t->{in_reply_to_screen_name} } )
+        {
+            $nicks{ $t->{in_reply_to_screen_name} } = time;
+            my $context;
+            unless ( $cache->{ $t->{in_reply_to_status_id} } ) {
+                eval {
+                    $cache->{ $t->{in_reply_to_status_id} } =
+                      $obj->show_status( $t->{in_reply_to_status_id} );
+                };
+
+            }
+            $context = $cache->{ $t->{in_reply_to_status_id} };
+
+            if ($context) {
+                my $ctext = decode_entities( $context->{text} );
+                $ctext =~ s/[\n\r]/ /g;
+                if ( $context->{truncated} and ref($obj) ne 'Net::Identica' ) {
+                    $ctext .=
+                        " -- http://twitter.com/$context->{user}{screen_name}"
+                      . "/status/$context->{id}";
+                }
+                printf $fh "id:%s account:%s nick:%s type:tweet %s\n",
+                  $context->{id}, $username,
+                  $context->{user}{screen_name}, $ctext;
+                $reply = "reply";
+            }
+        }
+        if ( $t->{truncated} and ref($obj) ne 'Net::Identica' ) {
+            $text .= " -- http://twitter.com/$t->{user}{screen_name}"
+              . "/status/$t->{id}";
+        }
+        printf $fh "id:%s account:%s nick:%s type:%s %s\n",
+          $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
+    }
 
     return 1;
 }
@@ -1065,6 +1208,12 @@ sub monitor_child {
                 if (s/^$key:(\S+)\s*//) {
                     $meta{$key} = $1;
                 }
+            }
+
+            if ( $meta{type} and $meta{type} eq 'fix_replies_index' ) {
+                $fix_replies_index{$meta{account}} = $meta{id};
+                print "fix_replies_index for $meta{account} set to $meta{id}" if &debug;
+                next;
             }
 
             if ( not $meta{type} or $meta{type} !~ /searchid|last_id/ ) {
@@ -1575,6 +1724,9 @@ if ($window) {
     Irssi::command_bind( "twitter_list_subscriptions", "cmd_list_search" );
     Irssi::command_bind( "twirssi_upgrade",            "cmd_upgrade" );
     Irssi::command_bind( "twitter_updates",            "get_updates" );
+    Irssi::command_bind( "twitter_add_follow_extra",   "cmd_add_follow" );
+    Irssi::command_bind( "twitter_del_follow_extra",   "cmd_del_follow" );
+    Irssi::command_bind( "twitter_list_follow_extra",  "cmd_list_follow" );
     Irssi::command_bind( "bitlbee_away",               "update_away" );
     if ( Irssi::settings_get_bool("twirssi_use_reply_aliases") ) {
         Irssi::command_bind( "reply",    "cmd_reply" );
@@ -1678,6 +1830,7 @@ if ($window) {
                 &notice( sprintf "Loaded old replies from %d contact%s.",
                     $num, ( $num == 1 ? "" : "s" ) );
                 &cmd_list_search;
+                &cmd_list_follow;
             };
         } else {
             &notice("Failed to load old replies from $file: $!");
