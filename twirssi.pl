@@ -865,17 +865,20 @@ sub get_updates {
         foreach ( keys %twits ) {
             $error++ unless &do_updates( $fh, $_, $twits{$_}, \%context_cache );
 
-            if ($id_map{__fixreplies}{$_}) {
-                my @frusers = sort keys %{$id_map{__fixreplies}{$_}};
+            if ( $id_map{__fixreplies}{$_} ) {
+                my @frusers = sort keys %{ $id_map{__fixreplies}{$_} };
 
-                $error++ unless &get_timeline( $fh, $frusers[$fix_replies_index{$_}], $_, $twits{$_}, \%context_cache );
+                $error++
+                  unless &get_timeline( $fh, $frusers[ $fix_replies_index{$_} ],
+                          $_, $twits{$_}, \%context_cache );
 
                 $fix_replies_index{$_}++;
-                $fix_replies_index{$_} = 0 if $fix_replies_index{$_} >= @frusers;
-                print $fh "id:$fix_replies_index{$_} account:$_ type:fix_replies_index\n";
+                $fix_replies_index{$_} = 0
+                  if $fix_replies_index{$_} >= @frusers;
+                print $fh
+"id:$fix_replies_index{$_} account:$_ type:fix_replies_index\n";
             }
         }
-
 
         print $fh "__friends__\n";
         if (
@@ -1116,20 +1119,28 @@ sub do_updates {
 
 sub get_timeline {
     my ( $fh, $target, $username, $obj, $cache ) = @_;
-    print $fh "type:debug get_timeline($fix_replies_index{$username}=$target) started.  username = $username\n";
+    print $fh
+"type:debug get_timeline($fix_replies_index{$username}=$target) started.  username = $username\n";
     my $tweets;
     eval {
-        $tweets = $obj->user_timeline({id => $target});
+        $tweets = $obj->user_timeline(
+            {
+                id       => $target,
+                since_id => $id_map{__last_id}{$username}{$target}
+            }
+        );
     };
 
     if ($@) {
-        print $fh "type:debug Error during user_timeline($target) call: Aborted.\n";
+        print $fh
+          "type:debug Error during user_timeline($target) call: Aborted.\n";
         print $fh "type:debug : $_\n" foreach split /\n/, Dumper($@);
         return undef;
     }
 
     unless ($tweets) {
-        print $fh "type:debug user_timeline($target) call returned undef!  Aborted\n";
+        print $fh
+          "type:debug user_timeline($target) call returned undef!  Aborted\n";
         return 1;
     }
 
@@ -1173,7 +1184,12 @@ sub get_timeline {
         }
         printf $fh "id:%s account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
+        $id_map{__last_id}{$username}{$target} = $t->{id} if
+            $id_map{__last_id}{$username}{$target} < $t->{id};
     }
+    printf $fh "id:%s account:%s type:last_id_fixreplies %s\n", 
+               $id_map{__last_id}{$username}{$target},
+               $username, $target;
 
     return 1;
 }
@@ -1211,8 +1227,9 @@ sub monitor_child {
             }
 
             if ( $meta{type} and $meta{type} eq 'fix_replies_index' ) {
-                $fix_replies_index{$meta{account}} = $meta{id};
-                print "fix_replies_index for $meta{account} set to $meta{id}" if &debug;
+                $fix_replies_index{ $meta{account} } = $meta{id};
+                print "fix_replies_index for $meta{account} set to $meta{id}"
+                  if &debug;
                 next;
             }
 
@@ -1306,6 +1323,11 @@ sub monitor_child {
                     print "Search '$meta{topic}' returned invalid id $meta{id}";
                 }
             } elsif ( $meta{type} eq 'last_id' ) {
+                $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} =
+                  $meta{id}
+                  if $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
+                      $meta{id};
+            } elsif ( $meta{type} eq 'last_id_fixreplies' ) {
                 $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} =
                   $meta{id}
                   if $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
