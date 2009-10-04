@@ -699,8 +699,8 @@ sub cmd_upgrade {
 
     my $loc = Irssi::settings_get_str("twirssi_location");
     unless ( -w $loc ) {
-        &notice(
-"$loc isn't writable, can't upgrade.  Perhaps you need to /set twirssi_location?"
+        &notice( "$loc isn't writable, can't upgrade." .
+                 "  Perhaps you need to /set twirssi_location?"
         );
         return;
     }
@@ -710,8 +710,8 @@ sub cmd_upgrade {
         eval { use Digest::MD5; };
 
         if ($@) {
-            &notice(
-"Failed to load Digest::MD5.  Try '/twirssi_upgrade nomd5' to skip MD5 verification"
+            &notice( "Failed to load Digest::MD5." . 
+                     "  Try '/twirssi_upgrade nomd5' to skip MD5 verification"
             );
             return;
         }
@@ -725,8 +725,8 @@ sub cmd_upgrade {
         }
 
         unless ( open( CUR, $loc ) ) {
-            &notice(
-"Failed to read $loc.  Check that /set twirssi_location is set to the correct location."
+            &notice( "Failed to read $loc." .
+                     "  Check that /set twirssi_location is set to the correct location."
             );
             return;
         }
@@ -870,13 +870,13 @@ sub get_updates {
 
                 $error++
                   unless &get_timeline( $fh, $frusers[ $fix_replies_index{$_} ],
-                          $_, $twits{$_}, \%context_cache );
+                    $_, $twits{$_}, \%context_cache );
 
                 $fix_replies_index{$_}++;
                 $fix_replies_index{$_} = 0
                   if $fix_replies_index{$_} >= @frusers;
-                print $fh
-"id:$fix_replies_index{$_} account:$_ type:fix_replies_index\n";
+                print $fh "id:$fix_replies_index{$_} ",
+                          "account:$_ type:fix_replies_index\n";
             }
         }
 
@@ -1119,14 +1119,19 @@ sub do_updates {
 
 sub get_timeline {
     my ( $fh, $target, $username, $obj, $cache ) = @_;
-    print $fh
-"type:debug get_timeline($fix_replies_index{$username}=$target) started.  username = $username\n";
     my $tweets;
+    my $last_id = $id_map{__last_id}{$username}{$target};
+
+    print $fh "type:debug get_timeline(" .
+              "$fix_replies_index{$username}=$target > $last_id) started." .
+              "  username = $username\n";
     eval {
         $tweets = $obj->user_timeline(
             {
-                id       => $target,
-                since_id => $id_map{__last_id}{$username}{$target}
+                id => $target,
+                (   
+                    $last_id ? (since_id => $last_id) : ()
+                ),
             }
         );
     };
@@ -1184,12 +1189,10 @@ sub get_timeline {
         }
         printf $fh "id:%s account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
-        $id_map{__last_id}{$username}{$target} = $t->{id} if
-            $id_map{__last_id}{$username}{$target} < $t->{id};
+        $last_id = $t->{id} if $last_id < $t->{id};
     }
-    printf $fh "id:%s account:%s type:last_id_fixreplies %s\n", 
-               $id_map{__last_id}{$username}{$target},
-               $username, $target;
+    printf $fh "id:%s account:%s type:last_id_fixreplies %s\n",
+        $last_id, $username, $target;
 
     return 1;
 }
@@ -1425,6 +1428,7 @@ sub monitor_child {
             [ $filename, $attempt + 1 ] );
     } else {
         print "Giving up on polling $filename" if &debug;
+        Irssi::pidwait_remove($child_pid);
         unlink $filename unless &debug;
 
         return unless Irssi::settings_get_bool("twirssi_notify_timeouts");
@@ -1546,7 +1550,7 @@ sub sig_complete {
           keys %{ $id_map{__indexes} };
     }
 
-    if ( $linestart =~ /^\/twitter_unfriend\s*$/ )
+    if ( $linestart =~ /^\/(twitter_unfriend|twitter_add_follow_extra|twitter_del_follow_extra)\s*$/ )
     {    # /twitter_unfriend gets a nick
         $word =~ s/^@//;
         push @$complist, grep /^\Q$word/i,
