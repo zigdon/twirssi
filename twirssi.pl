@@ -1403,6 +1403,9 @@ sub monitor_child {
             # make sure the pid is removed from the waitpid list
             Irssi::pidwait_remove($child_pid);
 
+            # and that we don't leave any zombies behind, somehow
+            wait();
+
             # save id_map hash
             if ( keys %id_map
                 and my $file =
@@ -1429,6 +1432,7 @@ sub monitor_child {
     } else {
         print "Giving up on polling $filename" if &debug;
         Irssi::pidwait_remove($child_pid);
+        wait();
         unlink $filename unless &debug;
 
         return unless Irssi::settings_get_bool("twirssi_notify_timeouts");
