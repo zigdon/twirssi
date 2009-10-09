@@ -91,7 +91,7 @@ sub cmd_direct_as {
         if ( $twits{$username}
             ->new_direct_message( { user => $target, text => $text } ) )
         {
-            &notice("DM sent to $target");
+            &notice("DM sent to $target: $text");
             $nicks{$target} = time;
         } else {
             my $error;
