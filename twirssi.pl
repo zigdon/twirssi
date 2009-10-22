@@ -792,18 +792,26 @@ sub cmd_upgrade {
 
 sub load_friends {
     my $fh   = shift;
+    my $cursor = -1;
     my $page = 1;
     my %new_friends;
     eval {
-        while (1)
+        while ($page < 11 and $cursor ne "0")
         {
             print $fh "type:debug Loading friends page $page...\n"
               if ( $fh and &debug );
-            my $friends = $twit->friends( { page => $page } );
-            last unless $friends;
+            my $friends;
+            if (ref $twit =~ /^Net::Twitter/) {
+                $friends = $twit->friends( { cursor => $cursor } );
+                last unless $friends;
+                $cursor = $friends->{next_cursor};
+                $friends = $friends->{users};
+            } else {
+                $friends = $twit->friends( { page => $page } );
+                last unless $friends;
+            }
             $new_friends{ $_->{screen_name} } = time foreach @$friends;
             $page++;
-            last if @$friends == 0 or $page == 10;
         }
     };
 
