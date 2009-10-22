@@ -11,8 +11,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.3.0beta";
-my ($REV) = '$Rev: 687 $' =~ /(\d+)/;
+$VERSION = "2.3.0";
 %IRSSI = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -1791,7 +1790,7 @@ if ($window) {
         "twirssi_version",
         sub {
             &notice(
-                "Twirssi v$VERSION (r$REV); "
+                "Twirssi v$VERSION; "
                   . (
                     $Net::Twitter::VERSION
                     ? "Net::Twitter v$Net::Twitter::VERSION. "
@@ -1850,7 +1849,7 @@ if ($window) {
     );
     Irssi::signal_add_last( 'complete word' => \&sig_complete );
 
-    &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N (r$REV)");
+    &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N");
     &notice("   %C(_(\\%N           http://twirssi.com/ for full docs");
     &notice(
         "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet");
