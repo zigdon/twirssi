@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 use vars qw($VERSION %IRSSI);
 
 $VERSION = "2.3.0";
-%IRSSI = (
+%IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
     name        => 'twirssi',
@@ -698,9 +698,8 @@ sub cmd_upgrade {
 
     my $loc = Irssi::settings_get_str("twirssi_location");
     unless ( -w $loc ) {
-        &notice( "$loc isn't writable, can't upgrade." .
-                 "  Perhaps you need to /set twirssi_location?"
-        );
+        &notice("$loc isn't writable, can't upgrade."
+              . "  Perhaps you need to /set twirssi_location?" );
         return;
     }
 
@@ -709,9 +708,8 @@ sub cmd_upgrade {
         eval { use Digest::MD5; };
 
         if ($@) {
-            &notice( "Failed to load Digest::MD5." . 
-                     "  Try '/twirssi_upgrade nomd5' to skip MD5 verification"
-            );
+            &notice("Failed to load Digest::MD5."
+                  . "  Try '/twirssi_upgrade nomd5' to skip MD5 verification" );
             return;
         }
 
@@ -724,8 +722,8 @@ sub cmd_upgrade {
         }
 
         unless ( open( CUR, $loc ) ) {
-            &notice( "Failed to read $loc." .
-                     "  Check that /set twirssi_location is set to the correct location."
+            &notice("Failed to read $loc."
+                  . "  Check that /set twirssi_location is set to the correct location."
             );
             return;
         }
@@ -790,20 +788,20 @@ sub cmd_upgrade {
 }
 
 sub load_friends {
-    my $fh   = shift;
+    my $fh     = shift;
     my $cursor = -1;
-    my $page = 1;
+    my $page   = 1;
     my %new_friends;
     eval {
-        while ($page < 11 and $cursor ne "0")
+        while ( $page < 11 and $cursor ne "0" )
         {
             print $fh "type:debug Loading friends page $page...\n"
               if ( $fh and &debug );
             my $friends;
-            if (ref $twit =~ /^Net::Twitter/) {
+            if ( ref $twit =~ /^Net::Twitter/ ) {
                 $friends = $twit->friends( { cursor => $cursor } );
                 last unless $friends;
-                $cursor = $friends->{next_cursor};
+                $cursor  = $friends->{next_cursor};
                 $friends = $friends->{users};
             } else {
                 $friends = $twit->friends( { page => $page } );
@@ -883,7 +881,7 @@ sub get_updates {
                 $fix_replies_index{$_} = 0
                   if $fix_replies_index{$_} >= @frusers;
                 print $fh "id:$fix_replies_index{$_} ",
-                          "account:$_ type:fix_replies_index\n";
+                  "account:$_ type:fix_replies_index\n";
             }
         }
 
@@ -1129,16 +1127,14 @@ sub get_timeline {
     my $tweets;
     my $last_id = $id_map{__last_id}{$username}{$target};
 
-    print $fh "type:debug get_timeline(" .
-              "$fix_replies_index{$username}=$target > $last_id) started." .
-              "  username = $username\n";
+    print $fh "type:debug get_timeline("
+      . "$fix_replies_index{$username}=$target > $last_id) started."
+      . "  username = $username\n";
     eval {
         $tweets = $obj->user_timeline(
             {
                 id => $target,
-                (   
-                    $last_id ? (since_id => $last_id) : ()
-                ),
+                ( $last_id ? ( since_id => $last_id ) : () ),
             }
         );
     };
@@ -1199,7 +1195,7 @@ sub get_timeline {
         $last_id = $t->{id} if $last_id < $t->{id};
     }
     printf $fh "id:%s account:%s type:last_id_fixreplies %s\n",
-        $last_id, $username, $target;
+      $last_id, $username, $target;
 
     return 1;
 }
@@ -1561,7 +1557,9 @@ sub sig_complete {
           keys %{ $id_map{__indexes} };
     }
 
-    if ( $linestart =~ /^\/(twitter_unfriend|twitter_add_follow_extra|twitter_del_follow_extra)\s*$/ )
+    if ( $linestart =~
+/^\/(twitter_unfriend|twitter_add_follow_extra|twitter_del_follow_extra)\s*$/
+      )
     {    # /twitter_unfriend gets a nick
         $word =~ s/^@//;
         push @$complist, grep /^\Q$word/i,
