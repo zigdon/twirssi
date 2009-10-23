@@ -1,0 +1,25 @@
+### Required Modules ###
+You may need to use CPAN or another method to install these modules.
+    * WWW::Shorten::TinyURL
+    * Net::Twitter
+
+### Installation ###
+Installation is two part. First 
+
+In a terminal:
+
+    * Install a current version of Net::Twitter. Versions earlier than 3.0 are not supported.
+    * Create a directory for irssi scripts, if it doesn't already exist: mkdir ~/.irssi/scripts
+    * Change to that directory: cd ~/.irssi/scripts
+    * Remove any old version of the script: rm twirssi.pl
+    * Download the latest version: wget http://twirssi.com/twirssi.pl
+    * If you want it to automatically load with irssi, create an autorun dir: mkdir autorun
+    * And create a symlink in it: ln -s ../twirssi.pl autorun
+
+In irssi:
+
+    * If you don't already have a twitter window, create a new window: /win new hidden
+    * Name the new window: /win name twitter
+    * In that window type: /script load twirssi.pl
+    * Login: /twitter_login username password
+
