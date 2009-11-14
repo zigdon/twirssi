@@ -1592,6 +1592,21 @@ sub event_send_text {
 
 sub get_poll_time {
     my $poll = Irssi::settings_get_int("twitter_poll_interval");
+    my $algo = Irssi::settings_get_str("twitter_poll_schedule");
+    if ( $algo ne '' ) {
+        my $hhmm = sprintf('%02d%02d', (localtime())[2,1]);
+        foreach my $tuple ( split(',', $algo) ) {
+            if ( $tuple =~ /^(\d{4})-(\d{4}):(\d+)$/ ) {
+                my($range_from, $range_to, $poll_val) = ($1, $2, $3);
+                if ( ( $hhmm ge $range_from and $hhmm lt $range_to )
+                    or ( $range_from gt $range_to
+                        and ( $hhmm ge $range_from or $hhmm lt $range_to ) )
+                   ) {
+                    $poll = $poll_val;
+                }
+            }
+        }
+    }
     return $poll if $poll >= 60;
     return 60;
 }
@@ -1695,6 +1710,7 @@ Irssi::theme_register(
 );
 
 Irssi::settings_add_int( "twirssi", "twitter_poll_interval", 300 );
+Irssi::settings_add_str( "twirssi", "twitter_poll_schedule",   "" );
 Irssi::settings_add_str( "twirssi", "twitter_window",          "twitter" );
 Irssi::settings_add_str( "twirssi", "bitlbee_server",          "bitlbee" );
 Irssi::settings_add_str( "twirssi", "short_url_provider",      "TinyURL" );

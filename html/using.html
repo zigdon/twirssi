@@ -127,6 +127,11 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       requested from twitter (in seconds).  Default is every 5 minutes.  Keep
       in mind that twitter will rate limit your user (or IP) if you hit them
       too often.  Hardcoded minimum is one minute.</li>
+  <li><code>twitter_poll_schedule</code> - Vary the polling interval with time,
+      using a comma-separated list of tuples of the format <code>hhmm-hhmm:interval</code>
+      (e.g. <code>2330-0745:900,0200-0600:2500</code>). Each tuple gives the interval
+      for a time period.  Later tuples take precedence.  If no period applies,
+      reverts to twitter_poll_interval.</li>
   <li><code>twitter_friends_poll</code> - How often should the updated friends
       list be retrieved from the server.  By default, only once every 10
       minutes</li>
