@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.3.3beta";
+$VERSION = "2.3.3";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -494,7 +494,7 @@ sub cmd_login {
     }
     $defservice = $service = ucfirst lc $service;
 
-    eval "use Net::$service 3.0";
+    eval "use Net::$service 3.05";
     if ($@) {
         &notice(
             "Failed to load Net::$service when trying to log in as $user: $@");
