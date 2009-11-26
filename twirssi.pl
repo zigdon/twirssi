@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.3.1beta";
+$VERSION = "2.3.3";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -175,25 +175,29 @@ sub cmd_retweet_as {
     }
     $text =~ s/\$t/$id_map{__tweets}{ lc $nick }[$id]/;
 
+    my $modified = $data;
     $data = &shorten($text);
 
     return if &too_long($data);
 
     my $success = 1;
     eval {
-        unless (
-            $twits{$username}->update(
+        if ($modified) {
+            $success = $twits{$username}->update(
                 {
                     status => $data,
 
                     # in_reply_to_status_id => $id_map{ lc $nick }[$id]
                 }
             )
-          )
-        {
-            &notice("Update failed");
-            $success = 0;
+        } else {
+            $success = $twits{$username}->retweet(
+                {
+                    id => $id_map{ lc $nick }[$id]
+                }
+            )
         }
+        &notice("Update failed") unless $success;
     };
     return unless $success;
 
@@ -513,6 +517,7 @@ sub cmd_login {
         and $twit->can('ua') )
     {
         $twit->ua->timeout($timeout);
+        &notice("Twitter timeout set to $timeout");
     }
 
     unless ( $twit->verify_credentials() ) {
@@ -935,14 +940,14 @@ sub do_updates {
     eval {
         if ( $id_map{__last_id}{$username}{timeline} )
         {
-            $tweets = $obj->friends_timeline( { count => 100 } );
+            $tweets = $obj->home_timeline( { count => 100 } );
         } else {
-            $tweets = $obj->friends_timeline();
+            $tweets = $obj->home_timeline();
         }
     };
 
     if ($@) {
-        print $fh "type:debug Error during friends_timeline call: Aborted.\n";
+        print $fh "type:debug Error during home_timeline call: Aborted.\n";
         print $fh "type:debug : $_\n" foreach split /\n/, Dumper($@);
         return undef;
     }
@@ -953,12 +958,12 @@ sub do_updates {
             eval { $error = JSON::Any->jsonToObj( $obj->get_error() ) };
             unless ($@) { $error = $obj->get_error() }
             print $fh
-              "type:debug API Error during friends_timeline call: Aborted\n";
+              "type:debug API Error during home_timeline call: Aborted\n";
             print $fh "type:debug : $_\n" foreach split /\n/, Dumper($error);
 
         } else {
             print $fh
-              "type:debug API Error during friends_timeline call. Aborted.\n";
+              "type:debug API Error during home_timeline call. Aborted.\n";
         }
         return undef;
     }
@@ -1602,7 +1607,7 @@ sub hilight {
     if ( Irssi::settings_get_str("twirssi_nick_color") ) {
         my $c = Irssi::settings_get_str("twirssi_nick_color");
         $c = $irssi_to_mirc_colors{$c};
-        $text =~ s/(^|\W)\@([-\w]+)/$1\cC$c\@$2\cO/g if $c;
+        $text =~ s/(^|\W)\@(\w+)/$1\cC$c\@$2\cO/g if $c;
     }
     if ( Irssi::settings_get_str("twirssi_topic_color") ) {
         my $c = Irssi::settings_get_str("twirssi_topic_color");
