@@ -11,7 +11,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.3.3";
+$VERSION = "2.3.4beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -178,7 +178,7 @@ sub cmd_retweet_as {
     my $modified = $data;
     $data = &shorten($text);
 
-    return if &too_long($data);
+    return if $modified and &too_long($data);
 
     my $success = 1;
     eval {
