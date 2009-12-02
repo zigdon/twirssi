@@ -968,7 +968,7 @@ sub do_updates {
     }
 
     foreach my $t ( reverse @$tweets ) {
-        my $text = &get_text($t, $obj);
+        my $text = &get_text( $t, $obj );
         my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
             and $t->{in_reply_to_screen_name} ne $username
@@ -1659,16 +1659,15 @@ sub normalize_username {
 }
 
 sub get_text {
-    my $tweet = shift;
+    my $tweet  = shift;
     my $object = shift;
-    my $text = decode_entities( $tweet->{text} );
-    if ($tweet->{truncated}) {
-        if (exists $tweet->{retweeted_status}) {
-            $text = "RT $tweet->{retweeted_status}{user}{screen_name}: " .
-                    "$tweet->{retweeted_status}{text}";
+    my $text   = decode_entities( $tweet->{text} );
+    if ( $tweet->{truncated} ) {
+        if ( exists $tweet->{retweeted_status} ) {
+            $text = "RT $tweet->{retweeted_status}{user}{screen_name}: "
+              . "$tweet->{retweeted_status}{text}";
         } elsif ( $object->isa('Net::Twitter') ) {
-            $text .=
-                " -- http://twitter.com/$tweet->{user}{screen_name}"
+            $text .= " -- http://twitter.com/$tweet->{user}{screen_name}"
               . "/status/$tweet->{id}";
         }
     }
