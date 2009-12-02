@@ -182,20 +182,19 @@ sub cmd_retweet_as {
 
     my $success = 1;
     eval {
-        if ($modified) {
+        if ($modified)
+        {
             $success = $twits{$username}->update(
                 {
                     status => $data,
 
                     # in_reply_to_status_id => $id_map{ lc $nick }[$id]
                 }
-            )
+            );
         } else {
-            $success = $twits{$username}->retweet(
-                {
-                    id => $id_map{ lc $nick }[$id]
-                }
-            )
+            $success =
+              $twits{$username}->retweet( { id => $id_map{ lc $nick }[$id] } );
+            $success = $success->{id} if ref $success;
         }
         &notice("Update failed") unless $success;
     };
@@ -969,7 +968,8 @@ sub do_updates {
     }
 
     foreach my $t ( reverse @$tweets ) {
-        my $text = decode_entities( $t->{text} );
+        my $text =
+          decode_entities( $t->{retweeted_status}{text} || $t->{text} );
         $text =~ s/[\n\r]/ /g;
         my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
@@ -989,7 +989,9 @@ sub do_updates {
             $context = $cache->{ $t->{in_reply_to_status_id} };
 
             if ($context) {
-                my $ctext = decode_entities( $context->{text} );
+                my $ctext =
+                  decode_entities( $context->{retweeted_status}{text}
+                      || $context->{text} );
                 $ctext =~ s/[\n\r]/ /g;
                 if ( $context->{truncated} and ref($obj) ne 'Net::Identica' ) {
                     $ctext .=
@@ -1040,7 +1042,8 @@ sub do_updates {
         next
           if exists $friends{ $t->{user}{screen_name} };
 
-        my $text = decode_entities( $t->{text} );
+        my $text =
+          decode_entities( $t->{retweeted_status}{text} || $t->{text} );
         $text =~ s/[\n\r]/ /g;
         if ( $t->{truncated} ) {
             $text .= " -- http://twitter.com/$t->{user}{screen_name}"
@@ -1111,7 +1114,8 @@ sub do_updates {
               $search->{max_id}, $username, $topic;
 
             foreach my $t ( reverse @{ $search->{results} } ) {
-                my $text = decode_entities( $t->{text} );
+                my $text =
+                  decode_entities( $t->{retweeted_status}{text} || $t->{text} );
                 $text =~ s/[\n\r]/ /g;
                 printf $fh "id:%s account:%s nick:%s type:search topic:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic, $text;
@@ -1158,7 +1162,8 @@ sub get_timeline {
     }
 
     foreach my $t ( reverse @$tweets ) {
-        my $text = decode_entities( $t->{text} );
+        my $text =
+          decode_entities( $t->{retweeted_status}{text} || $t->{text} );
         $text =~ s/[\n\r]/ /g;
         my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
@@ -1178,7 +1183,9 @@ sub get_timeline {
             $context = $cache->{ $t->{in_reply_to_status_id} };
 
             if ($context) {
-                my $ctext = decode_entities( $context->{text} );
+                my $ctext =
+                  decode_entities( $context->{retweeted_status}{text}
+                      || $context->{text} );
                 $ctext =~ s/[\n\r]/ /g;
                 if ( $context->{truncated} and ref($obj) ne 'Net::Identica' ) {
                     $ctext .=
