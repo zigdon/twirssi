@@ -968,9 +968,7 @@ sub do_updates {
     }
 
     foreach my $t ( reverse @$tweets ) {
-        my $text =
-          decode_entities( $t->{retweeted_status}{text} || $t->{text} );
-        $text =~ s/[\n\r]/ /g;
+        my $text = &get_text($t, $obj);
         my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
             and $t->{in_reply_to_screen_name} ne $username
@@ -989,15 +987,7 @@ sub do_updates {
             $context = $cache->{ $t->{in_reply_to_status_id} };
 
             if ($context) {
-                my $ctext =
-                  decode_entities( $context->{retweeted_status}{text}
-                      || $context->{text} );
-                $ctext =~ s/[\n\r]/ /g;
-                if ( $context->{truncated} and ref($obj) ne 'Net::Identica' ) {
-                    $ctext .=
-                        " -- http://twitter.com/$context->{user}{screen_name}"
-                      . "/status/$context->{id}";
-                }
+                my $ctext = &get_text( $context, $obj );
                 printf $fh "id:%s account:%s nick:%s type:tweet %s\n",
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
@@ -1007,10 +997,6 @@ sub do_updates {
         next
           if $t->{user}{screen_name} eq $username
               and not Irssi::settings_get_bool("show_own_tweets");
-        if ( $t->{truncated} and ref($obj) ne 'Net::Identica' ) {
-            $text .= " -- http://twitter.com/$t->{user}{screen_name}"
-              . "/status/$t->{id}";
-        }
         printf $fh "id:%s account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
@@ -1042,13 +1028,7 @@ sub do_updates {
         next
           if exists $friends{ $t->{user}{screen_name} };
 
-        my $text =
-          decode_entities( $t->{retweeted_status}{text} || $t->{text} );
-        $text =~ s/[\n\r]/ /g;
-        if ( $t->{truncated} ) {
-            $text .= " -- http://twitter.com/$t->{user}{screen_name}"
-              . "/status/$t->{id}";
-        }
+        my $text = &get_text( $t, $obj );
         printf $fh "id:%s account:%s nick:%s type:tweet %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
@@ -1114,9 +1094,7 @@ sub do_updates {
               $search->{max_id}, $username, $topic;
 
             foreach my $t ( reverse @{ $search->{results} } ) {
-                my $text =
-                  decode_entities( $t->{retweeted_status}{text} || $t->{text} );
-                $text =~ s/[\n\r]/ /g;
+                my $text = &get_text( $t, $obj );
                 printf $fh "id:%s account:%s nick:%s type:search topic:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic, $text;
                 $new_poll_id = $t->{id}
@@ -1162,9 +1140,7 @@ sub get_timeline {
     }
 
     foreach my $t ( reverse @$tweets ) {
-        my $text =
-          decode_entities( $t->{retweeted_status}{text} || $t->{text} );
-        $text =~ s/[\n\r]/ /g;
+        my $text = &get_text( $t, $obj );
         my $reply = "tweet";
         if (    Irssi::settings_get_bool("show_reply_context")
             and $t->{in_reply_to_screen_name} ne $username
@@ -1183,24 +1159,12 @@ sub get_timeline {
             $context = $cache->{ $t->{in_reply_to_status_id} };
 
             if ($context) {
-                my $ctext =
-                  decode_entities( $context->{retweeted_status}{text}
-                      || $context->{text} );
-                $ctext =~ s/[\n\r]/ /g;
-                if ( $context->{truncated} and ref($obj) ne 'Net::Identica' ) {
-                    $ctext .=
-                        " -- http://twitter.com/$context->{user}{screen_name}"
-                      . "/status/$context->{id}";
-                }
+                my $ctext = &get_text( $context, $obj );
                 printf $fh "id:%s account:%s nick:%s type:tweet %s\n",
                   $context->{id}, $username,
                   $context->{user}{screen_name}, $ctext;
                 $reply = "reply";
             }
-        }
-        if ( $t->{truncated} and ref($obj) ne 'Net::Identica' ) {
-            $text .= " -- http://twitter.com/$t->{user}{screen_name}"
-              . "/status/$t->{id}";
         }
         printf $fh "id:%s account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
@@ -1692,6 +1656,26 @@ sub normalize_username {
     }
 
     return "$username\@$service";
+}
+
+sub get_text {
+    my $tweet = shift;
+    my $object = shift;
+    my $text = decode_entities( $tweet->{text} );
+    if ($tweet->{truncated}) {
+        if (exists $tweet->{retweeted_status}) {
+            $text = "RT $tweet->{retweeted_status}{user}{screen_name}: " .
+                    "$tweet->{retweeted_status}{text}";
+        } elsif ( $object->isa('Net::Twitter') ) {
+            $text .=
+                " -- http://twitter.com/$tweet->{user}{screen_name}"
+              . "/status/$tweet->{id}";
+        }
+    }
+
+    $text =~ s/[\n\r]/ /g;
+
+    return $text;
 }
 
 Irssi::signal_add( "send text", "event_send_text" );
