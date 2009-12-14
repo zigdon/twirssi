@@ -1664,7 +1664,7 @@ sub get_text {
     my $text   = decode_entities( $tweet->{text} );
     if ( $tweet->{truncated} ) {
         if ( exists $tweet->{retweeted_status} ) {
-            $text = "RT $tweet->{retweeted_status}{user}{screen_name}: "
+            $text = "RT \@$tweet->{retweeted_status}{user}{screen_name}: "
               . "$tweet->{retweeted_status}{text}";
         } elsif ( $object->isa('Net::Twitter') ) {
             $text .= " -- http://twitter.com/$tweet->{user}{screen_name}"
