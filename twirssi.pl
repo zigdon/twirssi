@@ -7,6 +7,7 @@ use File::Temp;
 use LWP::Simple;
 use Data::Dumper;
 use Encode;
+use POSIX qw/:sys_wait_h/;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
@@ -1184,6 +1185,9 @@ sub monitor_child {
     print scalar localtime, " - checking child log at $filename ($attempt)"
       if &debug;
     my ($new_last_poll);
+
+    # reap any random leftover processes - work around a bug in irssi on gentoo
+    waitpid(-1, WNOHANG);
 
     # first time we run we don't want to print out *everything*, so we just
     # pretend
