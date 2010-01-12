@@ -12,7 +12,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.3.4beta";
+$VERSION = "2.4.0beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -27,6 +27,7 @@ $VERSION = "2.3.4beta";
 my $window;
 my $twit;
 my %twits;
+my %oauth;
 my $user;
 my $defservice;
 my $poll;
@@ -443,15 +444,25 @@ sub cmd_logout {
 sub cmd_login {
     my ( $data, $server, $win ) = @_;
     my $pass;
+    print "logging in: $data" if &debug;
     if ($data) {
+        print "manual data login" if &debug;
         ( $user, $pass ) = split ' ', $data, 2;
-        unless ($pass) {
+        unless (Irssi::settings_get_bool("twirssi_use_oauth") or $pass) {
             &notice("usage: /twitter_login <username>[\@<service>] <password>");
             return;
         }
+    } elsif ( Irssi::settings_get_bool("twirssi_use_oauth") and
+              my $autouser = Irssi::settings_get_str("twitter_usernames") ) {
+        print "oauth autouser login" if &debug;
+        foreach my $user (split /,/, $autouser) {
+            &cmd_login($user);
+        }
+        return;
     } elsif ( my $autouser = Irssi::settings_get_str("twitter_usernames")
         and my $autopass = Irssi::settings_get_str("twitter_passwords") )
     {
+        print "autouser login" if &debug;
         my @user = split /\s*,\s*/, $autouser;
         my @pass = split /\s*,\s*/, $autopass;
 
@@ -479,8 +490,10 @@ sub cmd_login {
             return;
         }
     } else {
-        &notice("/twitter_login requires either a username and password "
-              . "or twitter_usernames and twitter_passwords to be set." );
+        &notice("/twitter_login requires either a username/password "
+              . "or twitter_usernames and twitter_passwords to be set. "
+              . "Note that if twirssi_use_oauth is true, passwords are "
+              . "not required");
         return;
     }
 
@@ -494,6 +507,7 @@ sub cmd_login {
     }
     $defservice = $service = ucfirst lc $service;
 
+    print "Loading Net::$service" if &debug;
     eval "use Net::$service 3.05";
     if ($@) {
         &notice(
@@ -501,17 +515,122 @@ sub cmd_login {
         return;
     }
 
-    $twit = "Net::$service"->new(
-        username => $user,
-        password => $pass,
-        source   => "twirssi",
-        ssl      => Irssi::settings_get_bool("twirssi_avoid_ssl") ? 0 : 1,
-    );
+    if ( Irssi::settings_get_bool("twirssi_use_oauth") ) {
+        print "Attempting OAuth for $user\@$service" if &debug;
+        eval {
+            $twit = "Net::$service"->new(
+                traits       => [ 'API::REST', 'OAuth' ],
+                consumer_key => 'BZVAvBma4GxdiRwXIvbnw',
+                consumer_secret => '0T5kahwLyb34vciGZsgkA9lsjtGCQ05vxVE2APXM',
+                source          => "twirssi",
+                ssl => Irssi::settings_get_bool("twirssi_avoid_ssl") ? 0 : 1,
+            );
+        };
+
+        if ( $twit ) {
+            if (open( OAUTH, Irssi::settings_get_str("twirssi_oauth_store") ) ) {
+                while (<OAUTH>) {
+                    chomp;
+                    next unless m/$user\@$service (\S+) (\S+)/i;
+                    print "Trying cached oauth creds for $user\@$service" if &debug;
+                    $twit->access_token($1);
+                    $twit->access_token_secret($2);
+                    last;
+                }
+                close OAUTH;
+            }
+
+            unless ( $twit->authorized ) {
+                &notice("Twirssi not autorized to access $service for $user.");
+                &notice("Please authorize at the following url, then enter the pin ");
+                &notice("supplied with /twirssi_oath $user\@$service <pin>");
+                &notice($twit->get_authorization_url);
+
+                $oauth{pending}{"$user\@$service"} = $twit;
+                return;
+            }
+        }
+    } else { 
+        $twit = "Net::$service"->new(
+            username => $user,
+            password => $pass,
+            source   => "twirssi",
+            ssl      => Irssi::settings_get_bool("twirssi_avoid_ssl") ? 0 : 1,
+        );
+    }
 
     unless ($twit) {
         &notice("Failed to create Net::$service object!  Aborting.");
         return;
     }
+
+    return &verify_twitter_object($server, $win, $user, $service, $twit);
+}
+
+sub cmd_oauth {
+    my ($data, $server, $win) = @_;
+    my ( $key, $pin ) = split ' ', $data;
+    my ($user, $service);
+    $key = &normalize_username($key);
+    if ( $key =~ /^(.*)@(Twitter|Identica)$/ ) {
+        ( $user, $service ) = ( $1, $2 );
+    }
+    $pin =~ s/\D//g;
+    print "Applying pin to $key" if &debug;
+
+    unless ( exists $oauth{pending}{$key} ) {
+        &notice("There isn't a pending oauth request for $key. "
+              . "Try /twitter_login first" );
+        return;
+    }
+
+    my $twit = $oauth{pending}{$key};
+    my ( $access_token, $access_token_secret );
+    eval {
+        ( $access_token, $access_token_secret ) =
+          $twit->request_access_token( verifier => $pin );
+    };
+
+    if ($@) {
+        &notice("Invalid pin, try again.");
+        return;
+    }
+
+    delete $oauth{pending}{$key};
+
+    my $store_file = Irssi::settings_get_str("twirssi_oauth_store");
+    if ($store_file) {
+        my %store;
+        if ( open( OAUTH, $store_file ) ) {
+            while (<OAUTH>) {
+                chomp;
+                my ( $k, $v ) = split ' ', 2;
+                $store{$k} = $v;
+            }
+            close OAUTH;
+
+        }
+
+        $store{$key} = "$access_token $access_token_secret";
+
+        if ( open( OAUTH, ">$store_file.new" ) ) {
+            print OAUTH "$_ $store{$_}\n" foreach keys %store;
+            close OAUTH;
+            rename "$store_file.new", $store_file
+              or &notice("Failed to rename $store_file.new: $!");
+        } else {
+            &notice("Failed to write $store_file.new: $!");
+        }
+    } else {
+        &notice("No persistant storage set for OAuth.  "
+              . "Please /set twirssi_oauth_store to a writable filename." );
+    }
+
+    return &verify_twitter_object($server, $win, $user, $service, $twit);
+}
+
+sub verify_twitter_object {
+    my ($server, $win, $user, $service, $twit) = @_;
 
     if ( my $timeout = Irssi::settings_get_int("twitter_timeout")
         and $twit->can('ua') )
@@ -538,31 +657,27 @@ sub cmd_login {
         return;
     }
 
-    if ($twit) {
-        my $rate_limit = $twit->rate_limit_status();
-        if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
-            &notice(
-                "Rate limit exceeded, try again after $rate_limit->{reset_time}"
-            );
-            $twit = undef;
-            return;
-        }
-
-        $twits{"$user\@$service"} = $twit;
-        Irssi::timeout_remove($poll) if $poll;
-        $poll = Irssi::timeout_add( &get_poll_time * 1000, \&get_updates, "" );
-        &notice("Logged in as $user\@$service, loading friends list...");
-        &load_friends();
-        &notice( "loaded friends: ", scalar keys %friends );
-        if ( Irssi::settings_get_bool("twirssi_first_run") ) {
-            Irssi::settings_set_bool( "twirssi_first_run", 0 );
-        }
-        %nicks = %friends;
-        $nicks{$user} = 0;
-        return 1;
-    } else {
-        &notice("Login failed");
+    my $rate_limit = $twit->rate_limit_status();
+    if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
+        &notice(
+            "Rate limit exceeded, try again after $rate_limit->{reset_time}" );
+        $twit = undef;
+        return;
     }
+
+    print "saving object for $user\@$service" if &debug;
+    $twits{"$user\@$service"} = $twit;
+    Irssi::timeout_remove($poll) if $poll;
+    $poll = Irssi::timeout_add( &get_poll_time * 1000, \&get_updates, "" );
+    &notice("Logged in as $user\@$service, loading friends list...");
+    &load_friends();
+    &notice( "loaded friends: ", scalar keys %friends );
+    if ( Irssi::settings_get_bool("twirssi_first_run") ) {
+        Irssi::settings_set_bool( "twirssi_first_run", 0 );
+    }
+    %nicks = %friends;
+    $nicks{$user} = 0;
+    return 1;
 }
 
 sub cmd_add_follow {
@@ -1187,7 +1302,7 @@ sub monitor_child {
     my ($new_last_poll);
 
     # reap any random leftover processes - work around a bug in irssi on gentoo
-    waitpid(-1, WNOHANG);
+    waitpid( -1, WNOHANG );
 
     # first time we run we don't want to print out *everything*, so we just
     # pretend
@@ -1706,9 +1821,11 @@ Irssi::settings_add_str( "twirssi", "twirssi_topic_color",     "%r" );
 Irssi::settings_add_str( "twirssi", "twirssi_retweet_format",
     'RT $n: "$t" ${-- $c$}' );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
-    ".irssi/scripts/twirssi.pl" );
+    "$ENV{HOME}/.irssi/scripts/twirssi.pl" );
 Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
-    ".irssi/scripts/twirssi.json" );
+    "$ENV{HOME}/.irssi/scripts/twirssi.json" );
+Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
+    "$ENV{HOME}/.irssi/scripts/twirssi.oauth" );
 
 Irssi::settings_add_int( "twirssi", "twitter_friends_poll", 600 );
 Irssi::settings_add_int( "twirssi", "twitter_timeout",      30 );
@@ -1727,6 +1844,7 @@ Irssi::settings_add_bool( "twirssi", "twirssi_hilights",          1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_always_shorten",    0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_avoid_ssl",         0 );
+Irssi::settings_add_bool( "twirssi", "twirssi_use_oauth",         1 );
 
 $last_poll = time - &get_poll_time;
 $window = Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
@@ -1757,6 +1875,7 @@ if ($window) {
     Irssi::command_bind( "twitter_unsubscribe",        "cmd_del_search" );
     Irssi::command_bind( "twitter_list_subscriptions", "cmd_list_search" );
     Irssi::command_bind( "twirssi_upgrade",            "cmd_upgrade" );
+    Irssi::command_bind( "twirssi_oauth",              "cmd_oauth" );
     Irssi::command_bind( "twitter_updates",            "get_updates" );
     Irssi::command_bind( "twitter_add_follow_extra",   "cmd_add_follow" );
     Irssi::command_bind( "twitter_del_follow_extra",   "cmd_del_follow" );
