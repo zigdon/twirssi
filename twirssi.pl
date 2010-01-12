@@ -2002,9 +2002,7 @@ if ($window) {
         }
     }
 
-    if (    my $autouser = Irssi::settings_get_str("twitter_usernames")
-        and my $autopass = Irssi::settings_get_str("twitter_passwords") )
-    {
+    if ( my $autouser = Irssi::settings_get_str("twitter_usernames") ) {
         &cmd_login();
         &get_updates;
     }
