@@ -600,21 +600,21 @@ sub cmd_oauth {
 
     my $store_file = Irssi::settings_get_str("twirssi_oauth_store");
     if ($store_file) {
-        my %store;
+        my @store;
         if ( open( OAUTH, $store_file ) ) {
             while (<OAUTH>) {
                 chomp;
-                my ( $k, $v ) = split ' ', 2;
-                $store{$k} = $v;
+                next if /$key/i;
+                push @store, $_;
             }
             close OAUTH;
 
         }
 
-        $store{$key} = "$access_token $access_token_secret";
+        push @store, "$key $access_token $access_token_secret";
 
         if ( open( OAUTH, ">$store_file.new" ) ) {
-            print OAUTH "$_ $store{$_}\n" foreach keys %store;
+            print OAUTH "$_\n" foreach @store;
             close OAUTH;
             rename "$store_file.new", $store_file
               or &notice("Failed to rename $store_file.new: $!");
