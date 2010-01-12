@@ -543,7 +543,7 @@ sub cmd_login {
             unless ( $twit->authorized ) {
                 &notice("Twirssi not autorized to access $service for $user.");
                 &notice("Please authorize at the following url, then enter the pin ");
-                &notice("supplied with /twirssi_oath $user\@$service <pin>");
+                &notice("supplied with /twirssi_oauth $user\@$service <pin>");
                 &notice($twit->get_authorization_url);
 
                 $oauth{pending}{"$user\@$service"} = $twit;
