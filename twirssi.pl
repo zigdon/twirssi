@@ -543,8 +543,9 @@ sub cmd_login {
             }
 
             unless ( $twit->authorized ) {
+                my $url;
                 eval {
-                    my $url = $twit->get_authorization_url;
+                    $url = $twit->get_authorization_url;
                 };
 
                 if ($@) {
