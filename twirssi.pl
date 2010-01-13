@@ -430,7 +430,9 @@ sub cmd_logout {
     return unless $data = &valid_username($data);
 
     &notice("Logging out $data...");
-    $twits{$data}->end_session();
+    eval {
+        $twits{$data}->end_session();
+    };
     delete $twits{$data};
     undef $twit;
     if ( keys %twits ) {
@@ -541,10 +543,19 @@ sub cmd_login {
             }
 
             unless ( $twit->authorized ) {
+                eval {
+                    my $url = $twit->get_authorization_url;
+                };
+
+                if ($@) {
+                    &notice("ERROR: Failed to get OAuth authorization_url.  Try again later.");
+                    return;
+                }
+
                 &notice("Twirssi not autorized to access $service for $user.");
                 &notice("Please authorize at the following url, then enter the pin ");
                 &notice("supplied with /twirssi_oauth $user\@$service <pin>");
-                &notice($twit->get_authorization_url);
+                &notice($url);
 
                 $oauth{pending}{"$user\@$service"} = $twit;
                 return;
@@ -1043,11 +1054,13 @@ sub get_updates {
 sub do_updates {
     my ( $fh, $username, $obj, $cache ) = @_;
 
-    my $rate_limit = $obj->rate_limit_status();
-    if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
-        &notice("Rate limit exceeded for $username");
-        return undef;
-    }
+    eval {
+        my $rate_limit = $obj->rate_limit_status();
+        if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
+            &notice("Rate limit exceeded for $username");
+            return undef;
+        }
+    };
 
     print scalar localtime, " - Polling for updates for $username" if &debug;
     my $tweets;
