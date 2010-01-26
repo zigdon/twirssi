@@ -8,11 +8,12 @@ use LWP::Simple;
 use Data::Dumper;
 use Encode;
 use POSIX qw/:sys_wait_h/;
+use Net::Twitter qw/3.05/;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.4.0";
+$VERSION = "2.4.1beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -509,18 +510,12 @@ sub cmd_login {
     }
     $defservice = $service = ucfirst lc $service;
 
-    print "Loading Net::$service" if &debug;
-    eval "use Net::$service 3.05";
-    if ($@) {
-        &notice(
-            "Failed to load Net::$service when trying to log in as $user: $@");
-        return;
-    }
-
-    if ( Irssi::settings_get_bool("twirssi_use_oauth") ) {
+    if ( $service eq 'Twitter' and
+         Irssi::settings_get_bool("twirssi_use_oauth") ) {
         print "Attempting OAuth for $user\@$service" if &debug;
         eval {
-            $twit = "Net::$service"->new(
+            $twit = Net::Twitter->new(
+                $service eq 'Identica' ? ( identica => 1 ) : (),
                 traits       => [ 'API::REST', 'OAuth' ],
                 consumer_key => 'BZVAvBma4GxdiRwXIvbnw',
                 consumer_secret => '0T5kahwLyb34vciGZsgkA9lsjtGCQ05vxVE2APXM',
@@ -563,7 +558,8 @@ sub cmd_login {
             }
         }
     } else { 
-        $twit = "Net::$service"->new(
+        $twit = Net::Twitter->new(
+            $service eq 'Identica' ? ( identica => 1 ) : (),
             username => $user,
             password => $pass,
             source   => "twirssi",
@@ -572,7 +568,7 @@ sub cmd_login {
     }
 
     unless ($twit) {
-        &notice("Failed to create Net::$service object!  Aborting.");
+        &notice("Failed to create object!  Aborting.");
         return;
     }
 
