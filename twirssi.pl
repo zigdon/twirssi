@@ -431,9 +431,7 @@ sub cmd_logout {
     return unless $data = &valid_username($data);
 
     &notice("Logging out $data...");
-    eval {
-        $twits{$data}->end_session();
-    };
+    eval { $twits{$data}->end_session(); };
     delete $twits{$data};
     undef $twit;
     if ( keys %twits ) {
@@ -451,14 +449,15 @@ sub cmd_login {
     if ($data) {
         print "manual data login" if &debug;
         ( $user, $pass ) = split ' ', $data, 2;
-        unless (Irssi::settings_get_bool("twirssi_use_oauth") or $pass) {
+        unless ( Irssi::settings_get_bool("twirssi_use_oauth") or $pass ) {
             &notice("usage: /twitter_login <username>[\@<service>] <password>");
             return;
         }
-    } elsif ( Irssi::settings_get_bool("twirssi_use_oauth") and
-              my $autouser = Irssi::settings_get_str("twitter_usernames") ) {
+    } elsif ( Irssi::settings_get_bool("twirssi_use_oauth")
+        and my $autouser = Irssi::settings_get_str("twitter_usernames") )
+    {
         print "oauth autouser login" if &debug;
-        foreach my $user (split /,/, $autouser) {
+        foreach my $user ( split /,/, $autouser ) {
             &cmd_login($user);
         }
         return;
@@ -496,7 +495,7 @@ sub cmd_login {
         &notice("/twitter_login requires either a username/password "
               . "or twitter_usernames and twitter_passwords to be set. "
               . "Note that if twirssi_use_oauth is true, passwords are "
-              . "not required");
+              . "not required" );
         return;
     }
 
@@ -510,26 +509,39 @@ sub cmd_login {
     }
     $defservice = $service = ucfirst lc $service;
 
-    if ( $service eq 'Twitter' and
-         Irssi::settings_get_bool("twirssi_use_oauth") ) {
+    if ( $service eq 'Twitter'
+        and Irssi::settings_get_bool("twirssi_use_oauth") )
+    {
         print "Attempting OAuth for $user\@$service" if &debug;
         eval {
-            $twit = Net::Twitter->new(
-                $service eq 'Identica' ? ( identica => 1 ) : (),
-                traits       => [ 'API::REST', 'OAuth' ],
-                consumer_key => 'BZVAvBma4GxdiRwXIvbnw',
-                consumer_secret => '0T5kahwLyb34vciGZsgkA9lsjtGCQ05vxVE2APXM',
-                source          => "twirssi",
-                ssl => Irssi::settings_get_bool("twirssi_avoid_ssl") ? 0 : 1,
-            );
+            if ( $service eq 'Identica' )
+            {
+                $twit = Net::Twitter->new(
+                    identica => 1,
+                    traits   => [ 'API::REST' ],
+                    source   => "twirssi",
+                    ssl      => !Irssi::settings_get_bool("twirssi_avoid_ssl"),
+                );
+            } else {
+                $twit = Net::Twitter->new(
+                    traits       => [ 'API::REST', 'OAuth' ],
+                    consumer_key => 'BZVAvBma4GxdiRwXIvbnw',
+                    consumer_secret =>
+                      '0T5kahwLyb34vciGZsgkA9lsjtGCQ05vxVE2APXM',
+                    source => "twirssi",
+                    ssl    => !Irssi::settings_get_bool("twirssi_avoid_ssl"),
+                );
+            }
         };
 
-        if ( $twit ) {
-            if (open( OAUTH, Irssi::settings_get_str("twirssi_oauth_store") ) ) {
+        if ($twit) {
+            if ( open( OAUTH, Irssi::settings_get_str("twirssi_oauth_store") ) )
+            {
                 while (<OAUTH>) {
                     chomp;
                     next unless m/$user\@$service (\S+) (\S+)/i;
-                    print "Trying cached oauth creds for $user\@$service" if &debug;
+                    print "Trying cached oauth creds for $user\@$service"
+                      if &debug;
                     $twit->access_token($1);
                     $twit->access_token_secret($2);
                     last;
@@ -539,17 +551,19 @@ sub cmd_login {
 
             unless ( $twit->authorized ) {
                 my $url;
-                eval {
-                    $url = $twit->get_authorization_url;
-                };
+                eval { $url = $twit->get_authorization_url; };
 
                 if ($@) {
-                    &notice("ERROR: Failed to get OAuth authorization_url.  Try again later.");
+                    &notice(
+"ERROR: Failed to get OAuth authorization_url.  Try again later."
+                    );
                     return;
                 }
 
                 &notice("Twirssi not autorized to access $service for $user.");
-                &notice("Please authorize at the following url, then enter the pin ");
+                &notice(
+                    "Please authorize at the following url, then enter the pin "
+                );
                 &notice("supplied with /twirssi_oauth $user\@$service <pin>");
                 &notice($url);
 
@@ -557,7 +571,7 @@ sub cmd_login {
                 return;
             }
         }
-    } else { 
+    } else {
         $twit = Net::Twitter->new(
             $service eq 'Identica' ? ( identica => 1 ) : (),
             username => $user,
@@ -572,13 +586,13 @@ sub cmd_login {
         return;
     }
 
-    return &verify_twitter_object($server, $win, $user, $service, $twit);
+    return &verify_twitter_object( $server, $win, $user, $service, $twit );
 }
 
 sub cmd_oauth {
-    my ($data, $server, $win) = @_;
+    my ( $data, $server, $win ) = @_;
     my ( $key, $pin ) = split ' ', $data;
-    my ($user, $service);
+    my ( $user, $service );
     $key = &normalize_username($key);
     if ( $key =~ /^(.*)@(Twitter|Identica)$/ ) {
         ( $user, $service ) = ( $1, $2 );
@@ -634,11 +648,11 @@ sub cmd_oauth {
               . "Please /set twirssi_oauth_store to a writable filename." );
     }
 
-    return &verify_twitter_object($server, $win, $user, $service, $twit);
+    return &verify_twitter_object( $server, $win, $user, $service, $twit );
 }
 
 sub verify_twitter_object {
-    my ($server, $win, $user, $service, $twit) = @_;
+    my ( $server, $win, $user, $service, $twit ) = @_;
 
     if ( my $timeout = Irssi::settings_get_int("twitter_timeout")
         and $twit->can('ua') )
@@ -668,7 +682,7 @@ sub verify_twitter_object {
     my $rate_limit = $twit->rate_limit_status();
     if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
         &notice(
-            "Rate limit exceeded, try again after $rate_limit->{reset_time}" );
+            "Rate limit exceeded, try again after $rate_limit->{reset_time}");
         $twit = undef;
         return;
     }
