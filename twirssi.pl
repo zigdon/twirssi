@@ -518,13 +518,13 @@ sub cmd_login {
             {
                 $twit = Net::Twitter->new(
                     identica => 1,
-                    traits   => [ 'API::REST' ],
+                    traits   => [ 'API::REST', 'API::Search' ],
                     source   => "twirssi",
                     ssl      => !Irssi::settings_get_bool("twirssi_avoid_ssl"),
                 );
             } else {
                 $twit = Net::Twitter->new(
-                    traits       => [ 'API::REST', 'OAuth' ],
+                    traits       => [ 'API::REST', 'OAuth', 'API::Search' ],
                     consumer_key => 'BZVAvBma4GxdiRwXIvbnw',
                     consumer_secret =>
                       '0T5kahwLyb34vciGZsgkA9lsjtGCQ05vxVE2APXM',
