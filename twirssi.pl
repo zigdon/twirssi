@@ -524,7 +524,7 @@ sub cmd_login {
                 );
             } else {
                 $twit = Net::Twitter->new(
-                    traits       => [ 'API::REST', 'OAuth', 'API::Search' ],
+                    traits => [ 'API::REST', 'OAuth', 'API::Search' ],
                     consumer_key => 'BZVAvBma4GxdiRwXIvbnw',
                     consumer_secret =>
                       '0T5kahwLyb34vciGZsgkA9lsjtGCQ05vxVE2APXM',
@@ -955,7 +955,8 @@ sub load_friends {
     };
 
     if ($@) {
-        print $fh "type:debug Error during friends list update.  Aborted.\n";
+        print $fh "type:debug Error during friends list update.  Aborted.\n"
+          if $fh;
         return;
     }
 
