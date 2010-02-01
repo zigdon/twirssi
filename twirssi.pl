@@ -1846,11 +1846,11 @@ Irssi::settings_add_str( "twirssi", "twirssi_topic_color",     "%r" );
 Irssi::settings_add_str( "twirssi", "twirssi_retweet_format",
     'RT $n: "$t" ${-- $c$}' );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
-    Irssi::get_irssi_dir . "/.irssi/scripts/twirssi.pl" );
+    Irssi::get_irssi_dir . "/scripts/twirssi.pl" );
 Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
-    Irssi::get_irssi_dir . "/.irssi/scripts/twirssi.json" );
+    Irssi::get_irssi_dir . "/scripts/twirssi.json" );
 Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
-    Irssi::get_irssi_dir . "/.irssi/scripts/twirssi.oauth" );
+    Irssi::get_irssi_dir . "/scripts/twirssi.oauth" );
 
 Irssi::settings_add_int( "twirssi", "twitter_friends_poll", 600 );
 Irssi::settings_add_int( "twirssi", "twitter_timeout",      30 );
