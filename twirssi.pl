@@ -554,18 +554,15 @@ sub cmd_login {
                 eval { $url = $twit->get_authorization_url; };
 
                 if ($@) {
-                    &notice(
-"ERROR: Failed to get OAuth authorization_url.  Try again later."
-                    );
+                    &notice( "ERROR: Failed to get OAuth authorization_url. " .
+                             "Try again later.");
                     return;
                 }
-
-                &notice("Twirssi not autorized to access $service for $user.");
-                &notice(
-                    "Please authorize at the following url, then enter the pin "
+                &notice( "Twirssi not autorized to access $service for $user.",
+                         "Please authorize at the following url, then enter the pin",
+                         "supplied with /twirssi_oauth $user\@$service <pin>",
+                         $url
                 );
-                &notice("supplied with /twirssi_oauth $user\@$service <pin>");
-                &notice($url);
 
                 $oauth{pending}{"$user\@$service"} = $twit;
                 return;
@@ -693,7 +690,7 @@ sub verify_twitter_object {
     $poll = Irssi::timeout_add( &get_poll_time * 1000, \&get_updates, "" );
     &notice("Logged in as $user\@$service, loading friends list...");
     &load_friends();
-    &notice( "loaded friends: ", scalar keys %friends );
+    &notice( "loaded friends: ". scalar keys %friends );
     if ( Irssi::settings_get_bool("twirssi_first_run") ) {
         Irssi::settings_set_bool( "twirssi_first_run", 0 );
     }
@@ -1569,7 +1566,7 @@ sub monitor_child {
         }
 
         if ( not $failwhale and time - $last_poll > 60 * 60 ) {
-            foreach my $whale (
+            &ccrap(
                 q{     v  v        v},
                 q{     |  |  v     |  v},
                 q{     | .-, |     |  |},
@@ -1578,10 +1575,7 @@ sub monitor_child {
                 q{      \\          a    |},
                 q{       ',.__.   ,__.-'/},
                 q{         '--/_.'----'`}
-              )
-            {
-                &ccrap($whale);
-            }
+              );
             $failwhale = 1;
         }
 
@@ -1596,11 +1590,15 @@ sub debug {
 }
 
 sub notice {
-    $window->print( "%R***%n @_", MSGLEVEL_PUBLIC );
+    foreach my $msg (@_) {
+        $window->print( "%R***%n $msg", MSGLEVEL_PUBLIC );
+    }
 }
 
 sub ccrap {
-    $window->print( "%R***%n @_", MSGLEVEL_CLIENTCRAP );
+    foreach my $msg (@_) {
+        $window->print( "%R***%n $msg", MSGLEVEL_CLIENTCRAP );
+    }
 }
 
 sub update_away {
@@ -1990,10 +1988,9 @@ if ($window) {
     );
     Irssi::signal_add_last( 'complete word' => \&sig_complete );
 
-    &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N");
-    &notice("   %C(_(\\%N           http://twirssi.com/ for full docs");
-    &notice(
-        "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet");
+    &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N",
+            "   %C(_(\\%N           http://twirssi.com/ for full docs",
+            "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet");
 
     my $file = Irssi::settings_get_str("twirssi_replies_store");
     if ( $file and -r $file ) {
