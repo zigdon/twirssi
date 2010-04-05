@@ -13,7 +13,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.4.1beta";
+$VERSION = "2.4.2beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -130,11 +130,6 @@ sub cmd_retweet {
 
 sub cmd_retweet_as {
     my ( $data, $server, $win ) = @_;
-
-    unless ( Irssi::settings_get_bool("twirssi_track_replies") ) {
-        &notice("twirssi_track_replies is required in order to reteet.");
-        return;
-    }
 
     return unless &logged_in($twit);
 
@@ -295,13 +290,6 @@ sub cmd_reply {
 
 sub cmd_reply_as {
     my ( $data, $server, $win ) = @_;
-
-    unless ( Irssi::settings_get_bool("twirssi_track_replies") ) {
-        &notice("twirssi_track_replies is required in order to reply to "
-              . "specific tweets.  Either enable it, or just use /tweet "
-              . "\@username <text>." );
-        return;
-    }
 
     return unless &logged_in($twit);
 
@@ -1228,6 +1216,7 @@ sub do_updates {
             }
 
             $id_map{__searches}{$username}{$topic} = $search->{max_id};
+            $topic =~ s/ /\\ /g;
             printf $fh "id:%s account:%s type:searchid topic:%s\n",
               $search->{max_id}, $username, $topic;
 
@@ -1344,8 +1333,9 @@ sub monitor_child {
             my %meta;
 
             foreach my $key (qw/id account nick type topic/) {
-                if (s/^$key:(\S+)\s*//) {
+                if (s/^$key:((?:\S|\\ )+)\s*//) {
                     $meta{$key} = $1;
+                    $meta{$key} =~ s/\\ / /g;
                 }
             }
 
@@ -1383,10 +1373,7 @@ sub monitor_child {
             }
 
             my $marker = "";
-            if (    $meta{type} ne 'dm'
-                and Irssi::settings_get_bool("twirssi_track_replies")
-                and $meta{nick}
-                and $meta{id} )
+            if ($meta{type} ne 'dm' and $meta{nick} and $meta{id} )
             {
                 $marker = ( $id_map{__indexes}{ $meta{nick} } + 1 ) % 100;
                 $id_map{ lc $meta{nick} }[$marker]           = $meta{id};
@@ -1524,7 +1511,7 @@ sub monitor_child {
             Irssi::pidwait_remove($child_pid);
 
             # and that we don't leave any zombies behind, somehow
-            wait();
+            waitpid( -1, WNOHANG );
 
             # save id_map hash
             if ( keys %id_map
@@ -1552,7 +1539,7 @@ sub monitor_child {
     } else {
         print "Giving up on polling $filename" if &debug;
         Irssi::pidwait_remove($child_pid);
-        wait();
+        waitpid( -1, WNOHANG );
         unlink $filename unless &debug;
 
         return unless Irssi::settings_get_bool("twirssi_notify_timeouts");
@@ -1859,7 +1846,6 @@ Irssi::settings_add_bool( "twirssi", "show_reply_context",        0 );
 Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_debug",             0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_first_run",         1 );
-Irssi::settings_add_bool( "twirssi", "twirssi_track_replies",     1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_replies_autonick",  1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_notify_timeouts",   1 );
