@@ -979,7 +979,7 @@ sub get_updates {
     return unless &logged_in($twit);
 
     my ( $fh, $filename ) = File::Temp::tempfile();
-    binmode( $fh, ":utf8" );
+    binmode( $fh, ":" . &get_charset );
     $child_pid = fork();
 
     if ($child_pid) {    # parent
@@ -1319,7 +1319,7 @@ sub monitor_child {
     # pretend
 
     if ( open FILE, $filename ) {
-        binmode FILE, ":utf8";
+        binmode FILE, ":" . &get_charset;
         my @lines;
         my %new_cache;
         while (<FILE>) {
@@ -1701,6 +1701,12 @@ sub get_poll_time {
     return 60;
 }
 
+sub get_charset {
+    my $charset = Irssi::settings_get_str("twirssi_charset");
+    return "utf8" if $charset =~ /^\s*$/;
+    return $charset;
+}
+
 sub hilight {
     my $text = shift;
 
@@ -1741,7 +1747,7 @@ sub shorten {
                     "Set short_url_args to username,API_key or change your",
                     "short_url_provider."
                 );
-                return decode "utf8", $data;
+                return decode &get_charset, $data;
             }
         }
 
@@ -1758,7 +1764,7 @@ sub shorten {
         }
     }
 
-    return decode "utf8", $data;
+    return decode &get_charset, $data;
 }
 
 sub normalize_username {
@@ -1819,6 +1825,7 @@ Irssi::theme_register(
 );
 
 Irssi::settings_add_int( "twirssi", "twitter_poll_interval", 300 );
+Irssi::settings_add_str( "twirssi", "twirssi_charset",         "utf8" );
 Irssi::settings_add_str( "twirssi", "twitter_window",          "twitter" );
 Irssi::settings_add_str( "twirssi", "bitlbee_server",          "bitlbee" );
 Irssi::settings_add_str( "twirssi", "short_url_provider",      "TinyURL" );
