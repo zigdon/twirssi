@@ -1216,7 +1216,7 @@ sub do_updates {
             }
 
             $id_map{__searches}{$username}{$topic} = $search->{max_id};
-            $topic =~ s/ /\\ /g;
+            $topic =~ s/ /%20/g;
             printf $fh "id:%s account:%s type:searchid topic:%s\n",
               $search->{max_id}, $username, $topic;
 
@@ -1335,7 +1335,7 @@ sub monitor_child {
             foreach my $key (qw/id account nick type topic/) {
                 if (s/^$key:((?:\S|\\ )+)\s*//) {
                     $meta{$key} = $1;
-                    $meta{$key} =~ s/\\ / /g;
+                    $meta{$key} =~ s/%20/ /g;
                 }
             }
 
