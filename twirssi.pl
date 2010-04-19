@@ -1096,11 +1096,11 @@ sub do_updates {
 
     my @ignore_tags =
       Irssi::settings_get_str("twirssi_ignored_tags")
-      ? split ' ', Irssi::settings_get_str("twirssi_ignored_tags")
+      ? split /\s*,\s*/, Irssi::settings_get_str("twirssi_ignored_tags")
       : ();
     my @strip_tags =
       Irssi::settings_get_str("twirssi_stripped_tags")
-      ? split ' ', Irssi::settings_get_str("twirssi_stripped_tags")
+      ? split /\s*,\s*/, Irssi::settings_get_str("twirssi_stripped_tags")
       : ();
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
