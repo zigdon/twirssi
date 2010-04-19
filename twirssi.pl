@@ -542,14 +542,15 @@ sub cmd_login {
                 eval { $url = $twit->get_authorization_url; };
 
                 if ($@) {
-                    &notice( "ERROR: Failed to get OAuth authorization_url. " .
-                             "Try again later.");
+                    &notice("ERROR: Failed to get OAuth authorization_url. "
+                          . "Try again later." );
                     return;
                 }
-                &notice( "Twirssi not autorized to access $service for $user.",
-                         "Please authorize at the following url, then enter the pin",
-                         "supplied with /twirssi_oauth $user\@$service <pin>",
-                         $url
+                &notice(
+                    "Twirssi not autorized to access $service for $user.",
+                    "Please authorize at the following url, then enter the pin",
+                    "supplied with /twirssi_oauth $user\@$service <pin>",
+                    $url
                 );
 
                 $oauth{pending}{"$user\@$service"} = $twit;
@@ -678,7 +679,7 @@ sub verify_twitter_object {
     $poll = Irssi::timeout_add( &get_poll_time * 1000, \&get_updates, "" );
     &notice("Logged in as $user\@$service, loading friends list...");
     &load_friends();
-    &notice( "loaded friends: ". scalar keys %friends );
+    &notice( "loaded friends: " . scalar keys %friends );
     if ( Irssi::settings_get_bool("twirssi_first_run") ) {
         Irssi::settings_set_bool( "twirssi_first_run", 0 );
     }
@@ -1093,9 +1094,31 @@ sub do_updates {
         return undef;
     }
 
+    my @ignore_tags =
+      Irssi::settings_get_str("twirssi_ignored_tags")
+      ? split ' ', Irssi::settings_get_str("twirssi_ignored_tags")
+      : ();
+    my @strip_tags =
+      Irssi::settings_get_str("twirssi_stripped_tags")
+      ? split ' ', Irssi::settings_get_str("twirssi_stripped_tags")
+      : ();
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
         my $reply = "tweet";
+
+        my $match = 0;
+        foreach my $tag (@ignore_tags) {
+            next unless $text =~ /\b\Q$tag\E\b/i;
+            $match = 1;
+            $text = "(ignored: $tag) $text" if &debug;
+            last;
+        }
+        next if not &debug and $match;
+
+        foreach my $tag (@strip_tags) {
+            $text =~ s/\b\Q$tag\E\b//gi;
+        }
+
         if (    Irssi::settings_get_bool("show_reply_context")
             and $t->{in_reply_to_screen_name} ne $username
             and $t->{in_reply_to_screen_name}
@@ -1373,8 +1396,7 @@ sub monitor_child {
             }
 
             my $marker = "";
-            if ($meta{type} ne 'dm' and $meta{nick} and $meta{id} )
-            {
+            if ( $meta{type} ne 'dm' and $meta{nick} and $meta{id} ) {
                 $marker = ( $id_map{__indexes}{ $meta{nick} } + 1 ) % 100;
                 $id_map{ lc $meta{nick} }[$marker]           = $meta{id};
                 $id_map{__indexes}{ $meta{nick} }            = $marker;
@@ -1562,7 +1584,7 @@ sub monitor_child {
                 q{      \\          a    |},
                 q{       ',.__.   ,__.-'/},
                 q{         '--/_.'----'`}
-              );
+            );
             $failwhale = 1;
         }
 
@@ -1835,6 +1857,8 @@ Irssi::settings_add_str( "twirssi", "twitter_passwords",       undef );
 Irssi::settings_add_str( "twirssi", "twirssi_default_service", "Twitter" );
 Irssi::settings_add_str( "twirssi", "twirssi_nick_color",      "%B" );
 Irssi::settings_add_str( "twirssi", "twirssi_topic_color",     "%r" );
+Irssi::settings_add_str( "twirssi", "twirssi_ignored_tags",    "" );
+Irssi::settings_add_str( "twirssi", "twirssi_stripped_tags",   "" );
 Irssi::settings_add_str( "twirssi", "twirssi_retweet_format",
     'RT $n: "$t" ${-- $c$}' );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
@@ -1981,9 +2005,11 @@ if ($window) {
     );
     Irssi::signal_add_last( 'complete word' => \&sig_complete );
 
-    &notice("  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N",
-            "   %C(_(\\%N           http://twirssi.com/ for full docs",
-            "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet");
+    &notice(
+        "  %Y<%C(%B^%C)%N                   TWIRSSI v%R$VERSION%N",
+        "   %C(_(\\%N           http://twirssi.com/ for full docs",
+        "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet"
+    );
 
     my $file = Irssi::settings_get_str("twirssi_replies_store");
     if ( $file and -r $file ) {
