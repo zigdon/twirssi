@@ -13,7 +13,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.4.2";
+$VERSION = "2.4.3beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -263,9 +263,13 @@ sub cmd_tweet_as {
         $nicks{$1} = time;
     }
 
-    my $away = &update_away($data);
+    if ( $username eq "$user\@$defservice" ) {
+      my $away = &update_away($data);
 
-    &notice( "Update sent" . ( $away ? " (and away msg set)" : "" ) );
+      &notice( "Update sent" . ( $away ? " (and away msg set)" : "" ) );
+    } else {
+      &notice( "Update sent" );
+    }
 }
 
 sub cmd_reply {
