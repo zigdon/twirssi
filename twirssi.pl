@@ -283,7 +283,7 @@ sub cmd_broadcast {
     if ($setting) {
       @bcast_users = split /\s*,\s*/, $setting;
     } else {
-      @bcast_users = map {$_->[0]} keys %twits;
+      @bcast_users = keys %twits;
     }
 
     foreach my $buser ( @bcast_users ) {
