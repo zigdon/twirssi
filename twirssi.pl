@@ -245,8 +245,9 @@ sub cmd_tweet_as {
     return if &too_long($data);
 
     my $success = 1;
+    my $res;
     eval {
-        unless ( $twits{$username}->update($data) )
+        unless ( $res = $twits{$username}->update($data) )
         {
             &notice("Update failed");
             $success = 0;
@@ -263,12 +264,30 @@ sub cmd_tweet_as {
         $nicks{$1} = time;
     }
 
+    $id_map{__last_tweet}{$username} = $res->{id};
+
     if ( $username eq "$user\@$defservice" ) {
       my $away = &update_away($data);
 
       &notice( "Update sent" . ( $away ? " (and away msg set)" : "" ) );
     } else {
       &notice( "Update sent" );
+    }
+}
+
+sub cmd_broadcast {
+    my ( $data, $server, $win ) = @_;
+
+    my $setting = Irssi::settings_get_str("twirssi_broadcast_users");
+    my @bcast_users;
+    if ($setting) {
+      @bcast_users = split /\s*,\s*/, $setting;
+    } else {
+      @bcast_users = map {$_->[0]} keys %twits;
+    }
+
+    foreach my $buser ( @bcast_users ) {
+      &cmd_tweet_as( "$buser $data", $server, $win );
     }
 }
 
@@ -364,12 +383,16 @@ sub cmd_reply_as {
 }
 
 sub gen_cmd {
-    my ( $usage_str, $api_name, $post_ref ) = @_;
+    my ( $usage_str, $api_name, $post_ref, $data_ref ) = @_;
 
     return sub {
         my ( $data, $server, $win ) = @_;
 
         return unless &logged_in($twit);
+
+        if ($data_ref) {
+          $data = $data_ref->($data);
+        }
 
         $data =~ s/^\s+|\s+$//;
         unless ($data) {
@@ -388,7 +411,7 @@ sub gen_cmd {
         return unless $success;
 
         if ($@) {
-            &notice("$api_name caused an error.  Aborted.");
+            &notice("$api_name caused an error.  Aborted: $@");
             return;
         }
 
@@ -1676,7 +1699,7 @@ sub sig_complete {
     my ( $complist, $window, $word, $linestart, $want_space ) = @_;
 
     if (
-        $linestart =~ /^\/(?:retweet|twitter_reply)(?:_as)?\s*$/
+        $linestart =~ m{^/twitter_delete\s*$|^/(?:retweet|twitter_reply)(?:_as)?\s*$}
         or ( Irssi::settings_get_bool("twirssi_use_reply_aliases")
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
@@ -1858,6 +1881,7 @@ Irssi::settings_add_str( "twirssi", "short_url_provider",      "TinyURL" );
 Irssi::settings_add_str( "twirssi", "short_url_args",          undef );
 Irssi::settings_add_str( "twirssi", "twitter_usernames",       undef );
 Irssi::settings_add_str( "twirssi", "twitter_passwords",       undef );
+Irssi::settings_add_str( "twirssi", "twirssi_broadcast_users", undef );
 Irssi::settings_add_str( "twirssi", "twirssi_default_service", "Twitter" );
 Irssi::settings_add_str( "twirssi", "twirssi_nick_color",      "%B" );
 Irssi::settings_add_str( "twirssi", "twirssi_topic_color",     "%r" );
@@ -1910,6 +1934,7 @@ if ($window) {
     Irssi::command_bind( "tweet_as",                   "cmd_tweet_as" );
     Irssi::command_bind( "retweet",                    "cmd_retweet" );
     Irssi::command_bind( "retweet_as",                 "cmd_retweet_as" );
+    Irssi::command_bind( "twitter_broadcast",          "cmd_broadcast" );
     Irssi::command_bind( "twitter_reply",              "cmd_reply" );
     Irssi::command_bind( "twitter_reply_as",           "cmd_reply_as" );
     Irssi::command_bind( "twitter_login",              "cmd_login" );
@@ -1966,6 +1991,18 @@ if ($window) {
                   . ".  See details at http://twirssi.com/"
             );
         }
+    );
+    Irssi::command_bind(
+        "twitter_delete",
+        &gen_cmd(
+            "/twitter_delete <username:id>",
+            "destroy_status",
+            sub { &notice("Tweet deleted."); },
+            sub { my ($nick, $num) = split /:/, lc $_[0], 2;
+                  $num = $id_map{__last_tweet}{&normalize_username($nick)} 
+                    unless (defined $num);
+                  return $id_map{$nick}[$num]; } 
+        )
     );
     Irssi::command_bind(
         "twitter_follow",
