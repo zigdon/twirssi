@@ -13,7 +13,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.4.3";
+$VERSION = "2.4.4beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -2042,6 +2042,14 @@ if ($window) {
             "/twitter_unblock <username>",
             "destroy_block",
             sub { &notice("Unblock $_[0]"); }
+        )
+    );
+    Irssi::command_bind(
+        "twitter_spam",
+        &gen_cmd(
+            "/twitter_spam <username>",
+            "report_spam",
+            sub { &notice("Reported $_[0] for spam"); }
         )
     );
     Irssi::signal_add_last( 'complete word' => \&sig_complete );
