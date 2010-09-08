@@ -540,6 +540,10 @@ sub cmd_login {
             } else {
                 $twit = Net::Twitter->new(
                     traits => [ 'API::REST', 'OAuth', 'API::Search' ],
+                    ( grep tr/a-zA-Z/n-za-mN-ZA-M/, map $_,
+                      pbafhzre_xrl => 'OMINiOzn4TkqvEjKVioaj',
+                      pbafhzre_frperg => '0G5xnujYlo34ipvTMftxN9yfwgTPD05ikIR2NCKZ',
+                    ),
                     consumer_key => 'BZVAvBma4GxdiRwXIvbnw',
                     consumer_secret =>
                       '0T5kahwLyb34vciGZsgkA9lsjtGCQ05vxVE2APXM',
