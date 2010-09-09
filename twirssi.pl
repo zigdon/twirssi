@@ -544,9 +544,6 @@ sub cmd_login {
                       pbafhzre_xrl => 'OMINiOzn4TkqvEjKVioaj',
                       pbafhzre_frperg => '0G5xnujYlo34ipvTMftxN9yfwgTPD05ikIR2NCKZ',
                     ),
-                    consumer_key => 'BZVAvBma4GxdiRwXIvbnw',
-                    consumer_secret =>
-                      '0T5kahwLyb34vciGZsgkA9lsjtGCQ05vxVE2APXM',
                     source => "twirssi",
                     ssl    => !Irssi::settings_get_bool("twirssi_avoid_ssl"),
                 );
