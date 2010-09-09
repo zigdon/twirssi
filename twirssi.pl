@@ -572,12 +572,6 @@ sub cmd_login {
                 if ($@) {
                     &notice("ERROR: Failed to get OAuth authorization_url. "
                           . "Try again later." );
-                    if ($@->http_response->status_line) {
-                      &notice("  " . $@->http_response->status_line);
-                    }
-                    if ($@->twitter_error->{error}) {
-                      &notice("  " . $@->twitter_error->{error});
-                    }
                     return;
                 }
                 &notice(
