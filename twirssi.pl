@@ -89,6 +89,10 @@ sub cmd_direct_as {
 
     return unless $username = &valid_username($username);
 
+    if (!utf8::is_utf8($text)) {
+        $text = decode("utf8", $text);
+    }
+
     eval {
         if ( $twits{$username}
             ->new_direct_message( { user => $target, text => $text } ) )
@@ -244,6 +248,10 @@ sub cmd_tweet_as {
 
     return if &too_long($data);
 
+    if (!utf8::is_utf8($data)) {
+        $data = decode "utf8", $data;
+    }
+
     my $success = 1;
     my $res;
     eval {
@@ -350,6 +358,10 @@ sub cmd_reply_as {
     $data = &shorten($data);
 
     return if &too_long($data);
+
+    if (!utf8::is_utf8($data)) {
+        $data = decode "utf8", $data;
+    }
 
     my $success = 1;
     eval {
