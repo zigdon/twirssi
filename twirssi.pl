@@ -43,6 +43,7 @@ my $first_call = 1;
 my $child_pid;
 my %fix_replies_index;
 my %search_once;
+my $update_is_running = 0;
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -1035,6 +1036,13 @@ sub get_updates {
 
     return unless &logged_in($twit);
 
+    if ($update_is_running) {
+	print scalar localtime, " - get_updates aborted: already running" if &debug;
+	return;
+    } else {
+	$update_is_running = 1;
+    }
+
     my ( $fh, $filename ) = File::Temp::tempfile();
     binmode( $fh, ":" . &get_charset );
     $child_pid = fork();
@@ -1665,6 +1673,7 @@ sub monitor_child {
             }
             $failwhale  = 0;
             $first_call = 0;
+	    $update_is_running = 0;
             return;
         }
     }
@@ -1679,6 +1688,8 @@ sub monitor_child {
         Irssi::pidwait_remove($child_pid);
         waitpid( -1, WNOHANG );
         unlink $filename unless &debug;
+
+	$update_is_running = 0;
 
         return unless Irssi::settings_get_bool("twirssi_notify_timeouts");
 
