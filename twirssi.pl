@@ -431,6 +431,17 @@ sub gen_cmd {
       }
 }
 
+sub cmd_search {
+    my ( $data, $server, $win ) = @_;
+
+    $data =~ s/^\s+|\s+$//g;
+    if ( length $data > 0 ) {
+	&get_search ( $data, Irssi::settings_get_int('twitter_timeout') );
+    } else {
+        &notice("Search query is empty");
+    }
+}
+
 sub cmd_switch {
     my ( $data, $server, $win ) = @_;
 
@@ -1002,6 +1013,98 @@ sub load_friends {
     }
 
     return ( $added, $removed );
+}
+
+sub get_search {
+    my ( $topic, $max_results ) = @_;
+
+    print scalar localtime, " - get_search starting" if &debug;
+
+    $window =
+      Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
+    unless ($window) {
+        Irssi::active_win()
+          ->print( "Can't find a window named '"
+              . Irssi::settings_get_str('twitter_window')
+              . "'.  Create it or change the value of twitter_window" );
+    }
+
+    return unless &logged_in($twit);
+
+    my ( $fh, $filename ) = File::Temp::tempfile();
+    binmode( $fh, ":" . &get_charset );
+    $child_pid = fork();
+
+    if ($child_pid) {    # parent
+        Irssi::timeout_add_once( 5000, 'monitor_child',
+            [ "$filename.done", 0 ] );
+        Irssi::pidwait_add($child_pid);
+    } elsif ( defined $child_pid ) {    # child
+        close STDIN;
+        close STDOUT;
+        close STDERR;
+
+        my $error = 0;
+        my %context_cache;
+	
+
+	if ( $twit->can('search') ) {
+	    my $username = $user;
+	    my $search;
+	    print $fh "type:debug searching for $topic (max $max_results)\n";
+	    eval {
+		$search = $twit->search(
+		    {
+			'q'        => $topic
+		    }
+		    );
+	    };
+	    
+	    if ($@) {
+		print $fh
+		    "type:debug Error during search($topic) call.  Aborted.\n";
+		return undef;
+	    }
+	    
+	    unless ( $search->{max_id} ) {
+		print $fh "type:debug Invalid search results when searching",
+		" for $topic. Aborted.\n";
+		return undef;
+	    }
+	    
+	    $id_map{__searches}{$username}{$topic} = $search->{max_id};
+	    $topic =~ s/ /%20/g;
+	    printf $fh "id:%s account:%s type:searchid topic:%s\n",
+	    $search->{max_id}, $username, $topic;
+	    
+	    my $count = 0;
+	    foreach my $t ( reverse @{ $search->{results} } ) {
+		last if $max_results > 0 && ++$count > $max_results;
+		
+		my $text = &get_text( $t, $twit );
+		printf $fh "id:%s account:%s nick:%s type:search topic:%s %s\n",
+		$t->{id}, $username, $t->{from_user}, $topic, $text;
+	    }
+	}
+	
+        print $fh "__friends__\n";
+        foreach ( sort keys %friends ) {
+            print $fh "$_ $friends{$_}\n";
+        }
+
+        if ($error) {
+            print $fh "type:debug Search encountered errors.  Aborted\n";
+            print $fh "-- $last_poll";
+        } else {
+            print $fh "-- $last_poll"; # don't update last poll :)
+        }
+        close $fh;
+        rename $filename, "$filename.done";
+        exit;
+    } else {
+        &ccrap("Failed to fork for searching: $!");
+    }
+    print scalar localtime, " - get_search ends" if &debug;
 }
 
 sub get_updates {
@@ -1918,8 +2021,9 @@ Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
 Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
     Irssi::get_irssi_dir . "/scripts/twirssi.oauth" );
 
-Irssi::settings_add_int( "twirssi", "twitter_friends_poll", 600 );
-Irssi::settings_add_int( "twirssi", "twitter_timeout",      30 );
+Irssi::settings_add_int( "twirssi", "twitter_friends_poll",     600 );
+Irssi::settings_add_int( "twirssi", "twitter_timeout",           30 );
+Irssi::settings_add_int( "twirssi", "twitter_search_results",     5 );
 
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
@@ -1961,6 +2065,7 @@ if ($window) {
     Irssi::command_bind( "twitter_reply_as",           "cmd_reply_as" );
     Irssi::command_bind( "twitter_login",              "cmd_login" );
     Irssi::command_bind( "twitter_logout",             "cmd_logout" );
+    Irssi::command_bind( "twitter_search",             "cmd_search" );
     Irssi::command_bind( "twitter_switch",             "cmd_switch" );
     Irssi::command_bind( "twitter_subscribe",          "cmd_add_search" );
     Irssi::command_bind( "twitter_unsubscribe",        "cmd_del_search" );
