@@ -582,8 +582,7 @@ sub cmd_login {
                 eval { $url = $twit->get_authorization_url; };
 
                 if ($@) {
-                    &notice("ERROR: Failed to get OAuth authorization_url. "
-                          . "Try again later." );
+                    &notice("ERROR: Failed to get OAuth authorization_url: $@" );
                     return;
                 }
                 &notice(
