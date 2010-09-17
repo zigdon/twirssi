@@ -42,6 +42,7 @@ my $failwhale  = 0;
 my $first_call = 1;
 my $child_pid;
 my %fix_replies_index;
+my %search_once;
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -436,7 +437,12 @@ sub cmd_search {
 
     $data =~ s/^\s+|\s+$//g;
     if ( length $data > 0 ) {
-	&get_search ( $data, Irssi::settings_get_int('twitter_timeout') );
+	my $username = &normalize_username( $user );
+	if (exists $search_once{$username}->{$data}) {
+	    &notice("Search is already queued");
+	}
+	$search_once{$username}->{$data} = Irssi::settings_get_int( "twitter_search_results" );
+	&get_updates;
     } else {
         &notice("Search query is empty");
     }
@@ -1015,98 +1021,6 @@ sub load_friends {
     return ( $added, $removed );
 }
 
-sub get_search {
-    my ( $topic, $max_results ) = @_;
-
-    print scalar localtime, " - get_search starting" if &debug;
-
-    $window =
-      Irssi::window_find_name( Irssi::settings_get_str('twitter_window') );
-    unless ($window) {
-        Irssi::active_win()
-          ->print( "Can't find a window named '"
-              . Irssi::settings_get_str('twitter_window')
-              . "'.  Create it or change the value of twitter_window" );
-    }
-
-    return unless &logged_in($twit);
-
-    my ( $fh, $filename ) = File::Temp::tempfile();
-    binmode( $fh, ":" . &get_charset );
-    $child_pid = fork();
-
-    if ($child_pid) {    # parent
-        Irssi::timeout_add_once( 5000, 'monitor_child',
-            [ "$filename.done", 0 ] );
-        Irssi::pidwait_add($child_pid);
-    } elsif ( defined $child_pid ) {    # child
-        close STDIN;
-        close STDOUT;
-        close STDERR;
-
-        my $error = 0;
-        my %context_cache;
-	
-
-	if ( $twit->can('search') ) {
-	    my $username = $user;
-	    my $search;
-	    print $fh "type:debug searching for $topic (max $max_results)\n";
-	    eval {
-		$search = $twit->search(
-		    {
-			'q'        => $topic
-		    }
-		    );
-	    };
-	    
-	    if ($@) {
-		print $fh
-		    "type:debug Error during search($topic) call.  Aborted.\n";
-		return undef;
-	    }
-	    
-	    unless ( $search->{max_id} ) {
-		print $fh "type:debug Invalid search results when searching",
-		" for $topic. Aborted.\n";
-		return undef;
-	    }
-	    
-	    $id_map{__searches}{$username}{$topic} = $search->{max_id};
-	    $topic =~ s/ /%20/g;
-	    printf $fh "id:%s account:%s type:searchid topic:%s\n",
-	    $search->{max_id}, $username, $topic;
-	    
-	    my $count = 0;
-	    foreach my $t ( reverse @{ $search->{results} } ) {
-		last if $max_results > 0 && ++$count > $max_results;
-		
-		my $text = &get_text( $t, $twit );
-		printf $fh "id:%s account:%s nick:%s type:search topic:%s %s\n",
-		$t->{id}, $username, $t->{from_user}, $topic, $text;
-	    }
-	}
-	
-        print $fh "__friends__\n";
-        foreach ( sort keys %friends ) {
-            print $fh "$_ $friends{$_}\n";
-        }
-
-        if ($error) {
-            print $fh "type:debug Search encountered errors.  Aborted\n";
-            print $fh "-- $last_poll";
-        } else {
-            print $fh "-- $last_poll"; # don't update last poll :)
-        }
-        close $fh;
-        rename $filename, "$filename.done";
-        exit;
-    } else {
-        &ccrap("Failed to fork for searching: $!");
-    }
-    print scalar localtime, " - get_search ends" if &debug;
-}
-
 sub get_updates {
     print scalar localtime, " - get_updates starting" if &debug;
 
@@ -1405,6 +1319,48 @@ sub do_updates {
         }
     }
 
+    print scalar localtime, " - Polling for one-time searches" if &debug;
+    if ( $obj->can('search') and exists $search_once{$username} ) {
+        my $search;
+        foreach my $topic ( sort keys %{ $search_once{$username} } ) {
+	    my $max_results = $search_once{$username}->{$topic};
+
+            print $fh "type:debug searching once for $topic (max $max_results)\n";
+            eval {
+                $search = $obj->search(
+                    {
+                        'q'        => $topic
+                    }
+                );
+            };
+
+            if ($@) {
+                print $fh
+                  "type:debug Error during search_once($topic) call.  Aborted.\n";
+                return undef;
+            }
+
+            unless ( $search->{max_id} ) {
+                print $fh "type:debug Invalid search results when searching once",
+                  " for $topic. Aborted.\n";
+                return undef;
+            }
+            $topic =~ s/ /%20/g;
+
+	    # TODO: consider applying ignore-settings to search results
+	    my @results = @{ $search->{results} };
+	    if ($max_results > 0) {
+		splice @results, $max_results;
+	    }
+            foreach my $t ( reverse @results ) {
+
+                my $text = &get_text( $t, $obj );
+                printf $fh "id:%s account:%s nick:%s type:search_once topic:%s %s\n",
+                  $t->{id}, $username, $t->{from_user}, $topic, $text;
+            }
+        }
+    }
+
     print scalar localtime, " - Done" if &debug;
 
     return 1;
@@ -1586,6 +1542,15 @@ sub monitor_child {
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
                       $meta{id};
                 }
+            } elsif ( $meta{type} eq 'search_once' ) {
+                push @lines,
+                  [
+                    ( MSGLEVEL_PUBLIC | $hilight ),
+                    $meta{type}, $account, $meta{topic},
+                    $meta{nick}, $marker,  $_
+                  ];
+		my $username = &normalize_username ( $meta{account} );
+		delete $search_once{$username}->{$meta{topic}};
             } elsif ( $meta{type} eq 'dm' ) {
                 push @lines,
                   [
@@ -1989,11 +1954,12 @@ Irssi::signal_add( "send text", "event_send_text" );
 
 Irssi::theme_register(
     [
-        'twirssi_tweet',  '[$0%B@$1%n$2] $3',
-        'twirssi_search', '[$0%r$1%n:%B@$2%n$3] $4',
-        'twirssi_reply',  '[$0\--> %B@$1%n$2] $3',
-        'twirssi_dm',     '[$0%r@$1%n (%WDM%n)] $2',
-        'twirssi_error',  'ERROR: $0',
+        'twirssi_tweet',       '[$0%B@$1%n$2] $3',
+        'twirssi_search',      '[$0%r$1%n:%B@$2%n$3] $4',
+        'twirssi_search_once', '[$0%r$1%n:%B@$2%n$3] $4',
+        'twirssi_reply',       '[$0\--> %B@$1%n$2] $3',
+        'twirssi_dm',          '[$0%r@$1%n (%WDM%n)] $2',
+        'twirssi_error',       'ERROR: $0',
     ]
 );
 
