@@ -207,8 +207,8 @@ sub cmd_retweet_as {
         return;
     }
 
-    foreach ( $data =~ /@([-\w]+)/ ) {
-        $nicks{$1} = time;
+    foreach ( $data =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
     }
 
     &notice("Retweet sent");
@@ -268,8 +268,8 @@ sub cmd_tweet_as {
         return;
     }
 
-    foreach ( $data =~ /@([-\w]+)/ ) {
-        $nicks{$1} = time;
+    foreach ( $data =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
     }
 
     $id_map{__last_tweet}{$username} = $res->{id};
@@ -385,8 +385,8 @@ sub cmd_reply_as {
         return;
     }
 
-    foreach ( $data =~ /@([-\w]+)/ ) {
-        $nicks{$1} = time;
+    foreach ( $data =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
     }
 
     my $away = &update_away($data);
