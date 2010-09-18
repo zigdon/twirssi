@@ -282,6 +282,14 @@ sub cmd_tweet_as {
         $nicks{$_} = time;
     }
 
+    # TODO: What's the official definition of a Hashtag? Let's use #[-\w]+ like above for now.
+    if ( $setting{autosearch_results} > 0 and $data =~ /#[-\w]+/ ) {
+	while ( $data =~ /(#[-\w]+)/g ) {
+	    $search_once{$username}->{$1} = $setting{autosearch_results};
+	}
+	&get_updates;
+    }
+
     $state{__last_tweet}{$username} = $res->{id};
 
     if ( $username eq "$user\@$defservice" ) {
@@ -2019,6 +2027,8 @@ sub event_setup_changed {
     $settings{poll_interval} = Irssi::settings_get_int("twitter_poll_interval");
     $settings{search_results} =
       Irssi::settings_get_int("twitter_search_results");
+    $settings{autosearch_results} =
+      Irssi::settings_get_int("twitter_autosearch_results");
     $settings{timeout} = Irssi::settings_get_int("twitter_timeout");
 
     $settings{bitlbee_server} = Irssi::settings_get_str("bitlbee_server");
@@ -2248,9 +2258,10 @@ Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
 Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
     Irssi::get_irssi_dir . "/scripts/twirssi.oauth" );
 
-Irssi::settings_add_int( "twirssi", "twitter_friends_poll",   600 );
-Irssi::settings_add_int( "twirssi", "twitter_timeout",        30 );
-Irssi::settings_add_int( "twirssi", "twitter_search_results", 5 );
+Irssi::settings_add_int( "twirssi", "twitter_friends_poll",     600 );
+Irssi::settings_add_int( "twirssi", "twitter_timeout",           30 );
+Irssi::settings_add_int( "twirssi", "twitter_search_results",     5 );
+Irssi::settings_add_int( "twirssi", "twitter_autosearch_results", 0 );
 
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
