@@ -1038,7 +1038,7 @@ sub get_updates {
         foreach ( keys %twits ) {
             $error++ unless &do_updates( $fh, $_, $twits{$_}, \%context_cache );
 
-            if ( $id_map{__fixreplies}{$_} ) {
+            if ( exists $id_map{__fixreplies}{$_} and keys %{ $id_map{__fixreplies}{$_} } ) {
                 my @frusers = sort keys %{ $id_map{__fixreplies}{$_} };
 
                 $error++
