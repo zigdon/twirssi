@@ -274,6 +274,15 @@ sub cmd_tweet_as {
         $nicks{$1} = time;
     }
 
+    # TODO: What's the official definition of a Hashtag? Let's use #[-\w]+ like above for now.
+    my $auto_searches = Irssi::settings_get_int("twitter_autosearch_results");
+    if ( $auto_searches > 0 and $data =~ /#[-\w]+/ ) {
+	while ( $data =~ /(#[-\w]+)/g ) {
+	    $search_once{$username}->{$1} = $auto_searches;
+	}
+	&get_updates;
+    }
+
     $id_map{__last_tweet}{$username} = $res->{id};
 
     if ( $username eq "$user\@$defservice" ) {
@@ -2001,6 +2010,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
 Irssi::settings_add_int( "twirssi", "twitter_friends_poll",     600 );
 Irssi::settings_add_int( "twirssi", "twitter_timeout",           30 );
 Irssi::settings_add_int( "twirssi", "twitter_search_results",     5 );
+Irssi::settings_add_int( "twirssi", "twitter_autosearch_results", 0 );
 
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
