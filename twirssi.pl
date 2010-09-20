@@ -209,8 +209,8 @@ sub cmd_retweet_as {
         return;
     }
 
-    foreach ( $data =~ /@([-\w]+)/ ) {
-        $nicks{$1} = time;
+    foreach ( $data =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
     }
 
     &notice("Retweet sent");
@@ -270,8 +270,8 @@ sub cmd_tweet_as {
         return;
     }
 
-    foreach ( $data =~ /@([-\w]+)/ ) {
-        $nicks{$1} = time;
+    foreach ( $data =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
     }
 
     # TODO: What's the official definition of a Hashtag? Let's use #[-\w]+ like above for now.
@@ -396,8 +396,8 @@ sub cmd_reply_as {
         return;
     }
 
-    foreach ( $data =~ /@([-\w]+)/ ) {
-        $nicks{$1} = time;
+    foreach ( $data =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
     }
 
     my $away = &update_away($data);
@@ -1072,7 +1072,7 @@ sub get_updates {
         foreach ( keys %twits ) {
             $error++ unless &do_updates( $fh, $_, $twits{$_}, \%context_cache );
 
-            if ( $id_map{__fixreplies}{$_} ) {
+            if ( exists $id_map{__fixreplies}{$_} and keys %{ $id_map{__fixreplies}{$_} } ) {
                 my @frusers = sort keys %{ $id_map{__fixreplies}{$_} };
 
                 $error++
