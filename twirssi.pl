@@ -13,7 +13,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.4.4";
+$VERSION = "2.4.5beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -88,6 +88,8 @@ sub cmd_direct_as {
     }
 
     return unless $username = &valid_username($username);
+
+    return if &too_long($text);
 
     if (!utf8::is_utf8($text)) {
         $text = decode(&get_charset, $text);
