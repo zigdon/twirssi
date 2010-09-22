@@ -90,7 +90,7 @@ sub cmd_direct_as {
     return unless $username = &valid_username($username);
 
     if (!utf8::is_utf8($text)) {
-        $text = decode("utf8", $text);
+        $text = decode(&get_charset, $text);
     }
 
     eval {
@@ -182,6 +182,10 @@ sub cmd_retweet_as {
 
     return if $modified and &too_long($data);
 
+    if (!utf8::is_utf8($data)) {
+        $data = decode &get_charset, $data;
+    }
+
     my $success = 1;
     eval {
         if ($modified)
@@ -207,8 +211,8 @@ sub cmd_retweet_as {
         return;
     }
 
-    foreach ( $data =~ /@([-\w]+)/ ) {
-        $nicks{$1} = time;
+    foreach ( $data =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
     }
 
     &notice("Retweet sent");
@@ -249,7 +253,7 @@ sub cmd_tweet_as {
     return if &too_long($data);
 
     if (!utf8::is_utf8($data)) {
-        $data = decode "utf8", $data;
+        $data = decode &get_charset, $data;
     }
 
     my $success = 1;
@@ -268,8 +272,8 @@ sub cmd_tweet_as {
         return;
     }
 
-    foreach ( $data =~ /@([-\w]+)/ ) {
-        $nicks{$1} = time;
+    foreach ( $data =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
     }
 
     $id_map{__last_tweet}{$username} = $res->{id};
@@ -360,7 +364,7 @@ sub cmd_reply_as {
     return if &too_long($data);
 
     if (!utf8::is_utf8($data)) {
-        $data = decode "utf8", $data;
+        $data = decode &get_charset, $data;
     }
 
     my $success = 1;
@@ -385,8 +389,8 @@ sub cmd_reply_as {
         return;
     }
 
-    foreach ( $data =~ /@([-\w]+)/ ) {
-        $nicks{$1} = time;
+    foreach ( $data =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
     }
 
     my $away = &update_away($data);
@@ -1038,7 +1042,7 @@ sub get_updates {
         foreach ( keys %twits ) {
             $error++ unless &do_updates( $fh, $_, $twits{$_}, \%context_cache );
 
-            if ( $id_map{__fixreplies}{$_} ) {
+            if ( exists $id_map{__fixreplies}{$_} and keys %{ $id_map{__fixreplies}{$_} } ) {
                 my @frusers = sort keys %{ $id_map{__fixreplies}{$_} };
 
                 $error++
@@ -1817,7 +1821,11 @@ sub shorten {
                     "Set short_url_args to username,API_key or change your",
                     "short_url_provider."
                 );
-                return decode &get_charset, $data;
+                if (!utf8::is_utf8($data)) {
+                    return decode &get_charset, $data;
+                } else {
+                    return $data;
+                }
             }
         }
 
@@ -1834,7 +1842,11 @@ sub shorten {
         }
     }
 
-    return decode &get_charset, $data;
+    if (!utf8::is_utf8($data)) {
+        return decode &get_charset, $data;
+    } else {
+        return $data;
+    }
 }
 
 sub normalize_username {
