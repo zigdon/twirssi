@@ -92,7 +92,7 @@ sub cmd_direct_as {
     return unless $username = &valid_username($username);
 
     if (!utf8::is_utf8($text)) {
-        $text = decode("utf8", $text);
+        $text = decode(&get_charset, $text);
     }
 
     eval {
@@ -184,6 +184,10 @@ sub cmd_retweet_as {
 
     return if $modified and &too_long($data);
 
+    if (!utf8::is_utf8($data)) {
+        $data = decode &get_charset, $data;
+    }
+
     my $success = 1;
     eval {
         if ($modified)
@@ -251,7 +255,7 @@ sub cmd_tweet_as {
     return if &too_long($data);
 
     if (!utf8::is_utf8($data)) {
-        $data = decode "utf8", $data;
+        $data = decode &get_charset, $data;
     }
 
     my $success = 1;
@@ -362,7 +366,7 @@ sub cmd_reply_as {
     return if &too_long($data);
 
     if (!utf8::is_utf8($data)) {
-        $data = decode "utf8", $data;
+        $data = decode &get_charset, $data;
     }
 
     my $success = 1;
@@ -1896,7 +1900,11 @@ sub shorten {
                     "Set short_url_args to username,API_key or change your",
                     "short_url_provider."
                 );
-                return decode &get_charset, $data;
+                if (!utf8::is_utf8($data)) {
+                    return decode &get_charset, $data;
+                } else {
+                    return $data;
+                }
             }
         }
 
@@ -1913,7 +1921,11 @@ sub shorten {
         }
     }
 
-    return decode &get_charset, $data;
+    if (!utf8::is_utf8($data)) {
+        return decode &get_charset, $data;
+    } else {
+        return $data;
+    }
 }
 
 sub normalize_username {
