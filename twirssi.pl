@@ -37,7 +37,7 @@ my $last_friends_poll = 0;
 my %nicks;
 my %friends;
 my %tweet_cache;
-my %id_map;
+my %state;
 my $failwhale  = 0;
 my $first_call = 1;
 my $child_pid;
@@ -154,18 +154,18 @@ sub cmd_retweet_as {
     my $nick;
     $id =~ s/[^\w\d\-:]+//g;
     ( $nick, $id ) = split /:/, $id;
-    unless ( exists $id_map{ lc $nick } ) {
+    unless ( exists $state{ lc $nick } ) {
         &notice("Can't find a tweet from $nick to retweet!");
         return;
     }
 
-    $id = $id_map{__indexes}{$nick} unless $id;
-    unless ( $id_map{ lc $nick }[$id] ) {
+    $id = $state{__indexes}{$nick} unless $id;
+    unless ( $state{ lc $nick }[$id] ) {
         &notice("Can't find a tweet numbered $id from $nick to retweet!");
         return;
     }
 
-    unless ( $id_map{__tweets}{ lc $nick }[$id] ) {
+    unless ( $state{__tweets}{ lc $nick }[$id] ) {
         &notice("The text of this tweet isn't saved, sorry!");
         return;
     }
@@ -179,7 +179,7 @@ sub cmd_retweet_as {
     } else {
         $text =~ s/\${.*?\$}//;
     }
-    $text =~ s/\$t/$id_map{__tweets}{ lc $nick }[$id]/;
+    $text =~ s/\$t/$state{__tweets}{ lc $nick }[$id]/;
 
     my $modified = $data;
     $data = &shorten($text);
@@ -198,12 +198,12 @@ sub cmd_retweet_as {
                 {
                     status => $data,
 
-                    # in_reply_to_status_id => $id_map{ lc $nick }[$id]
+                    # in_reply_to_status_id => $state{ lc $nick }[$id]
                 }
             );
         } else {
             $success =
-              $twits{$username}->retweet( { id => $id_map{ lc $nick }[$id] } );
+              $twits{$username}->retweet( { id => $state{ lc $nick }[$id] } );
             $success = $success->{id} if ref $success;
         }
         &notice("Update failed") unless $success;
@@ -280,7 +280,7 @@ sub cmd_tweet_as {
         $nicks{$_} = time;
     }
 
-    $id_map{__last_tweet}{$username} = $res->{id};
+    $state{__last_tweet}{$username} = $res->{id};
 
     if ( $username eq "$user\@$defservice" ) {
       my $away = &update_away($data);
@@ -345,13 +345,13 @@ sub cmd_reply_as {
     my $nick;
     $id =~ s/[^\w\d\-:]+//g;
     ( $nick, $id ) = split /:/, $id;
-    unless ( exists $id_map{ lc $nick } ) {
+    unless ( exists $state{ lc $nick } ) {
         &notice("Can't find a tweet from $nick to reply to!");
         return;
     }
 
-    $id = $id_map{__indexes}{$nick} unless $id;
-    unless ( $id_map{ lc $nick }[$id] ) {
+    $id = $state{__indexes}{$nick} unless $id;
+    unless ( $state{ lc $nick }[$id] ) {
         &notice("Can't find a tweet numbered $id from $nick to reply to!");
         return;
     }
@@ -377,7 +377,7 @@ sub cmd_reply_as {
             $twits{$username}->update(
                 {
                     status                => $data,
-                    in_reply_to_status_id => $id_map{ lc $nick }[$id]
+                    in_reply_to_status_id => $state{ lc $nick }[$id]
                 }
             )
           )
@@ -763,12 +763,12 @@ sub cmd_add_follow {
     $data =~ s/^\@//;
     $data = lc $data;
 
-    if ( exists $id_map{__fixreplies}{"$user\@$defservice"}{$data} ) {
+    if ( exists $state{__fixreplies}{"$user\@$defservice"}{$data} ) {
         &notice("Already following all replies by \@$data");
         return;
     }
 
-    $id_map{__fixreplies}{"$user\@$defservice"}{$data} = 1;
+    $state{__fixreplies}{"$user\@$defservice"}{$data} = 1;
     &notice("Will now follow all replies by \@$data");
 }
 
@@ -784,12 +784,12 @@ sub cmd_del_follow {
     $data =~ s/^\@//;
     $data = lc $data;
 
-    unless ( exists $id_map{__fixreplies}{"$user\@$defservice"}{$data} ) {
+    unless ( exists $state{__fixreplies}{"$user\@$defservice"}{$data} ) {
         &notice("Wasn't following all replies by \@$data");
         return;
     }
 
-    delete $id_map{__fixreplies}{"$user\@$defservice"}{$data};
+    delete $state{__fixreplies}{"$user\@$defservice"}{$data};
     &notice("Will no longer follow all replies by \@$data");
 }
 
@@ -797,9 +797,9 @@ sub cmd_list_follow {
     my ( $data, $server, $win ) = @_;
 
     my $found = 0;
-    foreach my $suser ( sort keys %{ $id_map{__fixreplies} } ) {
+    foreach my $suser ( sort keys %{ $state{__fixreplies} } ) {
         my $frusers;
-        foreach my $fruser ( sort keys %{ $id_map{__fixreplies}{$suser} } ) {
+        foreach my $fruser ( sort keys %{ $state{__fixreplies}{$suser} } ) {
             $frusers = $frusers ? "$frusers, $fruser" : $fruser;
         }
         if ($frusers) {
@@ -830,12 +830,12 @@ sub cmd_add_search {
         return;
     }
 
-    if ( exists $id_map{__searches}{"$user\@$defservice"}{$data} ) {
+    if ( exists $state{__searches}{"$user\@$defservice"}{$data} ) {
         &notice("Already had a subscription for '$data'");
         return;
     }
 
-    $id_map{__searches}{"$user\@$defservice"}{$data} = 1;
+    $state{__searches}{"$user\@$defservice"}{$data} = 1;
     &notice("Added subscription for '$data'");
 }
 
@@ -855,12 +855,12 @@ sub cmd_del_search {
         return;
     }
 
-    unless ( exists $id_map{__searches}{"$user\@$defservice"}{$data} ) {
+    unless ( exists $state{__searches}{"$user\@$defservice"}{$data} ) {
         &notice("No subscription found for '$data'");
         return;
     }
 
-    delete $id_map{__searches}{"$user\@$defservice"}{$data};
+    delete $state{__searches}{"$user\@$defservice"}{$data};
     &notice("Removed subscription for '$data'");
 }
 
@@ -868,9 +868,9 @@ sub cmd_list_search {
     my ( $data, $server, $win ) = @_;
 
     my $found = 0;
-    foreach my $suser ( sort keys %{ $id_map{__searches} } ) {
+    foreach my $suser ( sort keys %{ $state{__searches} } ) {
         my $topics;
-        foreach my $topic ( sort keys %{ $id_map{__searches}{$suser} } ) {
+        foreach my $topic ( sort keys %{ $state{__searches}{$suser} } ) {
             $topics = $topics ? "$topics, $topic" : $topic;
         }
         if ($topics) {
@@ -1069,8 +1069,8 @@ sub get_updates {
         foreach ( keys %twits ) {
             $error++ unless &do_updates( $fh, $_, $twits{$_}, \%context_cache );
 
-            if ( exists $id_map{__fixreplies}{$_} and keys %{ $id_map{__fixreplies}{$_} } ) {
-                my @frusers = sort keys %{ $id_map{__fixreplies}{$_} };
+            if ( exists $state{__fixreplies}{$_} and keys %{ $state{__fixreplies}{$_} } ) {
+                my @frusers = sort keys %{ $state{__fixreplies}{$_} };
 
                 $error++
                   unless &get_timeline( $fh, $frusers[ $fix_replies_index{$_} ],
@@ -1142,7 +1142,7 @@ sub do_updates {
 	    $tweets = ();
 	    print $fh "type:debug Ignoring timeline for $username\n" if &debug;
 	} else {
-	    if ( $id_map{__last_id}{$username}{timeline} )
+	    if ( $state{__last_id}{$username}{timeline} )
 	    {
 		$tweets = $obj->home_timeline( { count => 100 } );
 	    } else {
@@ -1233,14 +1233,14 @@ sub do_updates {
       $new_poll_id, $username;
 
     print scalar localtime, " - Polling for replies since ",
-      $id_map{__last_id}{$username}{reply}
+      $state{__last_id}{$username}{reply}
       if &debug;
     $new_poll_id = 0;
     eval {
-        if ( $id_map{__last_id}{$username}{reply} )
+        if ( $state{__last_id}{$username}{reply} )
         {
             $tweets = $obj->replies(
-                { since_id => $id_map{__last_id}{$username}{reply} } )
+                { since_id => $state{__last_id}{$username}{reply} } )
               || [];
         } else {
             $tweets = $obj->replies() || [];
@@ -1266,10 +1266,10 @@ sub do_updates {
     print scalar localtime, " - Polling for DMs" if &debug;
     $new_poll_id = 0;
     eval {
-        if ( $id_map{__last_id}{$username}{dm} )
+        if ( $state{__last_id}{$username}{dm} )
         {
             $tweets = $obj->direct_messages(
-                { since_id => $id_map{__last_id}{$username}{dm} } )
+                { since_id => $state{__last_id}{$username}{dm} } )
               || [];
         } else {
             $tweets = $obj->direct_messages() || [];
@@ -1291,16 +1291,16 @@ sub do_updates {
     printf $fh "id:%s account:%s type:last_id dm\n", $new_poll_id, $username;
 
     print scalar localtime, " - Polling for subscriptions" if &debug;
-    if ( $obj->can('search') and $id_map{__searches}{$username} ) {
+    if ( $obj->can('search') and $state{__searches}{$username} ) {
         my $search;
-        foreach my $topic ( sort keys %{ $id_map{__searches}{$username} } ) {
+        foreach my $topic ( sort keys %{ $state{__searches}{$username} } ) {
             print $fh "type:debug searching for $topic since ",
-              "$id_map{__searches}{$username}{$topic}\n";
+              "$state{__searches}{$username}{$topic}\n";
             eval {
                 $search = $obj->search(
                     {
                         q        => $topic,
-                        since_id => $id_map{__searches}{$username}{$topic}
+                        since_id => $state{__searches}{$username}{$topic}
                     }
                 );
             };
@@ -1317,7 +1317,7 @@ sub do_updates {
                 return undef;
             }
 
-            $id_map{__searches}{$username}{$topic} = $search->{max_id};
+            $state{__searches}{$username}{$topic} = $search->{max_id};
             $topic =~ s/ /%20/g;
             printf $fh "id:%s account:%s type:searchid topic:%s\n",
               $search->{max_id}, $username, $topic;
@@ -1383,7 +1383,7 @@ sub do_updates {
 sub get_timeline {
     my ( $fh, $target, $username, $obj, $cache ) = @_;
     my $tweets;
-    my $last_id = $id_map{__last_id}{$username}{$target};
+    my $last_id = $state{__last_id}{$username}{$target};
 
     print $fh "type:debug get_timeline("
       . "$fix_replies_index{$username}=$target > $last_id) started."
@@ -1518,10 +1518,10 @@ sub monitor_child {
 
             my $marker = "";
             if ( $meta{type} ne 'dm' and $meta{nick} and $meta{id} ) {
-                $marker = ( $id_map{__indexes}{ $meta{nick} } + 1 ) % 100;
-                $id_map{ lc $meta{nick} }[$marker]           = $meta{id};
-                $id_map{__indexes}{ $meta{nick} }            = $marker;
-                $id_map{__tweets}{ lc $meta{nick} }[$marker] = $_;
+                $marker = ( $state{__indexes}{ $meta{nick} } + 1 ) % 100;
+                $state{ lc $meta{nick} }[$marker]           = $meta{id};
+                $state{__indexes}{ $meta{nick} }            = $marker;
+                $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
                 $marker                                      = ":$marker";
             }
 
@@ -1549,11 +1549,11 @@ sub monitor_child {
                     $meta{nick}, $marker,  $_
                   ];
                 if (
-                    exists $id_map{__searches}{ $meta{account} }{ $meta{topic} }
+                    exists $state{__searches}{ $meta{account} }{ $meta{topic} }
                     and $meta{id} >
-                    $id_map{__searches}{ $meta{account} }{ $meta{topic} } )
+                    $state{__searches}{ $meta{account} }{ $meta{topic} } )
                 {
-                    $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
+                    $state{__searches}{ $meta{account} }{ $meta{topic} } =
                       $meta{id};
                 }
             } elsif ( $meta{type} eq 'search_once' ) {
@@ -1575,24 +1575,24 @@ sub monitor_child {
                 print "Search '$meta{topic}' returned id $meta{id}" if &debug;
                 if (
                     not
-                    exists $id_map{__searches}{ $meta{account} }{ $meta{topic} }
+                    exists $state{__searches}{ $meta{account} }{ $meta{topic} }
                     or $meta{id} >=
-                    $id_map{__searches}{ $meta{account} }{ $meta{topic} } )
+                    $state{__searches}{ $meta{account} }{ $meta{topic} } )
                 {
-                    $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
+                    $state{__searches}{ $meta{account} }{ $meta{topic} } =
                       $meta{id};
                 } elsif (&debug) {
                     print "Search '$meta{topic}' returned invalid id $meta{id}";
                 }
             } elsif ( $meta{type} eq 'last_id' ) {
-                $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} =
+                $state{__last_id}{"$meta{account}\@$meta{service}"}{$_} =
                   $meta{id}
-                  if $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
+                  if $state{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
                       $meta{id};
             } elsif ( $meta{type} eq 'last_id_fixreplies' ) {
-                $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} =
+                $state{__last_id}{"$meta{account}\@$meta{service}"}{$_} =
                   $meta{id}
-                  if $id_map{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
+                  if $state{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
                       $meta{id};
             } elsif ( $meta{type} eq 'error' ) {
                 push @lines, [ MSGLEVEL_MSGS, $_ ];
@@ -1629,7 +1629,7 @@ sub monitor_child {
 
         if ($new_last_poll) {
             print "new last_poll    = $new_last_poll" if &debug;
-            print "new last_poll_id = ", Dumper( $id_map{__last_id} ) if &debug;
+            print "new last_poll_id = ", Dumper( $state{__last_id} ) if &debug;
             if ($first_call) {
                 print "First call, not printing updates" if &debug;
             } else {
@@ -1665,13 +1665,13 @@ sub monitor_child {
             # and that we don't leave any zombies behind, somehow
             waitpid( -1, WNOHANG );
 
-            # save id_map hash
-            if ( keys %id_map
+            # save state hash
+            if ( keys %state
                 and my $file =
                 Irssi::settings_get_str("twirssi_replies_store") )
             {
                 if ( open JSON, ">$file" ) {
-                    print JSON JSON::Any->objToJson( \%id_map );
+                    print JSON JSON::Any->objToJson( \%state );
                     close JSON;
                 } else {
                     &ccrap("Failed to write replies to $file: $!");
@@ -1811,10 +1811,10 @@ sub sig_complete {
       )
     {    # /twitter_reply gets a nick:num
         $word =~ s/^@//;
-        @$complist = map { "$_:$id_map{__indexes}{$_}" }
+        @$complist = map { "$_:$state{__indexes}{$_}" }
           sort { $nicks{$b} <=> $nicks{$a} }
           grep /^\Q$word/i,
-          keys %{ $id_map{__indexes} };
+          keys %{ $state{__indexes} };
     }
 
     if ( $linestart =~
@@ -2080,7 +2080,7 @@ if ($window) {
             print "selected: $user\@$defservice";
             print "friends: ", join ", ", sort keys %friends;
             print "nicks: ",   join ", ", sort keys %nicks;
-            print "searches: ", Dumper \%{ $id_map{__searches} };
+            print "searches: ", Dumper \%{ $state{__searches} };
             print "last poll: $last_poll";
             if ( open DUMP, ">/tmp/twirssi.cache.txt" ) {
                 print DUMP Dumper \%tweet_cache;
@@ -2117,9 +2117,9 @@ if ($window) {
             "destroy_status",
             sub { &notice("Tweet deleted."); },
             sub { my ($nick, $num) = split /:/, lc $_[0], 2;
-                  $num = $id_map{__last_tweet}{&normalize_username($nick)} 
+                  $num = $state{__last_tweet}{&normalize_username($nick)} 
                     unless (defined $num);
-                  return $id_map{$nick}[$num]; } 
+                  return $state{$nick}[$num]; } 
         )
     );
     Irssi::command_bind(
@@ -2186,8 +2186,8 @@ if ($window) {
             close JSON;
             eval {
                 my $ref = JSON::Any->jsonToObj($json);
-                %id_map = %$ref;
-                my $num = keys %{ $id_map{__indexes} };
+                %state = %$ref;
+                my $num = keys %{ $state{__indexes} };
                 &notice( sprintf "Loaded old replies from %d contact%s.",
                     $num, ( $num == 1 ? "" : "s" ) );
                 &cmd_list_search;
