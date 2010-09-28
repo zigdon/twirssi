@@ -569,9 +569,9 @@ sub cmd_login {
         };
 
         if ($twit) {
-            if ( open( OAUTH, Irssi::settings_get_str("twirssi_oauth_store") ) )
+            if ( open( my $oauth_fh, '<', Irssi::settings_get_str("twirssi_oauth_store") ) )
             {
-                while (<OAUTH>) {
+                while (<$oauth_fh>) {
                     chomp;
                     next unless m/$user\@$service (\S+) (\S+)/i;
                     print "Trying cached oauth creds for $user\@$service"
@@ -580,7 +580,6 @@ sub cmd_login {
                     $twit->access_token_secret($2);
                     last;
                 }
-                close OAUTH;
             }
 
             unless ( $twit->authorized ) {
@@ -654,21 +653,19 @@ sub cmd_oauth {
     my $store_file = Irssi::settings_get_str("twirssi_oauth_store");
     if ($store_file) {
         my @store;
-        if ( open( OAUTH, $store_file ) ) {
-            while (<OAUTH>) {
+        if ( open( my $oauth_fh, '<', $store_file ) ) {
+            while (<$oauth_fh>) {
                 chomp;
                 next if /$key/i;
                 push @store, $_;
             }
-            close OAUTH;
 
         }
 
         push @store, "$key $access_token $access_token_secret";
 
-        if ( open( OAUTH, ">$store_file.new" ) ) {
-            print OAUTH "$_\n" foreach @store;
-            close OAUTH;
+        if ( open( my $oauth_fh, '>', "$store_file.new" ) ) {
+            print $oauth_fh "$_\n" foreach @store;
             rename "$store_file.new", $store_file
               or &notice("Failed to rename $store_file.new: $!");
         } else {
@@ -894,15 +891,15 @@ sub cmd_upgrade {
             return;
         }
 
-        unless ( open( CUR, $loc ) ) {
+        my $cur_fh;
+        unless ( open( $cur_fh, '<', $loc ) ) {
             &notice("Failed to read $loc."
                   . "  Check that /set twirssi_location is set to the correct location."
             );
             return;
         }
 
-        my $cur_md5 = Digest::MD5::md5_hex(<CUR>);
-        close CUR;
+        my $cur_md5 = Digest::MD5::md5_hex(<$cur_fh>);
 
         if ( $cur_md5 eq $md5 ) {
             &notice("Current twirssi seems to be up to date.");
@@ -925,15 +922,15 @@ sub cmd_upgrade {
     }
 
     unless ( $data or Irssi::settings_get_bool("twirssi_upgrade_beta") ) {
-        unless ( open( NEW, "$loc.upgrade" ) ) {
+        my $new_fh;
+        unless ( open( $new_fh, '<', "$loc.upgrade" ) ) {
             &notice("Failed to read $loc.upgrade."
                   . "  Check that /set twirssi_location is set to the correct location."
             );
             return;
         }
 
-        my $new_md5 = Digest::MD5::md5_hex(<NEW>);
-        close NEW;
+        my $new_md5 = Digest::MD5::md5_hex(<$new_fh>);
 
         if ( $new_md5 ne $md5 ) {
             &notice("MD5 verification failed. expected $md5, got $new_md5");
@@ -1085,7 +1082,7 @@ sub get_updates {
         } else {
             print $fh "-- $new_poll";
         }
-        close $fh;
+
         rename $filename, "$filename.done";
         exit;
     } else {
@@ -1395,11 +1392,11 @@ sub monitor_child {
     # first time we run we don't want to print out *everything*, so we just
     # pretend
 
-    if ( open FILE, $filename ) {
+    if ( open my $fh, '<', $filename ) {
         binmode FILE, ":" . &get_charset;
         my @lines;
         my %new_cache;
-        while (<FILE>) {
+        while (<$fh>) {
             last if /^__friends__/;
             unless (/\n$/) {    # skip partial lines
                                 # print "Skipping partial line: $_" if &debug;
@@ -1567,7 +1564,6 @@ sub monitor_child {
                 }
             }
 
-            close FILE;
             unlink $filename
               or warn "Failed to remove $filename: $!"
               unless &debug;
@@ -1594,9 +1590,8 @@ sub monitor_child {
                 and my $file =
                 Irssi::settings_get_str("twirssi_replies_store") )
             {
-                if ( open JSON, ">$file" ) {
-                    print JSON JSON::Any->objToJson( \%id_map );
-                    close JSON;
+                if ( open my $json_fh, '>', "$file" ) {
+                    print $json_fh JSON::Any->objToJson( \%id_map );
                 } else {
                     &ccrap("Failed to write replies to $file: $!");
                 }
@@ -1606,8 +1601,6 @@ sub monitor_child {
             return;
         }
     }
-
-    close FILE;
 
     if ( $attempt < 24 ) {
         Irssi::timeout_add_once( 5000, 'monitor_child',
@@ -2000,9 +1993,8 @@ if ($window) {
             print "nicks: ",   join ", ", sort keys %nicks;
             print "searches: ", Dumper \%{ $id_map{__searches} };
             print "last poll: $last_poll";
-            if ( open DUMP, ">/tmp/twirssi.cache.txt" ) {
-                print DUMP Dumper \%tweet_cache;
-                close DUMP;
+            if ( open my $dump_fh, '>', '/tmp/twirssi.cache.txt' ) {
+                print $dump_fh Dumper \%tweet_cache;
                 print "cache written out to /tmp/twirssi.cache.txt";
             }
         }
@@ -2098,10 +2090,9 @@ if ($window) {
 
     my $file = Irssi::settings_get_str("twirssi_replies_store");
     if ( $file and -r $file ) {
-        if ( open( JSON, $file ) ) {
-            local $/;
-            my $json = <JSON>;
-            close JSON;
+        if ( open( my $json_fh, '<', $file ) ) {
+            my $json;
+            do { local $/; $json = <$json_fh>; };
             eval {
                 my $ref = JSON::Any->jsonToObj($json);
                 %id_map = %$ref;
