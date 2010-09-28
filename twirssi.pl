@@ -42,6 +42,8 @@ my $failwhale  = 0;
 my $first_call = 1;
 my $child_pid;
 my %fix_replies_index;
+my %search_once;
+my $update_is_running = 0;
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -435,6 +437,22 @@ sub gen_cmd {
 
         &$post_ref($data) if $post_ref;
       }
+}
+
+sub cmd_search {
+    my ( $data, $server, $win ) = @_;
+
+    $data =~ s/^\s+|\s+$//g;
+    if ( length $data > 0 ) {
+	my $username = &normalize_username( $user );
+	if (exists $search_once{$username}->{$data}) {
+	    &notice("Search is already queued");
+	}
+	$search_once{$username}->{$data} = Irssi::settings_get_int( "twitter_search_results" );
+	&get_updates;
+    } else {
+        &notice("Search query is empty");
+    }
 }
 
 sub cmd_switch {
@@ -1024,6 +1042,13 @@ sub get_updates {
 
     return unless &logged_in($twit);
 
+    if ($update_is_running) {
+	print scalar localtime, " - get_updates aborted: already running" if &debug;
+	return;
+    } else {
+	$update_is_running = 1;
+    }
+
     my ( $fh, $filename ) = File::Temp::tempfile();
     binmode( $fh, ":" . &get_charset );
     $child_pid = fork();
@@ -1308,6 +1333,48 @@ sub do_updates {
         }
     }
 
+    print scalar localtime, " - Polling for one-time searches" if &debug;
+    if ( $obj->can('search') and exists $search_once{$username} ) {
+        my $search;
+        foreach my $topic ( sort keys %{ $search_once{$username} } ) {
+	    my $max_results = $search_once{$username}->{$topic};
+
+            print $fh "type:debug searching once for $topic (max $max_results)\n";
+            eval {
+                $search = $obj->search(
+                    {
+                        'q'        => $topic
+                    }
+                );
+            };
+
+            if ($@) {
+                print $fh
+                  "type:debug Error during search_once($topic) call.  Aborted.\n";
+                return undef;
+            }
+
+            unless ( $search->{max_id} ) {
+                print $fh "type:debug Invalid search results when searching once",
+                  " for $topic. Aborted.\n";
+                return undef;
+            }
+            $topic =~ s/ /%20/g;
+
+	    # TODO: consider applying ignore-settings to search results
+	    my @results = @{ $search->{results} };
+	    if ($max_results > 0) {
+		splice @results, $max_results;
+	    }
+            foreach my $t ( reverse @results ) {
+
+                my $text = &get_text( $t, $obj );
+                printf $fh "id:%s account:%s nick:%s type:search_once topic:%s %s\n",
+                  $t->{id}, $username, $t->{from_user}, $topic, $text;
+            }
+        }
+    }
+
     print scalar localtime, " - Done" if &debug;
 
     return 1;
@@ -1489,6 +1556,15 @@ sub monitor_child {
                     $id_map{__searches}{ $meta{account} }{ $meta{topic} } =
                       $meta{id};
                 }
+            } elsif ( $meta{type} eq 'search_once' ) {
+                push @lines,
+                  [
+                    ( MSGLEVEL_PUBLIC | $hilight ),
+                    $meta{type}, $account, $meta{topic},
+                    $meta{nick}, $marker,  $_
+                  ];
+		my $username = &normalize_username ( $meta{account} );
+		delete $search_once{$username}->{$meta{topic}};
             } elsif ( $meta{type} eq 'dm' ) {
                 push @lines,
                   [
@@ -1603,6 +1679,7 @@ sub monitor_child {
             }
             $failwhale  = 0;
             $first_call = 0;
+	    $update_is_running = 0;
             return;
         }
     }
@@ -1617,6 +1694,8 @@ sub monitor_child {
         Irssi::pidwait_remove($child_pid);
         waitpid( -1, WNOHANG );
         unlink $filename unless &debug;
+
+	$update_is_running = 0;
 
         return unless Irssi::settings_get_bool("twirssi_notify_timeouts");
 
@@ -1900,11 +1979,12 @@ Irssi::signal_add( "send text", "event_send_text" );
 
 Irssi::theme_register(
     [
-        'twirssi_tweet',  '[$0%B@$1%n$2] $3',
-        'twirssi_search', '[$0%r$1%n:%B@$2%n$3] $4',
-        'twirssi_reply',  '[$0\--> %B@$1%n$2] $3',
-        'twirssi_dm',     '[$0%r@$1%n (%WDM%n)] $2',
-        'twirssi_error',  'ERROR: $0',
+        'twirssi_tweet',       '[$0%B@$1%n$2] $3',
+        'twirssi_search',      '[$0%r$1%n:%B@$2%n$3] $4',
+        'twirssi_search_once', '[$0%r$1%n:%B@$2%n$3] $4',
+        'twirssi_reply',       '[$0\--> %B@$1%n$2] $3',
+        'twirssi_dm',          '[$0%r@$1%n (%WDM%n)] $2',
+        'twirssi_error',       'ERROR: $0',
     ]
 );
 
@@ -1932,8 +2012,9 @@ Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
 Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
     Irssi::get_irssi_dir . "/scripts/twirssi.oauth" );
 
-Irssi::settings_add_int( "twirssi", "twitter_friends_poll", 600 );
-Irssi::settings_add_int( "twirssi", "twitter_timeout",      30 );
+Irssi::settings_add_int( "twirssi", "twitter_friends_poll",     600 );
+Irssi::settings_add_int( "twirssi", "twitter_timeout",           30 );
+Irssi::settings_add_int( "twirssi", "twitter_search_results",     5 );
 
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
@@ -1975,6 +2056,7 @@ if ($window) {
     Irssi::command_bind( "twitter_reply_as",           "cmd_reply_as" );
     Irssi::command_bind( "twitter_login",              "cmd_login" );
     Irssi::command_bind( "twitter_logout",             "cmd_logout" );
+    Irssi::command_bind( "twitter_search",             "cmd_search" );
     Irssi::command_bind( "twitter_switch",             "cmd_switch" );
     Irssi::command_bind( "twitter_subscribe",          "cmd_add_search" );
     Irssi::command_bind( "twitter_unsubscribe",        "cmd_del_search" );
