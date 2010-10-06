@@ -1100,7 +1100,7 @@ sub cmd_set_window {
 
     if ( $winname ne '-' and not Irssi::window_find_name($winname) ) {
         &notice("Creating a new window: '$winname'");
-        Irssi::Windowitem::window_create( $winname, 1 );
+        Irssi::Windowitem::window_create( $winname, 1 )->set_name($winname);
     }
 
     return;
@@ -2107,6 +2107,8 @@ sub get_text {
 sub window {
     my $type  = shift || "default";
     my $uname = shift || "default";
+
+    $type = "search" if $type eq 'search_once';
 
     my $win;
     if ( exists $state{__windows}{$type} ) {
