@@ -1975,7 +1975,7 @@ sub event_send_text {
     # wants to be lazy, tweet away!
     my $acc = &window_to_account( $awin->get_active_name() );
     if ( $acc and Irssi::settings_get_bool("tweet_window_input") ) {
-        &cmd_tweet( "$acc $line", $server, $win );
+        &cmd_tweet_as( "$acc $line", $server, $win );
     }
 }
 
