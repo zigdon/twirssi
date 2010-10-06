@@ -2130,6 +2130,8 @@ sub window {
         }
     }
 
+    print "window($type, $uname) -> $win" if (&debug);
+
     return Irssi::window_find_name($win);
 }
 
@@ -2248,6 +2250,7 @@ if ( &window() ) {
             print "friends: ", join ", ", sort keys %friends;
             print "nicks: ",   join ", ", sort keys %nicks;
             print "searches: ", Dumper \%{ $state{__searches} };
+            print "windows: ", Dumper \%{ $state{__windows} };
             print "last poll: $last_poll";
             if ( open DUMP, ">/tmp/twirssi.cache.txt" ) {
                 print DUMP Dumper \%tweet_cache;
