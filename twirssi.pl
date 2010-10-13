@@ -7,6 +7,7 @@ use File::Temp;
 use LWP::Simple;
 use Data::Dumper;
 use Encode;
+use FileHandle;
 use POSIX qw/:sys_wait_h/;
 use Net::Twitter qw/3.05/;
 $Data::Dumper::Indent = 1;
@@ -43,6 +44,8 @@ my $child_pid;
 my %fix_replies_index;
 my %search_once;
 my $update_is_running = 0;
+my $logfile_fh;
+my %settings;
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -174,7 +177,7 @@ sub cmd_retweet_as {
     }
 
 # Irssi::settings_add_str( "twirssi", "twirssi_retweet_format", 'RT $n: $t ${-- $c$}' );
-    my $text = Irssi::settings_get_str("twirssi_retweet_format");
+    my $text = $settings{retweet_format};
     $text =~ s/\$n/\@$nick/g;
     if ($data) {
         $text =~ s/\${|\$}//g;
@@ -300,7 +303,7 @@ sub cmd_tweet_as {
 sub cmd_broadcast {
     my ( $data, $server, $win ) = @_;
 
-    my $setting = Irssi::settings_get_str("twirssi_broadcast_users");
+    my $setting = $settings{broadcast_users};
     my @bcast_users;
     if ($setting) {
         @bcast_users = split /\s*,\s*/, $setting;
@@ -365,7 +368,7 @@ sub cmd_reply_as {
         return;
     }
 
-    if ( Irssi::settings_get_bool("twirssi_replies_autonick") ) {
+    if ( $settings{replies_autonick} ) {
 
         # remove any @nick at the beginning of the reply, as we'll add it anyway
         $data =~ s/^\s*\@?$nick\s*//;
@@ -460,8 +463,7 @@ sub cmd_search {
             &notice( [ "search", $data ], "Search is already queued" );
             return;
         }
-        $search_once{$username}->{$data} =
-          Irssi::settings_get_int("twitter_search_results");
+        $search_once{$username}->{$data} = $settings{search_results};
         &notice( [ "search", $data ], "Searching for '$data'" );
         &get_updates;
     } else {
@@ -515,21 +517,20 @@ sub cmd_login {
     if ($data) {
         print "manual data login" if &debug;
         ( $user, $pass ) = split ' ', $data, 2;
-        unless ( Irssi::settings_get_bool("twirssi_use_oauth") or $pass ) {
+        unless ( $settings{use_oauth} or $pass ) {
             &notice( ["tweet"],
                 "usage: /twitter_login <username>[\@<service>] <password>" );
             return;
         }
-    } elsif ( Irssi::settings_get_bool("twirssi_use_oauth")
-        and my $autouser = Irssi::settings_get_str("twitter_usernames") )
+    } elsif ( $settings{use_oauth} and my $autouser = $settings{usernames} )
     {
         print "oauth autouser login" if &debug;
         foreach my $user ( split /,/, $autouser ) {
             &cmd_login($user);
         }
         return;
-    } elsif ( my $autouser = Irssi::settings_get_str("twitter_usernames")
-        and my $autopass = Irssi::settings_get_str("twitter_passwords") )
+    } elsif ( my $autouser = $settings{usernames}
+        and my $autopass = $settings{passwords} )
     {
         print "autouser login" if &debug;
         my @user = split /\s*,\s*/, $autouser;
@@ -574,12 +575,12 @@ sub cmd_login {
     if ( $user =~ /^(.*)@(twitter|identica)$/ ) {
         ( $user, $service ) = ( $1, $2 );
     } else {
-        $service = Irssi::settings_get_str("twirssi_default_service");
+        $service = $settings{default_service};
     }
     $defservice = $service = ucfirst lc $service;
 
     if ( $service eq 'Twitter'
-        and Irssi::settings_get_bool("twirssi_use_oauth") )
+        and $settings{use_oauth} )
     {
         print "Attempting OAuth for $user\@$service" if &debug;
         eval {
@@ -589,7 +590,7 @@ sub cmd_login {
                     identica => 1,
                     traits   => [ 'API::REST', 'API::Search' ],
                     source   => "twirssi",
-                    ssl      => !Irssi::settings_get_bool("twirssi_avoid_ssl"),
+                    ssl      => !$settings{avoid_ssl},
                 );
             } else {
                 $twit = Net::Twitter->new(
@@ -602,13 +603,13 @@ sub cmd_login {
                           '0G5xnujYlo34ipvTMftxN9yfwgTPD05ikIR2NCKZ',
                     ),
                     source => "twirssi",
-                    ssl    => !Irssi::settings_get_bool("twirssi_avoid_ssl"),
+                    ssl    => !$settings{avoid_ssl},
                 );
             }
         };
 
         if ($twit) {
-            if ( open( OAUTH, Irssi::settings_get_str("twirssi_oauth_store") ) )
+            if ( open( OAUTH, $settings{oauth_store} ) )
             {
                 while (<OAUTH>) {
                     chomp;
@@ -649,7 +650,7 @@ sub cmd_login {
             username => $user,
             password => $pass,
             source   => "twirssi",
-            ssl      => Irssi::settings_get_bool("twirssi_avoid_ssl") ? 0 : 1,
+            ssl      => $settings{avoid_ssl},
         );
     }
 
@@ -693,7 +694,7 @@ sub cmd_oauth {
 
     delete $oauth{pending}{$key};
 
-    my $store_file = Irssi::settings_get_str("twirssi_oauth_store");
+    my $store_file = $settings{oauth_store};
     if ($store_file) {
         my @store;
         if ( open( OAUTH, $store_file ) ) {
@@ -728,9 +729,7 @@ sub cmd_oauth {
 sub verify_twitter_object {
     my ( $server, $win, $user, $service, $twit ) = @_;
 
-    if ( my $timeout = Irssi::settings_get_int("twitter_timeout")
-        and $twit->can('ua') )
-    {
+    if ( my $timeout = $settings{timeout} and $twit->can('ua') ) {
         $twit->ua->timeout($timeout);
         &notice( ["tweet"], "Twitter timeout set to $timeout" );
     }
@@ -741,7 +740,7 @@ sub verify_twitter_object {
             "Login as $user\@$service failed"
         );
 
-        if ( not Irssi::settings_get_bool("twirssi_avoid_ssl") ) {
+        if ( not $settings{avoid_ssl} ) {
             &notice(
                 [ "tweet", "$user\@$service" ],
                 "It's possible you're missing one of the modules required for "
@@ -776,9 +775,6 @@ sub verify_twitter_object {
     &notice( [ "tweet", "$user\@$service" ],
         "loaded friends: " . scalar keys %friends );
 
-    if ( Irssi::settings_get_bool("twirssi_first_run") ) {
-        Irssi::settings_set_bool( "twirssi_first_run", 0 );
-    }
     %nicks = %friends;
     $nicks{$user} = 0;
     return 1;
@@ -923,7 +919,7 @@ sub cmd_list_search {
 sub cmd_upgrade {
     my ( $data, $server, $win ) = @_;
 
-    my $loc = Irssi::settings_get_str("twirssi_location");
+    my $loc = $settings{location};
     unless ( -w $loc ) {
         &notice( ["error"],
                 "$loc isn't writable, can't upgrade."
@@ -932,7 +928,7 @@ sub cmd_upgrade {
     }
 
     my $md5;
-    unless ( $data or Irssi::settings_get_bool("twirssi_upgrade_beta") ) {
+    unless ( $data or $settings{upgrade_beta} ) {
         eval { use Digest::MD5; };
 
         if ($@) {
@@ -969,7 +965,7 @@ sub cmd_upgrade {
     }
 
     my $URL =
-      Irssi::settings_get_bool("twirssi_upgrade_beta")
+      $settings{upgrade_beta}
       ? "http://github.com/zigdon/twirssi/raw/master/twirssi.pl"
       : "http://twirssi.com/twirssi.pl";
     &notice( ["error"], "Downloading twirssi from $URL" );
@@ -983,7 +979,7 @@ sub cmd_upgrade {
         return;
     }
 
-    unless ( $data or Irssi::settings_get_bool("twirssi_upgrade_beta") ) {
+    unless ( $data or $settings{upgrade_beta} ) {
         unless ( open( NEW, "$loc.upgrade" ) ) {
             &notice( ["error"],
                     "Failed to read $loc.upgrade."
@@ -1034,8 +1030,7 @@ sub cmd_list_windows {
             &notice("  $tag: $state{__windows}{$type}{$tag}");
         }
     }
-    &notice( "Default window for all other messages: "
-          . Irssi::settings_get_str("twitter_window") );
+    &notice( "Default window for all other messages: " . $settings{window} );
 
     &notice("Add new entries with the /twirssi_set_window "
           . "[type] [tag] [window] command." );
@@ -1207,9 +1202,7 @@ sub get_updates {
         }
 
         print $fh "__friends__\n";
-        if (
-            time - $last_friends_poll >
-            Irssi::settings_get_int('twitter_friends_poll') )
+        if ( time - $last_friends_poll > $settings{friends_poll} )
         {
             print $fh "__updated ", time, "\n";
             my ( $added, $removed ) = &load_friends($fh);
@@ -1255,10 +1248,7 @@ sub do_updates {
     print scalar localtime, " - Polling for updates for $username" if &debug;
     my $tweets;
     my $new_poll_id = 0;
-    my @ignored_accounts =
-      Irssi::settings_get_str("twirssi_ignored_accounts")
-      ? split /\s*,\s*/, Irssi::settings_get_str("twirssi_ignored_accounts")
-      : ();
+    my @ignored_accounts = $settings{ignored_accounts} ? split /\s*,\s*/, $settings{ignored_accounts} : ();
     eval {
         if ( grep { $_ eq $username } @ignored_accounts )
         {
@@ -1295,14 +1285,8 @@ sub do_updates {
         return undef;
     }
 
-    my @ignore_tags =
-      Irssi::settings_get_str("twirssi_ignored_tags")
-      ? split /\s*,\s*/, Irssi::settings_get_str("twirssi_ignored_tags")
-      : ();
-    my @strip_tags =
-      Irssi::settings_get_str("twirssi_stripped_tags")
-      ? split /\s*,\s*/, Irssi::settings_get_str("twirssi_stripped_tags")
-      : ();
+    my @ignore_tags = $settings{ignored_tags} ? split /\s*,\s*/, $settings{ignored_tags} : ();
+    my @strip_tags = $settings{stripped_tags} ? split /\s*,\s*/, $settings{stripped_tags} : ();
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
         my $reply = "tweet";
@@ -1320,8 +1304,7 @@ sub do_updates {
             $text =~ s/(?:\b|^)\Q$tag\E(?:\b|$)//gi;
         }
 
-        if (    Irssi::settings_get_bool("show_reply_context")
-            and $t->{in_reply_to_screen_name} ne $username
+        if (    $t->{in_reply_to_screen_name} ne $username
             and $t->{in_reply_to_screen_name}
             and not exists $friends{ $t->{in_reply_to_screen_name} } )
         {
@@ -1346,7 +1329,7 @@ sub do_updates {
         }
         next
           if $t->{user}{screen_name} eq $username
-              and not Irssi::settings_get_bool("show_own_tweets");
+              and not $settings{own_tweets};
         printf $fh "id:%s account:%s nick:%s type:%s %s\n",
           $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
@@ -1532,8 +1515,7 @@ sub get_timeline {
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
         my $reply = "tweet";
-        if (    Irssi::settings_get_bool("show_reply_context")
-            and $t->{in_reply_to_screen_name} ne $username
+        if (    $t->{in_reply_to_screen_name} ne $username
             and $t->{in_reply_to_screen_name}
             and not exists $friends{ $t->{in_reply_to_screen_name} } )
         {
@@ -1626,7 +1608,7 @@ sub monitor_child {
             $meta{service} = $1;
             if (
                 lc $meta{service} eq
-                lc Irssi::settings_get_str("twirssi_default_service") )
+                lc $settings{default_service} )
             {
                 $account = "$meta{account}: "
                   if lc "$meta{account}\@$meta{service}" ne lc
@@ -1644,12 +1626,9 @@ sub monitor_child {
                 $marker                                     = ":$marker";
             }
 
-            my $hilight_color =
-              $irssi_to_mirc_colors{ Irssi::settings_get_str("hilight_color") };
+            my $hilight_color = $irssi_to_mirc_colors{ $settings{hilight_color} };
             my $nick = "\@$meta{account}";
-            if ( $_ =~ /\Q$nick\E(?:\W|$)/i
-                and Irssi::settings_get_bool("twirssi_hilights") )
-            {
+            if ( $_ =~ /\Q$nick\E(?:\W|$)/i ) {
                 $meta{nick} = "\cC$hilight_color$meta{nick}\cO";
                 $hilight = MSGLEVEL_HILIGHT;
             }
@@ -1758,6 +1737,7 @@ sub monitor_child {
                         @$line[ 2 .. $#$line - 1 ],
                         &hilight( $line->[-1] )
                     );
+                    &write_log($line);
                 }
             }
 
@@ -1804,7 +1784,7 @@ sub monitor_child {
 
         $update_is_running = 0;
 
-        return unless Irssi::settings_get_bool("twirssi_notify_timeouts");
+        return unless $settings{notify_timeouts};
 
         my $since;
         my @time = localtime($last_poll);
@@ -1835,11 +1815,31 @@ sub monitor_child {
     }
 }
 
+sub write_log {
+    return unless $logfile_fh;
+
+    #                0         1     2        3      4     5     6
+    # tweet/reply: [ msglevel, type, account, nick,  :num, msg ];
+    # search:      [ msglevel, type, account, topic, nick, :num, msg ];
+    # dm:          [ msglevel, type, account, nick,  msg ];
+    # error:       [ msglevel, msg ];
+    my @params = @{$_[0]};
+    print $logfile_fh scalar localtime, " - ";
+    if ($params[1] eq 'dm') {
+        print $logfile_fh "DM \@$params[3]: $params[4]\n";
+    } elsif ($params[1] eq 'search' or $params[1] eq 'search_once') {
+        print $logfile_fh "Search $params[3]: [\@$params[4]] $params[6]\n";
+    } elsif ($params[1] eq 'tweet' or $params[1] eq 'reply') {
+        print $logfile_fh "[\@$params[3]] $params[5]\n";
+    } else {
+        print $logfile_fh "ERR: $params[1]\n";
+    }
+}
+
 sub save_state {
 
     # save state hash
-    if ( keys %state
-        and my $file = Irssi::settings_get_str("twirssi_replies_store") )
+    if ( keys %state and my $file = $settings{replies_store} )
     {
         if ( open JSON, ">$file" ) {
             print JSON JSON::Any->objToJson( \%state );
@@ -1851,7 +1851,7 @@ sub save_state {
 }
 
 sub debug {
-    return Irssi::settings_get_bool("twirssi_debug");
+    return $settings{debug};
 }
 
 sub notice {
@@ -1873,12 +1873,11 @@ sub ccrap {
 sub update_away {
     my $data = shift;
 
-    if (    Irssi::settings_get_bool("tweet_to_away")
+    if (    $settings{to_away}
         and $data !~ /\@\w/
         and $data !~ /^[dD] / )
     {
-        my $server =
-          Irssi::server_find_tag( Irssi::settings_get_str("bitlbee_server") );
+        my $server = Irssi::server_find_tag( $settings{bitlbee_server} );
         if ($server) {
             $server->send_raw("away :$data");
             return 1;
@@ -1936,7 +1935,7 @@ sub sig_complete {
     if (
         $linestart =~
         m{^/twitter_delete\s*$|^/(?:retweet|twitter_reply)(?:_as)?\s*$}
-        or ( Irssi::settings_get_bool("twirssi_use_reply_aliases")
+        or ( $settings{use_reply_aliases}
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
     {    # /twitter_reply gets a nick:num
@@ -1974,19 +1973,84 @@ sub event_send_text {
     # if the window where we got our text was the twitter window, and the user
     # wants to be lazy, tweet away!
     my $acc = &window_to_account( $awin->get_active_name() );
-    if ( $acc and Irssi::settings_get_bool("tweet_window_input") ) {
+    if ( $acc and $settings{window_input} ) {
         &cmd_tweet_as( "$acc $line", $server, $win );
     }
 }
 
+sub event_setup_changed {
+    foreach (qw/
+                 broadcast_users
+                 charset
+                 default_service
+                 ignored_accounts
+                 ignored_tags
+                 location
+                 logfile_path
+                 nick_color
+                 oauth_store
+                 replies_autonick
+                 replies_store
+                 retweet_format 
+                 stripped_tags
+                 topic_color
+               /) {
+        $settings{$_} = Irssi::settings_get_str("twirssi_$_");
+    }
+
+    foreach (
+              [ 'always_shorten', 'twirssi_always_shorten' ],
+              [ 'avoid_ssl', 'twirssi_avoid_ssl' ],
+              [ 'debug', 'twirssi_debug' ],
+              [ 'notify_timeouts', 'twirssi_notify_timeouts' ],
+              [ 'own_tweets', 'show_own_tweets' ],
+              [ 'to_away', 'tweet_to_away' ],
+              [ 'upgrade_beta', 'twirssi_upgrade_beta' ],
+              [ 'use_oauth', 'twirssi_use_oauth' ],
+              [ 'use_reply_aliases', 'twirssi_use_reply_aliases' ],
+              [ 'window_input', 'tweet_window_input' ],
+            ) {
+        $settings{$_->[0]} = Irssi::settings_get_bool($_->[1]);
+    }
+
+    $settings{friends_poll} = Irssi::settings_get_int("twitter_friends_poll");
+    $settings{poll_interval} = Irssi::settings_get_int("twitter_poll_interval");
+    $settings{search_results} = Irssi::settings_get_int("twitter_search_results");
+    $settings{timeout} = Irssi::settings_get_int("twitter_timeout");
+
+    $settings{bitlbee_server} = Irssi::settings_get_str("bitlbee_server");
+    $settings{hilight_color} = Irssi::settings_get_str("hilight_color");
+    $settings{passwords} = Irssi::settings_get_str("twitter_passwords");
+    $settings{usernames} = Irssi::settings_get_str("twitter_usernames");
+    $settings{url_provider} = Irssi::settings_get_str("short_url_provider");
+    $settings{url_args} = Irssi::settings_get_str("short_url_args");
+    $settings{window} = Irssi::settings_get_str("twitter_window");
+
+    if ($settings{logfile_path}) {
+        print "Logging to $settings{logfile_path}" if &debug;
+        if ($logfile_fh = FileHandle->new($settings{logfile_path}, ">>")) {
+            $logfile_fh->autoflush(1);
+        } else {
+            &notice( ["error"],
+                     "ERROR: Failed to appen $settings{logfile_path}: $!" );
+            undef $logfile_fh;
+        }
+    }
+
+    if (&debug) {
+        print "Settings changed:";
+        print Dumper \%settings;
+    }
+}
+
 sub get_poll_time {
-    my $poll = Irssi::settings_get_int("twitter_poll_interval");
+    my $poll = $settings{poll_interval};
     return $poll if $poll >= 60;
     return 60;
 }
 
 sub get_charset {
-    my $charset = Irssi::settings_get_str("twirssi_charset");
+    my $charset = $settings{charset};
     return "utf8" if $charset =~ /^\s*$/;
     return $charset;
 }
@@ -1994,13 +2058,13 @@ sub get_charset {
 sub hilight {
     my $text = shift;
 
-    if ( Irssi::settings_get_str("twirssi_nick_color") ) {
-        my $c = Irssi::settings_get_str("twirssi_nick_color");
+    if ( $settings{nick_color} ) {
+        my $c = $settings{nick_color};
         $c = $irssi_to_mirc_colors{$c};
         $text =~ s/(^|\W)\@(\w+)/$1\cC$c\@$2\cO/g if $c;
     }
-    if ( Irssi::settings_get_str("twirssi_topic_color") ) {
-        my $c = Irssi::settings_get_str("twirssi_topic_color");
+    if ( $settings{topic_color} ) {
+        my $c = $settings{topic_color};
         $c = $irssi_to_mirc_colors{$c};
         $text =~ s/(^|\W)(\#|\!)([-\w]+)/$1\cC$c$2$3\cO/g if $c;
     }
@@ -2012,19 +2076,11 @@ sub hilight {
 sub shorten {
     my $data = shift;
 
-    my $provider = Irssi::settings_get_str("short_url_provider");
-    if (
-        (
-            Irssi::settings_get_bool("twirssi_always_shorten")
-            or &too_long( $data, 1 )
-        )
-        and $provider
-      )
-    {
+    my $provider = $settings{url_provider};
+    if (( $settings{always_shorten} or &too_long( $data, 1 )) and $provider) {
         my @args;
         if ( $provider eq 'Bitly' ) {
-            @args[ 1, 2 ] = split ',',
-              Irssi::settings_get_str("short_url_args"), 2;
+            @args[ 1, 2 ] = split ',', $settings{url_args}, 2;
             unless ( @args == 3 ) {
                 &ccrap(
                     "WWW::Shorten::Bitly requires a username and API key.",
@@ -2067,7 +2123,7 @@ sub normalize_username {
         $service = ucfirst lc $service;
     } else {
         $service =
-          ucfirst lc Irssi::settings_get_str("twirssi_default_service");
+          ucfirst lc $settings{default_service};
         unless ( exists $twits{"$username\@$service"} ) {
             $service = undef;
             foreach my $t ( sort keys %twits ) {
@@ -2116,9 +2172,9 @@ sub window {
              $state{__windows}{$type}{$uname}
           || $state{__windows}{$type}{$user}
           || $state{__windows}{$type}{default}
-          || Irssi::settings_get_str('twitter_window');
+          || $settings{window};
     } else {
-        $win = Irssi::settings_get_str('twitter_window');
+        $win = $settings{window};
     }
     unless ( Irssi::window_find_name($win) ) {
         Irssi::active_win()->print("creating window $win.");
@@ -2128,7 +2184,7 @@ sub window {
             return $newwin;
         } else {
             Irssi::active_win()->print("Failed to create window $win!");
-            $win = Irssi::settings_get_str('twitter_window');
+            $win = $settings{window};
         }
     }
 
@@ -2148,7 +2204,7 @@ sub window_to_account {
         }
     }
 
-    if ( lc $name eq Irssi::settings_get_str('twitter_window') ) {
+    if ( lc $name eq $settings{window} ) {
         return $user;
     }
 
@@ -2156,6 +2212,7 @@ sub window_to_account {
 }
 
 Irssi::signal_add( "send text", "event_send_text" );
+Irssi::signal_add( "setup changed", "event_setup_changed" );
 
 Irssi::theme_register(
     [
@@ -2183,6 +2240,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_topic_color",      "%r" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_tags",     "" );
 Irssi::settings_add_str( "twirssi", "twirssi_stripped_tags",    "" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_accounts", "" );
+Irssi::settings_add_str( "twirssi", "twirssi_logfile_path",     "" );
 Irssi::settings_add_str( "twirssi", "twirssi_retweet_format",
     'RT $n: "$t" ${-- $c$}' );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
@@ -2198,14 +2256,11 @@ Irssi::settings_add_int( "twirssi", "twitter_search_results", 5 );
 
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
-Irssi::settings_add_bool( "twirssi", "show_reply_context",        0 );
 Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_debug",             0 );
-Irssi::settings_add_bool( "twirssi", "twirssi_first_run",         1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_replies_autonick",  1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_notify_timeouts",   1 );
-Irssi::settings_add_bool( "twirssi", "twirssi_hilights",          1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_always_shorten",    0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_avoid_ssl",         0 );
@@ -2213,6 +2268,7 @@ Irssi::settings_add_bool( "twirssi", "twirssi_use_oauth",         1 );
 
 $last_poll = time - &get_poll_time;
 
+&event_setup_changed();
 if ( &window() ) {
     Irssi::command_bind( "dm",                         "cmd_direct" );
     Irssi::command_bind( "dm_as",                      "cmd_direct_as" );
@@ -2239,7 +2295,7 @@ if ( &window() ) {
     Irssi::command_bind( "twirssi_set_window",         "cmd_set_window" );
     Irssi::command_bind( "twirssi_list_windows",       "cmd_list_windows" );
     Irssi::command_bind( "bitlbee_away",               "update_away" );
-    if ( Irssi::settings_get_bool("twirssi_use_reply_aliases") ) {
+    if ( $settings{use_reply_aliases} ) {
         Irssi::command_bind( "reply",    "cmd_reply" );
         Irssi::command_bind( "reply_as", "cmd_reply_as" );
     }
@@ -2359,7 +2415,7 @@ if ( &window() ) {
         "    %Y||%C `%N Log in with /twitter_login, send updates with /tweet"
     );
 
-    my $file = Irssi::settings_get_str("twirssi_replies_store");
+    my $file = $settings{replies_store};
     if ( $file and -r $file ) {
         if ( open( JSON, $file ) ) {
             local $/;
@@ -2379,7 +2435,7 @@ if ( &window() ) {
         }
     }
 
-    if ( my $provider = Irssi::settings_get_str("short_url_provider") ) {
+    if ( my $provider = $settings{url_provider} ) {
         &notice("Loading WWW::Shorten::$provider...");
         eval "use WWW::Shorten::$provider;";
 
@@ -2392,15 +2448,14 @@ if ( &window() ) {
         }
     }
 
-    if ( my $autouser = Irssi::settings_get_str("twitter_usernames") ) {
+    if ( my $autouser = $settings{usernames} ) {
         &cmd_login();
         &get_updates;
     }
 
 } else {
     Irssi::active_win()
-      ->print( "Create a window named "
-          . Irssi::settings_get_str('twitter_window')
+      ->print( "Create a window named " . $settings{window}
           . " or change the value of twitter_window.  Then, reload twirssi." );
 }
 
