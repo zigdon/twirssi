@@ -522,8 +522,7 @@ sub cmd_login {
                 "usage: /twitter_login <username>[\@<service>] <password>" );
             return;
         }
-    } elsif ( $settings{use_oauth} and my $autouser = $settings{usernames} )
-    {
+    } elsif ( $settings{use_oauth} and my $autouser = $settings{usernames} ) {
         print "oauth autouser login" if &debug;
         foreach my $user ( split /,/, $autouser ) {
             &cmd_login($user);
@@ -579,7 +578,7 @@ sub cmd_login {
     }
     $defservice = $service = ucfirst lc $service;
 
-    if ( $service eq 'Twitter'
+    if (    $service eq 'Twitter'
         and $settings{use_oauth} )
     {
         print "Attempting OAuth for $user\@$service" if &debug;
@@ -608,9 +607,12 @@ sub cmd_login {
             }
         };
 
+        if ($@) {
+            &notice( ["error"], "Error when creating object:  $@" );
+        }
+
         if ($twit) {
-            if ( open( OAUTH, $settings{oauth_store} ) )
-            {
+            if ( open( OAUTH, $settings{oauth_store} ) ) {
                 while (<OAUTH>) {
                     chomp;
                     next unless m/$user\@$service (\S+) (\S+)/i;
@@ -1202,8 +1204,7 @@ sub get_updates {
         }
 
         print $fh "__friends__\n";
-        if ( time - $last_friends_poll > $settings{friends_poll} )
-        {
+        if ( time - $last_friends_poll > $settings{friends_poll} ) {
             print $fh "__updated ", time, "\n";
             my ( $added, $removed ) = &load_friends($fh);
             if ( $added + $removed ) {
@@ -1247,8 +1248,10 @@ sub do_updates {
 
     print scalar localtime, " - Polling for updates for $username" if &debug;
     my $tweets;
-    my $new_poll_id = 0;
-    my @ignored_accounts = $settings{ignored_accounts} ? split /\s*,\s*/, $settings{ignored_accounts} : ();
+    my $new_poll_id      = 0;
+    my @ignored_accounts = $settings{ignored_accounts}
+      ? split /\s*,\s*/, $settings{ignored_accounts}
+      : ();
     eval {
         if ( grep { $_ eq $username } @ignored_accounts )
         {
@@ -1285,8 +1288,12 @@ sub do_updates {
         return undef;
     }
 
-    my @ignore_tags = $settings{ignored_tags} ? split /\s*,\s*/, $settings{ignored_tags} : ();
-    my @strip_tags = $settings{stripped_tags} ? split /\s*,\s*/, $settings{stripped_tags} : ();
+    my @ignore_tags = $settings{ignored_tags}
+      ? split /\s*,\s*/, $settings{ignored_tags}
+      : ();
+    my @strip_tags = $settings{stripped_tags}
+      ? split /\s*,\s*/, $settings{stripped_tags}
+      : ();
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
         my $reply = "tweet";
@@ -1606,10 +1613,7 @@ sub monitor_child {
             my $account = "";
             $meta{account} =~ s/\@(\w+)$//;
             $meta{service} = $1;
-            if (
-                lc $meta{service} eq
-                lc $settings{default_service} )
-            {
+            if ( lc $meta{service} eq lc $settings{default_service} ) {
                 $account = "$meta{account}: "
                   if lc "$meta{account}\@$meta{service}" ne lc
                       "$user\@$defservice";
@@ -1626,7 +1630,8 @@ sub monitor_child {
                 $marker                                     = ":$marker";
             }
 
-            my $hilight_color = $irssi_to_mirc_colors{ $settings{hilight_color} };
+            my $hilight_color =
+              $irssi_to_mirc_colors{ $settings{hilight_color} };
             my $nick = "\@$meta{account}";
             if ( $_ =~ /\Q$nick\E(?:\W|$)/i ) {
                 $meta{nick} = "\cC$hilight_color$meta{nick}\cO";
@@ -1823,13 +1828,13 @@ sub write_log {
     # search:      [ msglevel, type, account, topic, nick, :num, msg ];
     # dm:          [ msglevel, type, account, nick,  msg ];
     # error:       [ msglevel, msg ];
-    my @params = @{$_[0]};
+    my @params = @{ $_[0] };
     print $logfile_fh scalar localtime, " - ";
-    if ($params[1] eq 'dm') {
+    if ( $params[1] eq 'dm' ) {
         print $logfile_fh "DM \@$params[3]: $params[4]\n";
-    } elsif ($params[1] eq 'search' or $params[1] eq 'search_once') {
+    } elsif ( $params[1] eq 'search' or $params[1] eq 'search_once' ) {
         print $logfile_fh "Search $params[3]: [\@$params[4]] $params[6]\n";
-    } elsif ($params[1] eq 'tweet' or $params[1] eq 'reply') {
+    } elsif ( $params[1] eq 'tweet' or $params[1] eq 'reply' ) {
         print $logfile_fh "[\@$params[3]] $params[5]\n";
     } else {
         print $logfile_fh "ERR: $params[1]\n";
@@ -1839,8 +1844,7 @@ sub write_log {
 sub save_state {
 
     # save state hash
-    if ( keys %state and my $file = $settings{replies_store} )
-    {
+    if ( keys %state and my $file = $settings{replies_store} ) {
         if ( open JSON, ">$file" ) {
             print JSON JSON::Any->objToJson( \%state );
             close JSON;
@@ -1935,7 +1939,7 @@ sub sig_complete {
     if (
         $linestart =~
         m{^/twitter_delete\s*$|^/(?:retweet|twitter_reply)(?:_as)?\s*$}
-        or ( $settings{use_reply_aliases}
+        or (    $settings{use_reply_aliases}
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
     {    # /twitter_reply gets a nick:num
@@ -1979,60 +1983,65 @@ sub event_send_text {
 }
 
 sub event_setup_changed {
-    foreach (qw/
-                 broadcast_users
-                 charset
-                 default_service
-                 ignored_accounts
-                 ignored_tags
-                 location
-                 logfile_path
-                 nick_color
-                 oauth_store
-                 replies_autonick
-                 replies_store
-                 retweet_format 
-                 stripped_tags
-                 topic_color
-               /) {
+    foreach (
+        qw/
+        broadcast_users
+        charset
+        default_service
+        ignored_accounts
+        ignored_tags
+        location
+        logfile_path
+        nick_color
+        oauth_store
+        replies_autonick
+        replies_store
+        retweet_format
+        stripped_tags
+        topic_color
+        /
+      )
+    {
         $settings{$_} = Irssi::settings_get_str("twirssi_$_");
     }
 
     foreach (
-              [ 'always_shorten', 'twirssi_always_shorten' ],
-              [ 'avoid_ssl', 'twirssi_avoid_ssl' ],
-              [ 'debug', 'twirssi_debug' ],
-              [ 'notify_timeouts', 'twirssi_notify_timeouts' ],
-              [ 'own_tweets', 'show_own_tweets' ],
-              [ 'to_away', 'tweet_to_away' ],
-              [ 'upgrade_beta', 'twirssi_upgrade_beta' ],
-              [ 'use_oauth', 'twirssi_use_oauth' ],
-              [ 'use_reply_aliases', 'twirssi_use_reply_aliases' ],
-              [ 'window_input', 'tweet_window_input' ],
-            ) {
-        $settings{$_->[0]} = Irssi::settings_get_bool($_->[1]);
+        [ 'always_shorten',    'twirssi_always_shorten' ],
+        [ 'avoid_ssl',         'twirssi_avoid_ssl' ],
+        [ 'debug',             'twirssi_debug' ],
+        [ 'notify_timeouts',   'twirssi_notify_timeouts' ],
+        [ 'own_tweets',        'show_own_tweets' ],
+        [ 'to_away',           'tweet_to_away' ],
+        [ 'upgrade_beta',      'twirssi_upgrade_beta' ],
+        [ 'use_oauth',         'twirssi_use_oauth' ],
+        [ 'use_reply_aliases', 'twirssi_use_reply_aliases' ],
+        [ 'window_input',      'tweet_window_input' ],
+      )
+    {
+        $settings{ $_->[0] } = Irssi::settings_get_bool( $_->[1] );
     }
 
-    $settings{friends_poll} = Irssi::settings_get_int("twitter_friends_poll");
+    $settings{friends_poll}  = Irssi::settings_get_int("twitter_friends_poll");
     $settings{poll_interval} = Irssi::settings_get_int("twitter_poll_interval");
-    $settings{search_results} = Irssi::settings_get_int("twitter_search_results");
+    $settings{search_results} =
+      Irssi::settings_get_int("twitter_search_results");
     $settings{timeout} = Irssi::settings_get_int("twitter_timeout");
 
     $settings{bitlbee_server} = Irssi::settings_get_str("bitlbee_server");
-    $settings{hilight_color} = Irssi::settings_get_str("hilight_color");
-    $settings{passwords} = Irssi::settings_get_str("twitter_passwords");
-    $settings{usernames} = Irssi::settings_get_str("twitter_usernames");
-    $settings{url_provider} = Irssi::settings_get_str("short_url_provider");
-    $settings{url_args} = Irssi::settings_get_str("short_url_args");
-    $settings{window} = Irssi::settings_get_str("twitter_window");
+    $settings{hilight_color}  = Irssi::settings_get_str("hilight_color");
+    $settings{passwords}      = Irssi::settings_get_str("twitter_passwords");
+    $settings{usernames}      = Irssi::settings_get_str("twitter_usernames");
+    $settings{url_provider}   = Irssi::settings_get_str("short_url_provider");
+    $settings{url_args}       = Irssi::settings_get_str("short_url_args");
+    $settings{window}         = Irssi::settings_get_str("twitter_window");
 
-    if ($settings{logfile_path}) {
+    if ( $settings{logfile_path} ) {
         print "Logging to $settings{logfile_path}" if &debug;
-        if ($logfile_fh = FileHandle->new($settings{logfile_path}, ">>")) {
+        if ( $logfile_fh = FileHandle->new( $settings{logfile_path}, ">>" ) ) {
             $logfile_fh->autoflush(1);
         } else {
             &notice( ["error"],
-                     "ERROR: Failed to appen $settings{logfile_path}: $!" );
+                "ERROR: Failed to appen $settings{logfile_path}: $!" );
             undef $logfile_fh;
         }
     }
@@ -2077,7 +2086,8 @@ sub shorten {
     my $data = shift;
 
     my $provider = $settings{url_provider};
-    if (( $settings{always_shorten} or &too_long( $data, 1 )) and $provider) {
+    if ( ( $settings{always_shorten} or &too_long( $data, 1 ) ) and $provider )
+    {
         my @args;
         if ( $provider eq 'Bitly' ) {
             @args[ 1, 2 ] = split ',', $settings{url_args}, 2;
@@ -2122,8 +2132,7 @@ sub normalize_username {
     if ($service) {
         $service = ucfirst lc $service;
     } else {
-        $service =
-          ucfirst lc $settings{default_service};
+        $service = ucfirst lc $settings{default_service};
         unless ( exists $twits{"$username\@$service"} ) {
             $service = undef;
             foreach my $t ( sort keys %twits ) {
@@ -2211,7 +2220,7 @@ sub window_to_account {
     return undef;
 }
 
-Irssi::signal_add( "send text", "event_send_text" );
+Irssi::signal_add( "send text",     "event_send_text" );
 Irssi::signal_add( "setup changed", "event_setup_changed" );
 
 Irssi::theme_register(
@@ -2308,7 +2317,7 @@ if ( &window() ) {
             print "friends: ", join ", ", sort keys %friends;
             print "nicks: ",   join ", ", sort keys %nicks;
             print "searches: ", Dumper \%{ $state{__searches} };
-            print "windows: ", Dumper \%{ $state{__windows} };
+            print "windows: ",  Dumper \%{ $state{__windows} };
             print "last poll: $last_poll";
             if ( open DUMP, ">/tmp/twirssi.cache.txt" ) {
                 print DUMP Dumper \%tweet_cache;
@@ -2455,7 +2464,8 @@ if ( &window() ) {
 
 } else {
     Irssi::active_win()
-      ->print( "Create a window named " . $settings{window}
+      ->print( "Create a window named "
+          . $settings{window}
           . " or change the value of twitter_window.  Then, reload twirssi." );
 }
 
