@@ -9,7 +9,7 @@ use Data::Dumper;
 use Encode;
 use FileHandle;
 use POSIX qw/:sys_wait_h/;
-use Net::Twitter qw/3.05/;
+use Net::Twitter qw/3.11009/;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
