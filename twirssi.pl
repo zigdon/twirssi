@@ -2038,6 +2038,7 @@ sub event_setup_changed {
     if ( $settings{logfile_path} ) {
         print "Logging to $settings{logfile_path}" if &debug;
         if ( $logfile_fh = FileHandle->new( $settings{logfile_path}, ">>" ) ) {
+            binmode $logfile_fh, ':utf8';
             $logfile_fh->autoflush(1);
         } else {
             &notice( ["error"],
