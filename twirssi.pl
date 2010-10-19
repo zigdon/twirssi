@@ -362,13 +362,6 @@ sub cmd_reply_as {
         return;
     }
 
-    if ( $settings{replies_autonick} ) {
-
-        # remove any @nick at the beginning of the reply, as we'll add it anyway
-        $data =~ s/^\s*\@?$nick\s*//;
-        $data = "\@$nick " . $data;
-    }
-
     $data = &shorten($data);
 
     return if &too_long($data);
@@ -1995,7 +1988,6 @@ sub event_setup_changed {
         logfile_path
         nick_color
         oauth_store
-        replies_autonick
         replies_store
         retweet_format
         stripped_tags
@@ -2263,7 +2255,6 @@ Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
 Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_debug",             0 );
-Irssi::settings_add_bool( "twirssi", "twirssi_replies_autonick",  1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_reply_aliases", 0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_notify_timeouts",   1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_always_shorten",    0 );
@@ -2314,6 +2305,7 @@ if ( &window() ) {
             print "nicks: ",   join ", ", sort keys %nicks;
             print "searches: ", Dumper \%{ $state{__searches} };
             print "windows: ",  Dumper \%{ $state{__windows} };
+            print "settings: ",  Dumper \%settings;
             print "last poll: $last_poll";
             if ( open DUMP, ">/tmp/twirssi.cache.txt" ) {
                 print DUMP Dumper \%tweet_cache;
