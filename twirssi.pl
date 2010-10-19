@@ -362,6 +362,7 @@ sub cmd_reply_as {
         return;
     }
 
+    $data = "\@$nick $data";
     $data = &shorten($data);
 
     return if &too_long($data);
