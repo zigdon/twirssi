@@ -986,6 +986,41 @@ sub cmd_upgrade {
         }
     }
 
+    $loc =~ m@(.*)/(.+)@;
+    my $patch_d = "$1/patches";
+    my $script_name = $2;
+    if ( -d $patch_d ) {
+        &notice("Patching twirssi");
+        my $dh;
+        if ( not opendir $dh, $patch_d ) {
+            &notice("Opening patch dir. failed: $!");
+            return;
+        }
+        while (defined (my $dir_ent = readdir $dh)) {
+            next if substr($dir_ent, 0, 1) eq '.'
+			or substr($dir_ent, 0, length($script_name)) ne $script_name
+			or $dir_ent !~ /\.(patch|diff)$/;
+            my $patch_file = "$patch_d/$dir_ent";
+            my $ph;
+            if (not open $ph, "patch $loc.upgrade $patch_file 2>&1 |") {
+                &notice("Patch file $patch_file failed to initialise: $!");
+                return;
+            }
+            while (defined (my $p_line = <$ph>)) {
+                chomp $p_line;
+                &notice("$patch_file: $p_line");
+            }
+            if (not close $ph) {
+                &notice("Patch file $patch_file failed to complete: $!");
+                return;
+            }
+        }
+        if (not closedir $dh) {
+            &notice("Closing patch dir. failed: $!");
+            return;
+        }
+    }
+
     rename $loc, "$loc.backup"
       or &notice( ["error"], "Failed to back up $loc: $!.  Aborting" )
       and return;
