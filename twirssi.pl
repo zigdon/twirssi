@@ -1722,7 +1722,7 @@ sub monitor_child {
                 print "First call, not printing updates" if &debug;
             } else {
                 foreach my $line (@lines) {
-                    &window( $line->[1], $line->[2] )->printformat(
+                    &window( $line->[1], $line->[2], $line->[3] )->printformat(
                         $line->[0],
                         "twirssi_" . $line->[1],
                         @$line[ 2 .. $#$line - 1 ],
@@ -2163,14 +2163,20 @@ sub window {
     my $uname = shift || "default";
 
     $type = "search" if $type eq 'search_once';
+    my $topic = ($type eq 'search' ? shift : '');
 
     my $win;
     if ( exists $state{__windows}{$type} ) {
+        my $uname_svc = $uname;
+        $uname_svc =~ s/:\s*$/\@$defservice/;
         $win =
              $state{__windows}{$type}{$uname}
+          || $state{__windows}{$type}{lc $uname_svc}
+          || $state{__windows}{$type}{lc $topic}
           || $state{__windows}{$type}{$user}
           || $state{__windows}{$type}{default}
           || $settings{window};
+        print "win($type, $uname, $uname_svc, $topic) -> $win" if (&debug);
     } else {
         $win = $settings{window};
     }
