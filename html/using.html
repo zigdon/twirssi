@@ -13,7 +13,9 @@
 
 <h3>Posting Commands</h3>
 <ul>
-  <li><code>/tweet &lt;status&gt;</code> - Post a status update</li>
+  <li><code>/tweet &lt;status&gt;</code> - Post a status update.  Note, if
+      http://twitter.com is too slow, twirssi will give up after the preset
+      timeout.  See the setting for twitter_timeout. </li>
   <li><code>/tweet_as &lt;account&gt; &lt;status&gt;</code> - Post a status
       update as an alternate account</li>
   <li><code>/dm &lt;username&gt; &lt;message&gt;</code> - Send a direct message to username</li>
@@ -39,6 +41,12 @@
 <h3>Other Commands</h3>
 <ul>
   <li><code>/twitter_follow &lt;username&gt;</code> - Start following username</li>
+  <li><code>/twitter_add_follow_extra &lt;username&gt;</code> - Show all the
+      posts by username, even for people who you do not follow</li>
+  <li><code>/twitter_del_follow_extra &lt;username&gt;</code> - Stop showing
+      all the posts by username</li>
+  <li><code>/twitter_list_follow_extra</code> - Show the list of all the
+      usernames in the extra follow loop</li>
   <li><code>/twitter_list_subscriptions</code> - List all the existing search
       subscriptions for all accounts.</li>
   <li><code>/twitter_login &lt;username&gt; &lt;password&gt;</code> - Log in to twitter</li>
@@ -69,7 +77,7 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
 <ul>
   <li><code>bitlbee_server</code> - What is the server tag for bitlbee (used for away messages)</li>
   <li><code>short_url_provider</code> - What service to use to shorten urls - pick from
-  <a href="http://search.cpan.org/~davecross/WWW-Shorten-2.01/lib/WWW/Shorten.pm#SYNOPSIS"
+  <a href="http://search.cpan.org/search?query=www%3A%3Ashorten&mode=module"
       >WWW::Shorten</a></li>
   <li><code>short_url_args</code> - Some of the WWW::Shorten modules require
       additional arguments, such as a username or API key.  Enter those here if
