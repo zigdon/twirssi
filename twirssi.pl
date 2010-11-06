@@ -574,7 +574,7 @@ sub cmd_login {
                 $twit = Net::Twitter->new(
                     identica => 1,
                     traits   => [ 'API::REST', 'API::Search' ],
-                    source   => "twirssi",
+                    source   => Irssi::settings_get_str("twirssi_default_source"),
                     ssl      => !$settings{avoid_ssl},
                 );
             } else {
@@ -2291,6 +2291,7 @@ Irssi::settings_add_str( "twirssi", "twitter_usernames",        undef );
 Irssi::settings_add_str( "twirssi", "twitter_passwords",        undef );
 Irssi::settings_add_str( "twirssi", "twirssi_broadcast_users",  undef );
 Irssi::settings_add_str( "twirssi", "twirssi_default_service",  "Twitter" );
+Irssi::settings_add_str( "twirssi", "twirssi_default_source",   "twirssi" );
 Irssi::settings_add_str( "twirssi", "twirssi_nick_color",       "%B" );
 Irssi::settings_add_str( "twirssi", "twirssi_topic_color",      "%r" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_tags",     "" );
