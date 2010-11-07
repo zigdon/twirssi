@@ -137,9 +137,13 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       (see strftime) of timestamps (see twirssi_timestamp_append)
       (default is "%Y-%m-%d %H:%M:%S").</li>
   <li><code>twirssi_timestamp_truncate</code> - If on, then timestamps (see
-      twirssi_timestamp_append) are shortened by removing any prefix (terminated
-      by a non-alphanumeric) that is common with (i.e. also prefixes)
-      the current time (default is on).</li>
+      twirssi_timestamp_append) are shortened by removing any prefix that is
+      common with (i.e. also prefixes) the current time (default is on).
+      See twirssi_timestamp_truncate_ws_only for how truncation occurs.</li>
+  <li><code>twirssi_timestamp_truncate_ws_only</code> - If on (the default),
+      then timestamps truncation occurs at whitespace only.  When off, any
+      truncated occurs at a non-alphanumeric character.  Note:
+      twirssi_timestamp_truncate must also be on.</li>
 
   <li><code>twitter_passwords</code> - A comma separated list of passwords to auto-login</li>
   <li><code>twitter_poll_interval</code> - How often should new messages be
