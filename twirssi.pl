@@ -10,6 +10,7 @@ use Encode;
 use FileHandle;
 use POSIX qw/:sys_wait_h strftime floor/;
 use Net::Twitter qw/3.11009/;
+# may be required:  use DateTime::Format::Strptime;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
@@ -46,6 +47,7 @@ my %search_once;
 my $update_is_running = 0;
 my $logfile_fh;
 my %settings;
+my @datetime_parser;
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -1314,17 +1316,20 @@ sub do_updates {
 
             if ($context) {
                 my $ctext = &get_text( $context, $obj );
-                printf $fh "id:%s account:%s nick:%s type:tweet %s\n",
+                printf $fh "id:%s account:%s nick:%s type:tweet created_at:%s %s\n",
                   $context->{id}, $username,
-                  $context->{user}{screen_name}, $ctext;
+                  $context->{user}{screen_name},
+                  &encode_for_file($context->{created_at}),
+                  $ctext;
                 $reply = "reply";
             }
         }
         next
           if $t->{user}{screen_name} eq $username
               and not $settings{own_tweets};
-        printf $fh "id:%s account:%s nick:%s type:%s %s\n",
-          $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
+        printf $fh "id:%s account:%s nick:%s type:%s created_at:%s %s\n",
+          $t->{id}, $username, $t->{user}{screen_name}, $reply,
+          &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
     printf $fh "id:%s account:%s type:last_id timeline\n",
@@ -1355,8 +1360,9 @@ sub do_updates {
           if exists $friends{ $t->{user}{screen_name} };
 
         my $text = &get_text( $t, $obj );
-        printf $fh "id:%s account:%s nick:%s type:tweet %s\n",
-          $t->{id}, $username, $t->{user}{screen_name}, $text;
+        printf $fh "id:%s account:%s nick:%s type:tweet created_at:%s %s\n",
+          $t->{id}, $username, $t->{user}{screen_name},
+          &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
     printf $fh "id:%s account:%s type:last_id reply\n", $new_poll_id, $username;
@@ -1382,8 +1388,9 @@ sub do_updates {
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
         $text =~ s/[\n\r]/ /g;
-        printf $fh "id:%s account:%s nick:%s type:dm %s\n",
-          $t->{id}, $username, $t->{sender_screen_name}, $text;
+        printf $fh "id:%s account:%s nick:%s type:dm created_at:%s %s\n",
+          $t->{id}, $username, $t->{sender_screen_name},
+          &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
     printf $fh "id:%s account:%s type:last_id dm\n", $new_poll_id, $username;
@@ -1422,8 +1429,9 @@ sub do_updates {
 
             foreach my $t ( reverse @{ $search->{results} } ) {
                 my $text = &get_text( $t, $obj );
-                printf $fh "id:%s account:%s nick:%s type:search topic:%s %s\n",
-                  $t->{id}, $username, $t->{from_user}, $topic, $text;
+                printf $fh "id:%s account:%s nick:%s type:search topic:%s created_at:%s %s\n",
+                  $t->{id}, $username, $t->{from_user}, $topic,
+                  &encode_for_file($t->{created_at}), $text;
                 $new_poll_id = $t->{id}
                   if not $new_poll_id
                       or $t->{id} < $new_poll_id;
@@ -1464,8 +1472,9 @@ sub do_updates {
 
                 my $text = &get_text( $t, $obj );
                 printf $fh
-                  "id:%s account:%s nick:%s type:search_once topic:%s %s\n",
-                  $t->{id}, $username, $t->{from_user}, $topic, $text;
+                  "id:%s account:%s nick:%s type:search_once topic:%s created_at:%s %s\n",
+                  $t->{id}, $username, $t->{from_user}, $topic,
+                  &encode_for_file($t->{created_at}), $text;
             }
         }
     }
@@ -1525,14 +1534,17 @@ sub get_timeline {
 
             if ($context) {
                 my $ctext = &get_text( $context, $obj );
-                printf $fh "id:%s account:%s nick:%s type:tweet %s\n",
+                printf $fh "id:%s account:%s nick:%s type:tweet created_at:%s %s\n",
                   $context->{id}, $username,
-                  $context->{user}{screen_name}, $ctext;
+                  $context->{user}{screen_name},
+                  &encode_for_file($context->{created_at}),
+                  $ctext;
                 $reply = "reply";
             }
         }
-        printf $fh "id:%s account:%s nick:%s type:%s %s\n",
-          $t->{id}, $username, $t->{user}{screen_name}, $reply, $text;
+        printf $fh "id:%s account:%s nick:%s type:%s created_at:%s %s\n",
+          $t->{id}, $username, $t->{user}{screen_name}, $reply,
+          &encode_for_file($t->{created_at}), $text;
         $last_id = $t->{id} if $last_id < $t->{id};
     }
     printf $fh "id:%s account:%s type:last_id_fixreplies %s\n",
@@ -1541,9 +1553,34 @@ sub get_timeline {
     return 1;
 }
 
-sub id_to_time {
-    my $id = shift;
-    return floor((($id >> 22) + 1288834974657)/1000);
+sub encode_for_file {
+    my $datum = shift;
+    $datum =~ s/ /%20/g;
+    return $datum;
+}
+
+sub date_to_epoch {
+    # parse created_at style date to epoch time
+    my $date = shift;
+    if (not @datetime_parser) {
+        require DateTime::Format::Strptime;
+	foreach my $date_fmt (
+			'%a %b %d %T %z %Y',	# Fri Nov 05 10:14:05 +0000 2010
+			'%a, %d %b %Y %T %z',	# Fri, 05 Nov 2010 16:59:40 +0000
+		) {
+            my $parser = DateTime::Format::Strptime->new(pattern => $date_fmt);
+            if (not defined $parser) {
+                @datetime_parser = ();
+                return;
+            }
+            push @datetime_parser, $parser;
+        }
+    }
+    # my $orig_date = $date;
+    $date = $datetime_parser[index($date, ',') == -1 ? 0 : 1]->parse_datetime($date);
+    # print "date '$orig_date': " . ref($date) if &debug;
+    return if not defined $date;
+    return $date->epoch();
 }
 
 sub monitor_child {
@@ -1575,7 +1612,7 @@ sub monitor_child {
             my $hilight = 0;
             my %meta;
 
-            foreach my $key (qw/id account nick type topic/) {
+            foreach my $key (qw/id account nick type topic created_at/) {
                 if (s/^$key:((?:\S|\\ )+)\s*//) {
                     $meta{$key} = $1;
                     $meta{$key} =~ s/%20/ /g;
@@ -1630,17 +1667,22 @@ sub monitor_child {
             }
 
             if ( $meta{type} =~ /tweet|reply|search|dm/
-                    and $settings{timestamp_append} ) {
+                    and $settings{timestamp_append}
+                    and defined $meta{created_at} ) {
                 my $now       = strftime($settings{timestamp_format}, localtime());
-                my $timestamp = strftime($settings{timestamp_format}, localtime(&id_to_time($meta{id})));
+                my $timestamp = strftime($settings{timestamp_format}, localtime(&date_to_epoch($meta{created_at})));
                 while ($settings{timestamp_truncate} and $timestamp ne '') {
-                    my $non_digit_pos = 0;
-                    while ($non_digit_pos < length($now) and substr($now, $non_digit_pos, 1) =~ /[[:alnum:]]/) {
-                        $non_digit_pos++;
+                    my $sep_pos = 0;
+                    while ($sep_pos < length($now)
+                            and ((not $settings{timestamp_truncate_ws}
+					and substr($now, $sep_pos, 1) =~ /[[:alnum:]]/)
+                            	or ($settings{timestamp_truncate_ws}
+                            		and substr($now, $sep_pos, 1) =~ /\S/))) {
+                        $sep_pos++;
                     }
-                    last if substr($now, 0, $non_digit_pos+1) ne substr($timestamp, 0, $non_digit_pos+1);
-                    $now = substr($now, $non_digit_pos+1);
-                    $timestamp = substr($timestamp, $non_digit_pos+1);
+                    last if substr($now, 0, $sep_pos+1) ne substr($timestamp, 0, $sep_pos+1);
+                    $now = substr($now, $sep_pos+1);
+                    $timestamp = substr($timestamp, $sep_pos+1);
                 }
                 if ( $settings{timestamp_color} ne '' ) {
                    my $ts_color = $irssi_to_mirc_colors{ $settings{timestamp_color} };
@@ -2039,6 +2081,7 @@ sub event_setup_changed {
         [ 'window_input',      'tweet_window_input' ],
         [ 'timestamp_append',  'twirssi_timestamp_append' ],
         [ 'timestamp_truncate', 'twirssi_timestamp_truncate' ],
+        [ 'timestamp_truncate_ws', 'twirssi_timestamp_truncate_ws_only' ],
       )
     {
         $settings{ $_->[0] } = Irssi::settings_get_bool( $_->[1] );
@@ -2318,6 +2361,7 @@ Irssi::settings_add_bool( "twirssi", "twirssi_avoid_ssl",         0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_oauth",         1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_timestamp_append",  0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_timestamp_truncate", 1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_timestamp_truncate_ws_only", 1 );
 
 $last_poll = time - &get_poll_time;
 
