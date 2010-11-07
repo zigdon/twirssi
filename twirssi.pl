@@ -319,6 +319,35 @@ sub cmd_broadcast {
     }
 }
 
+sub cmd_info {
+    my ( $data, $server, $win ) = @_;
+
+    $data =~ s/^\s+|\s+$//;
+    unless ( $data ) {
+        &notice( ["info"], "Usage: /twitter_info <nick[:num]>" );
+        return;
+    }
+
+    $data =~ s/[^\w\d\-:]+//g;
+    my ( $nick, $id ) = split /:/, $data;
+    unless ( exists $state{ lc $nick } ) {
+        &notice( [ "info" ],
+            "Can't find any tweet from $nick!" );
+        return;
+    }
+
+    $id = $state{__indexes}{$nick} unless $id;
+    my $statusid = $state{ lc $nick }[$id];
+    unless ( $statusid ) {
+        &notice( [ "info" ],
+            "Can't find a tweet numbered $id from $nick!" );
+        return;
+    }
+
+    &notice( [ "info" ], "URL: http://twitter.com/$nick/statuses/$statusid" );
+    
+}
+
 sub cmd_reply {
     my ( $data, $server, $win ) = @_;
 
@@ -1945,7 +1974,7 @@ sub sig_complete {
 
     if (
         $linestart =~
-        m{^/twitter_delete\s*$|^/(?:retweet|twitter_reply)(?:_as)?\s*$}
+        m{^/twitter_delete\s*$|^/(?:retweet|twitter_info|twitter_reply)(?:_as)?\s*$}
         or (    $settings{use_reply_aliases}
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
@@ -2287,6 +2316,7 @@ if ( &window() ) {
     Irssi::command_bind( "retweet",                    "cmd_retweet" );
     Irssi::command_bind( "retweet_as",                 "cmd_retweet_as" );
     Irssi::command_bind( "twitter_broadcast",          "cmd_broadcast" );
+    Irssi::command_bind( "twitter_info",               "cmd_info" );
     Irssi::command_bind( "twitter_reply",              "cmd_reply" );
     Irssi::command_bind( "twitter_reply_as",           "cmd_reply_as" );
     Irssi::command_bind( "twitter_login",              "cmd_login" );
