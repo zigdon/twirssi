@@ -8,7 +8,7 @@ use LWP::Simple;
 use Data::Dumper;
 use Encode;
 use FileHandle;
-use POSIX qw/:sys_wait_h/;
+use POSIX qw/:sys_wait_h strftime floor/;
 use Net::Twitter qw/3.11009/;
 $Data::Dumper::Indent = 1;
 
@@ -1541,6 +1541,11 @@ sub get_timeline {
     return 1;
 }
 
+sub id_to_time {
+    my $id = shift;
+    return floor((($id >> 22) + 1288834974657)/1000);
+}
+
 sub monitor_child {
     my ($data)   = @_;
     my $filename = $data->[0];
@@ -1622,6 +1627,26 @@ sub monitor_child {
             if ( $_ =~ /\Q$nick\E(?:\W|$)/i ) {
                 $meta{nick} = "\cC$hilight_color$meta{nick}\cO";
                 $hilight = MSGLEVEL_HILIGHT;
+            }
+
+            if ( $meta{type} =~ /tweet|reply|search|dm/
+                    and $settings{timestamp_append} ) {
+                my $now       = strftime($settings{timestamp_format}, localtime());
+                my $timestamp = strftime($settings{timestamp_format}, localtime(&id_to_time($meta{id})));
+                while ($settings{timestamp_truncate} and $timestamp ne '') {
+                    my $non_digit_pos = 0;
+                    while ($non_digit_pos < length($now) and substr($now, $non_digit_pos, 1) =~ /[[:alnum:]]/) {
+                        $non_digit_pos++;
+                    }
+                    last if substr($now, 0, $non_digit_pos+1) ne substr($timestamp, 0, $non_digit_pos+1);
+                    $now = substr($now, $non_digit_pos+1);
+                    $timestamp = substr($timestamp, $non_digit_pos+1);
+                }
+                if ( $settings{timestamp_color} ne '' ) {
+                   my $ts_color = $irssi_to_mirc_colors{ $settings{timestamp_color} };
+                   $timestamp = "\cC$ts_color$timestamp\cO";
+                }
+                $_ .= ' ' . $timestamp if $timestamp ne '';
             }
 
             if ( $meta{type} =~ /tweet|reply/ ) {
@@ -1993,6 +2018,8 @@ sub event_setup_changed {
         retweet_format
         stripped_tags
         topic_color
+        timestamp_color
+        timestamp_format
         /
       )
     {
@@ -2010,6 +2037,8 @@ sub event_setup_changed {
         [ 'use_oauth',         'twirssi_use_oauth' ],
         [ 'use_reply_aliases', 'twirssi_use_reply_aliases' ],
         [ 'window_input',      'tweet_window_input' ],
+        [ 'timestamp_append',  'twirssi_timestamp_append' ],
+        [ 'timestamp_truncate', 'twirssi_timestamp_truncate' ],
       )
     {
         $settings{ $_->[0] } = Irssi::settings_get_bool( $_->[1] );
@@ -2258,6 +2287,8 @@ Irssi::settings_add_str( "twirssi", "twirssi_broadcast_users",  undef );
 Irssi::settings_add_str( "twirssi", "twirssi_default_service",  "Twitter" );
 Irssi::settings_add_str( "twirssi", "twirssi_nick_color",       "%B" );
 Irssi::settings_add_str( "twirssi", "twirssi_topic_color",      "%r" );
+Irssi::settings_add_str( "twirssi", "twirssi_timestamp_color",  "%y" );
+Irssi::settings_add_str( "twirssi", "twirssi_timestamp_format", "%Y-%m-%d %H:%M:%S" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_tags",     "" );
 Irssi::settings_add_str( "twirssi", "twirssi_stripped_tags",    "" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_accounts", "" );
@@ -2285,6 +2316,8 @@ Irssi::settings_add_bool( "twirssi", "twirssi_always_shorten",    0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_avoid_ssl",         0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_oauth",         1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_timestamp_append",  0 );
+Irssi::settings_add_bool( "twirssi", "twirssi_timestamp_truncate", 1 );
 
 $last_poll = time - &get_poll_time;
 
