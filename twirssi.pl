@@ -1864,19 +1864,19 @@ sub monitor_child {
 sub write_log {
     return unless $logfile_fh;
 
-    #                0         1     2        3      4     5     6
-    # tweet/reply: [ msglevel, type, account, nick,  :num, msg ];
-    # search:      [ msglevel, type, account, topic, nick, :num, msg ];
-    # dm:          [ msglevel, type, account, nick,  msg ];
+    #                0         1     2          3        4      5     6     7
+    # tweet/reply: [ msglevel, type, timestamp, account, nick,  :num, msg ];
+    # search:      [ msglevel, type, timestamp, account, topic, nick, :num, msg ];
+    # dm:          [ msglevel, type, timestamp, account, nick,  msg ];
     # error:       [ msglevel, msg ];
     my @params = @{ $_[0] };
     print $logfile_fh scalar localtime, " - ";
     if ( $params[1] eq 'dm' ) {
-        print $logfile_fh "DM \@$params[3]: $params[4]\n";
+        print $logfile_fh "DM \@$params[4]: $params[5]\n";
     } elsif ( $params[1] eq 'search' or $params[1] eq 'search_once' ) {
-        print $logfile_fh "Search $params[3]: [\@$params[4]] $params[6]\n";
+        print $logfile_fh "Search $params[4]: [\@$params[5]] $params[7]\n";
     } elsif ( $params[1] eq 'tweet' or $params[1] eq 'reply' ) {
-        print $logfile_fh "[\@$params[3]] $params[5]\n";
+        print $logfile_fh "[\@$params[4]] $params[6]\n";
     } else {
         print $logfile_fh "ERR: $params[1]\n";
     }
