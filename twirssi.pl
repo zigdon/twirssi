@@ -10,7 +10,8 @@ use Encode;
 use FileHandle;
 use POSIX qw/:sys_wait_h/;
 use Net::Twitter qw/3.11009/;
-# may be required:  use DateTime::Format::Strptime;
+use DateTime::Format::Strptime;
+use DateTime;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
@@ -1619,6 +1620,11 @@ sub monitor_child {
                 }
             }
 
+	    # convert from text to timestamp
+	    if (exists $meta{created_at}) {
+		$meta{created_at} = &date_to_epoch($meta{created_at});
+	    }
+
             if ( $meta{type} and $meta{type} eq 'fix_replies_index' ) {
                 $fix_replies_index{ $meta{account} } = $meta{id};
                 print "fix_replies_index for $meta{account} set to $meta{id}"
@@ -1670,13 +1676,13 @@ sub monitor_child {
                 push @lines,
                   [
                     ( MSGLEVEL_PUBLIC | $hilight ),
-                    $meta{type}, $account, $meta{nick}, $marker, $_
+                    $meta{type}, $meta{created_at}, $account, $meta{nick}, $marker, $_
                   ];
             } elsif ( $meta{type} eq 'search' ) {
                 push @lines,
                   [
                     ( MSGLEVEL_PUBLIC | $hilight ),
-                    $meta{type}, $account, $meta{topic},
+                    $meta{type}, $meta{created_at}, $account, $meta{topic},
                     $meta{nick}, $marker,  $_
                   ];
                 if ( exists $state{__searches}{ $meta{account} }{ $meta{topic} }
@@ -1690,7 +1696,7 @@ sub monitor_child {
                 push @lines,
                   [
                     ( MSGLEVEL_PUBLIC | $hilight ),
-                    $meta{type}, $account, $meta{topic},
+                    $meta{type}, $meta{created_at}, $account, $meta{topic},
                     $meta{nick}, $marker,  $_
                   ];
                 my $username = &normalize_username( $meta{account} );
@@ -1699,7 +1705,7 @@ sub monitor_child {
                 push @lines,
                   [
                     ( MSGLEVEL_MSGS | $hilight ),
-                    $meta{type}, $account, $meta{nick}, $_
+                    $meta{type}, $meta{created_at}, $account, $meta{nick}, $_
                   ];
             } elsif ( $meta{type} eq 'searchid' ) {
                 print "Search '$meta{topic}' returned id $meta{id}" if &debug;
@@ -1763,15 +1769,21 @@ sub monitor_child {
             if ($first_call) {
                 print "First call, not printing updates" if &debug;
             } else {
+		# save old timestamp format
+		my $old_tf = Irssi::settings_get_str('timestamp_format');
                 foreach my $line (@lines) {
-                    &window( $line->[1], $line->[2] )->printformat(
+		    # set timestamp
+		    Irssi::settings_set_str('timestamp_format', DateTime->from_epoch( epoch => $line->[2] )->hms);
+                    &window( $line->[1], $line->[3] )->printformat(
                         $line->[0],
                         "twirssi_" . $line->[1],
-                        @$line[ 2 .. $#$line - 1 ],
+                        @$line[ 3 .. $#$line - 1 ],
                         &hilight( $line->[-1] )
                     );
                     &write_log($line);
                 }
+		# recall timestamp format
+		Irssi::settings_set_str('timestamp_format', $old_tf);
             }
 
             close FILE;
