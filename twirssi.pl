@@ -1666,31 +1666,6 @@ sub monitor_child {
                 $hilight = MSGLEVEL_HILIGHT;
             }
 
-            if ( $meta{type} =~ /tweet|reply|search|dm/
-                    and $settings{timestamp_append}
-                    and defined $meta{created_at} ) {
-                my $now       = strftime($settings{timestamp_format}, localtime());
-                my $timestamp = strftime($settings{timestamp_format}, localtime(&date_to_epoch($meta{created_at})));
-                while ($settings{timestamp_truncate} and $timestamp ne '') {
-                    my $sep_pos = 0;
-                    while ($sep_pos < length($now)
-                            and ((not $settings{timestamp_truncate_ws}
-					and substr($now, $sep_pos, 1) =~ /[[:alnum:]]/)
-                            	or ($settings{timestamp_truncate_ws}
-                            		and substr($now, $sep_pos, 1) =~ /\S/))) {
-                        $sep_pos++;
-                    }
-                    last if substr($now, 0, $sep_pos+1) ne substr($timestamp, 0, $sep_pos+1);
-                    $now = substr($now, $sep_pos+1);
-                    $timestamp = substr($timestamp, $sep_pos+1);
-                }
-                if ( $settings{timestamp_color} ne '' ) {
-                   my $ts_color = $irssi_to_mirc_colors{ $settings{timestamp_color} };
-                   $timestamp = "\cC$ts_color$timestamp\cO";
-                }
-                $_ .= ' ' . $timestamp if $timestamp ne '';
-            }
-
             if ( $meta{type} =~ /tweet|reply/ ) {
                 push @lines,
                   [
@@ -2077,9 +2052,6 @@ sub event_setup_changed {
         [ 'use_oauth',         'twirssi_use_oauth' ],
         [ 'use_reply_aliases', 'twirssi_use_reply_aliases' ],
         [ 'window_input',      'tweet_window_input' ],
-        [ 'timestamp_append',  'twirssi_timestamp_append' ],
-        [ 'timestamp_truncate', 'twirssi_timestamp_truncate' ],
-        [ 'timestamp_truncate_ws', 'twirssi_timestamp_truncate_ws_only' ],
       )
     {
         $settings{ $_->[0] } = Irssi::settings_get_bool( $_->[1] );
@@ -2332,9 +2304,6 @@ Irssi::settings_add_bool( "twirssi", "twirssi_always_shorten",    0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_avoid_ssl",         0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_oauth",         1 );
-Irssi::settings_add_bool( "twirssi", "twirssi_timestamp_append",  0 );
-Irssi::settings_add_bool( "twirssi", "twirssi_timestamp_truncate", 1 );
-Irssi::settings_add_bool( "twirssi", "twirssi_timestamp_truncate_ws_only", 1 );
 
 $last_poll = time - &get_poll_time;
 
