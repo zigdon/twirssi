@@ -97,6 +97,10 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       retweeted; $t is the text of the original tweet;  $c is the text of the
       optional comment attached;  ${ and $} mark the seciton that should be
       omitted if no comment was provided.
+  <li><code>twirssi_timestamp_format</code> - The timestamp format for tweets.
+      Default value is "%H:%M:%S".  See the strftime format from the DateTime
+      module.</li>
+
 
   <li><code>twirssi_hilights</code> - Should messages containing your @nick be
       considered IRC hilights.  (default on)</li>
@@ -129,21 +133,6 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
   <li><code>twirssi_avoid_ssl</code> - Default off.  If off, twirssi will
       attempt to use SSL for all network communications.  Changes take effect
       next time twirssi is loaded.</li>
-  <li><code>twirssi_timestamp_append</code> - If on, twirssi will append the actual
-      timestamp of the tweet/search/dm to the end of the message (default is off).</li>
-  <li><code>twirssi_timestamp_color</code> - If set, this string defines the color
-      of the timestamp (see twirssi_timestamp_append) (default is "%y").</li>
-  <li><code>twirssi_timestamp_format</code> - This string defines the format
-      (see strftime) of timestamps (see twirssi_timestamp_append)
-      (default is "%Y-%m-%d %H:%M:%S").</li>
-  <li><code>twirssi_timestamp_truncate</code> - If on, then timestamps (see
-      twirssi_timestamp_append) are shortened by removing any prefix that is
-      common with (i.e. also prefixes) the current time (default is on).
-      See twirssi_timestamp_truncate_ws_only for how truncation occurs.</li>
-  <li><code>twirssi_timestamp_truncate_ws_only</code> - If on (the default),
-      then timestamps truncation occurs at whitespace only.  When off, any
-      truncated occurs at a non-alphanumeric character.  Note:
-      twirssi_timestamp_truncate must also be on.</li>
 
   <li><code>twitter_passwords</code> - A comma separated list of passwords to auto-login</li>
   <li><code>twitter_poll_interval</code> - How often should new messages be

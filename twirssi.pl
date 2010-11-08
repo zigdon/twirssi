@@ -1773,7 +1773,8 @@ sub monitor_child {
 		my $old_tf = Irssi::settings_get_str('timestamp_format');
                 foreach my $line (@lines) {
 		    # set timestamp
-		    Irssi::settings_set_str('timestamp_format', DateTime->from_epoch( epoch => $line->[2] )->hms);
+		    Irssi::settings_set_str('timestamp_format',
+					    DateTime->from_epoch( epoch => $line->[2])->strftime($settings{timestamp_format}));
                     &window( $line->[1], $line->[3] )->printformat(
                         $line->[0],
                         "twirssi_" . $line->[1],
@@ -2047,6 +2048,7 @@ sub event_setup_changed {
         retweet_format
         stripped_tags
         topic_color
+        timestamp_format
         /
       )
     {
@@ -2295,6 +2297,8 @@ Irssi::settings_add_str( "twirssi", "twirssi_ignored_accounts", "" );
 Irssi::settings_add_str( "twirssi", "twirssi_logfile_path",     "" );
 Irssi::settings_add_str( "twirssi", "twirssi_retweet_format",
     'RT $n: "$t" ${-- $c$}' );
+Irssi::settings_add_str( "twirssi", "twirssi_timestamp_format",
+    "%H:%M:%S" );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
     Irssi::get_irssi_dir . "/scripts/twirssi.pl" );
 Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
