@@ -286,9 +286,9 @@ sub cmd_tweet_as {
     }
 
     # TODO: What's the official definition of a Hashtag? Let's use #[-\w]+ like above for now.
-    if ( $setting{autosearch_results} > 0 and $data =~ /#[-\w]+/ ) {
+    if ( $settings{autosearch_results} > 0 and $data =~ /#[-\w]+/ ) {
 	while ( $data =~ /(#[-\w]+)/g ) {
-	    $search_once{$username}->{$1} = $setting{autosearch_results};
+	    $search_once{$username}->{$1} = $settings{autosearch_results};
 	}
 	&get_updates;
     }
