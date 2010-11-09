@@ -283,10 +283,9 @@ sub cmd_tweet_as {
     }
 
     # TODO: What's the official definition of a Hashtag? Let's use #[-\w]+ like above for now.
-    my $auto_searches = Irssi::settings_get_int("twitter_autosearch_results");
-    if ( $auto_searches > 0 and $data =~ /#[-\w]+/ ) {
+    if ( $setting{autosearch_results} > 0 and $data =~ /#[-\w]+/ ) {
 	while ( $data =~ /(#[-\w]+)/g ) {
-	    $search_once{$username}->{$1} = $auto_searches;
+	    $search_once{$username}->{$1} = $setting{autosearch_results};
 	}
 	&get_updates;
     }
@@ -2060,6 +2059,8 @@ sub event_setup_changed {
     $settings{poll_interval} = Irssi::settings_get_int("twitter_poll_interval");
     $settings{search_results} =
       Irssi::settings_get_int("twitter_search_results");
+    $settings{autosearch_results} =
+      Irssi::settings_get_int("twitter_autosearch_results");
     $settings{timeout} = Irssi::settings_get_int("twitter_timeout");
 
     $settings{bitlbee_server} = Irssi::settings_get_str("bitlbee_server");
