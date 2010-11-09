@@ -1601,7 +1601,6 @@ sub date_to_epoch {
     # parse created_at style date to epoch time
     my $date = shift;
     if (not @datetime_parser) {
-        require DateTime::Format::Strptime;
 	foreach my $date_fmt (
 			'%a %b %d %T %z %Y',	# Fri Nov 05 10:14:05 +0000 2010
 			'%a, %d %b %Y %T %z',	# Fri, 05 Nov 2010 16:59:40 +0000
