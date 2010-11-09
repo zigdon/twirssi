@@ -346,7 +346,32 @@ sub cmd_info {
         return;
     }
 
-    &notice( [ "info" ], "URL: http://twitter.com/$nick/statuses/$statusid" );
+    my $account =   $state{__accounts}{$nick}[$id];
+    my $service =   $state{__services}{$nick}[$id];
+#    my $timestamp = $state{__created_ats}{$nick}[$id];
+    my $tweet =     $state{__tweets}{$nick}[$id];
+
+    &notice( [ "info" ], ",---------" );
+    &notice( [ "info" ], "| nick:    $nick" );
+    &notice( [ "info" ], "| id:      $statusid" );
+#    &notice( [ "info" ], "| time:    " . ($timestamp ? DateTime->from_epoch( epoch => $timestamp ) : '<unknown>') );
+    &notice( [ "info" ], "| account: " . ($account ? $account : '<unknown>' ) );
+    &notice( [ "info" ], "| text:    " . ($tweet ? $tweet : '<unknown>' ) );
+
+    if ( $service ) {
+	&notice( [ "info" ], "| Service: $service" );
+	if ( $service eq 'Twitter' ) {
+	    &notice( [ "info" ], "| URL:     http://twitter.com/$nick/statuses/$statusid" );
+	} elsif ( $service eq 'Identica') {
+	    &notice( [ "info" ], "| URL:     http://identi.ca/notice/$statusid" );
+	} else {
+	    &notice( [ "info" ], "| URL:     <unknown>" );
+	}
+    } else {
+	&notice( [ "info" ], "| Service: <unknown>" );
+	&notice( [ "info" ], "| URL:     <unknown>" );
+    }
+    &notice( [ "info" ], "`---------" );
     
 }
 
@@ -1697,6 +1722,9 @@ sub monitor_child {
                 $state{ lc $meta{nick} }[$marker]           = $meta{id};
                 $state{__indexes}{ $meta{nick} }            = $marker;
                 $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
+                $state{__accounts}{ lc $meta{nick} }[$marker] = $meta{account};
+                $state{__services}{ lc $meta{nick} }[$marker] = $meta{service};
+#                $state{__created_ats}{ lc $meta{nick} }[$marker] = $meta{created_at};
                 $marker                                     = ":$marker";
             }
 
