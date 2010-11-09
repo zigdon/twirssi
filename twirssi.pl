@@ -335,7 +335,13 @@ sub cmd_info {
         return;
     }
 
-    &notice( [ "info" ], "URL: http://twitter.com/$nick/statuses/$statusid" );
+    &notice( [ "info" ], "nick: $nick" );
+    &notice( [ "info" ], "id:   $statusid" );
+    &notice( [ "info" ], "text: " . ($state{__tweets}{$nick}[$id] ? $state{__tweets}{$nick}[$id] : '<unknown>' ) );
+
+    # TODO URL identica<->twitter
+    &notice( [ "info" ], "URL:  http://twitter.com/$nick/statuses/$statusid" );
+
     
 }
 
