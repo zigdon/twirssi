@@ -1683,8 +1683,9 @@ sub monitor_child {
             }
 
             # avoid internal breakage by sneaky nicknames
+	    # to be added: created_ats
             next if ($meta{nick} and $meta{nick} =~ 
-              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id)$/);
+              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id|accounts|services)$/);
 
 	    # convert from text to timestamp
 	    if (exists $meta{created_at}) {
