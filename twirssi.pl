@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.5.0beta";
+$VERSION = "2.5.1beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -1619,6 +1619,10 @@ sub monitor_child {
                     $meta{$key} =~ s/%20/ /g;
                 }
             }
+
+            # avoid internal breakage by sneaky nicknames
+            next if ($meta{nick} and $meta{nick} =~ 
+              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id)$/);
 
 	    # convert from text to timestamp
 	    if (exists $meta{created_at}) {
