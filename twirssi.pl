@@ -49,6 +49,7 @@ my $update_is_running = 0;
 my $logfile_fh;
 my %settings;
 my @datetime_parser;
+my $local_tz = DateTime::TimeZone->new( name => 'local' );
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -1773,7 +1774,8 @@ sub monitor_child {
                 foreach my $line (@lines) {
 		    # set timestamp
 		    Irssi::settings_set_str('timestamp_format',
-					    DateTime->from_epoch( epoch => $line->[2])->strftime($settings{timestamp_format}));
+					    DateTime->from_epoch( epoch => $line->[2], time_zone => $local_tz
+								)->strftime($settings{timestamp_format}));
                     &window( $line->[1], $line->[3] )->printformat(
                         $line->[0],
                         "twirssi_" . $line->[1],
