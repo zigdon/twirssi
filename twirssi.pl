@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.5.0beta";
+$VERSION = "2.5.1beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -49,6 +49,7 @@ my $update_is_running = 0;
 my $logfile_fh;
 my %settings;
 my @datetime_parser;
+my $local_tz = DateTime::TimeZone->new( name => 'local' );
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -1681,6 +1682,10 @@ sub monitor_child {
                 }
             }
 
+            # avoid internal breakage by sneaky nicknames
+            next if ($meta{nick} and $meta{nick} =~ 
+              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id)$/);
+
 	    # convert from text to timestamp
 	    if (exists $meta{created_at}) {
 		$meta{created_at} = &date_to_epoch($meta{created_at});
@@ -1838,7 +1843,8 @@ sub monitor_child {
                 foreach my $line (@lines) {
 		    # set timestamp
 		    Irssi::settings_set_str('timestamp_format',
-					    DateTime->from_epoch( epoch => $line->[2])->strftime($settings{timestamp_format}));
+					    DateTime->from_epoch( epoch => $line->[2], time_zone => $local_tz
+								)->strftime($settings{timestamp_format}));
                     &window( $line->[1], $line->[3] )->printformat(
                         $line->[0],
                         "twirssi_" . $line->[1],
