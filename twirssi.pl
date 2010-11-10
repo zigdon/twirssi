@@ -1577,8 +1577,9 @@ sub monitor_child {
                 }
             }
 
-	    # avoid internal breakage by sneaky nicknames
-	    next if ($meta{nick} and $meta{nick} =~ /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id)$/);
+            # avoid internal breakage by sneaky nicknames
+            next if ($meta{nick} and $meta{nick} =~ 
+              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id)$/);
 
             if ( $meta{type} and $meta{type} eq 'fix_replies_index' ) {
                 $fix_replies_index{ $meta{account} } = $meta{id};
