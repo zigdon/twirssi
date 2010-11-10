@@ -1632,8 +1632,9 @@ sub monitor_child {
             }
 
             # avoid internal breakage by sneaky nicknames
+	    # to be added: created_ats
             next if ($meta{nick} and $meta{nick} =~ 
-              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id)$/);
+              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id|accounts|services)$/);
 
             if ( $meta{type} and $meta{type} eq 'fix_replies_index' ) {
                 $fix_replies_index{ $meta{account} } = $meta{id};
