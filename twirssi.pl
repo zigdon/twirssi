@@ -14,7 +14,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.5.0beta";
+$VERSION = "2.5.0";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -2293,8 +2293,8 @@ if ( &window() ) {
     Irssi::command_bind( "twitter_add_follow_extra",   "cmd_add_follow" );
     Irssi::command_bind( "twitter_del_follow_extra",   "cmd_del_follow" );
     Irssi::command_bind( "twitter_list_follow_extra",  "cmd_list_follow" );
-    Irssi::command_bind( "twirssi_set_window",         "cmd_set_window" );
-    Irssi::command_bind( "twirssi_list_windows",       "cmd_list_windows" );
+    # Irssi::command_bind( "twirssi_set_window",         "cmd_set_window" );
+    # Irssi::command_bind( "twirssi_list_windows",       "cmd_list_windows" );
     Irssi::command_bind( "bitlbee_away",               "update_away" );
     if ( $settings{use_reply_aliases} ) {
         Irssi::command_bind( "reply",    "cmd_reply" );
