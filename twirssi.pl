@@ -320,18 +320,19 @@ sub cmd_info {
     }
 
     $data =~ s/[^\w\d\-:]+//g;
-    my ( $nick, $id ) = split /:/, $data;
-    unless ( exists $state{ lc $nick } ) {
+    my ( $nick_orig, $id ) = split /:/, $data;
+    my $nick = lc $nick_orig;
+    unless ( exists $state{ $nick } ) {
         &notice( [ "info" ],
-            "Can't find any tweet from $nick!" );
+            "Can't find any tweet from $nick_orig!" );
         return;
     }
 
-    $id = $state{__indexes}{$nick} unless $id;
-    my $statusid = $state{ lc $nick }[$id];
+    $id = $state{__indexes}{$nick_orig} unless $id;
+    my $statusid = $state{$nick}[$id];
     unless ( $statusid ) {
         &notice( [ "info" ],
-            "Can't find a tweet numbered $id from $nick!" );
+            "Can't find a tweet numbered $id from $nick_orig!" );
         return;
     }
 
@@ -341,7 +342,7 @@ sub cmd_info {
     my $tweet =     $state{__tweets}{$nick}[$id];
 
     &notice( [ "info" ], ",---------" );
-    &notice( [ "info" ], "| nick:    $nick" );
+    &notice( [ "info" ], "| nick:    $nick_orig" );
     &notice( [ "info" ], "| id:      $statusid" );
 #    &notice( [ "info" ], "| time:    " . ($timestamp ? DateTime->from_epoch( epoch => $timestamp ) : '<unknown>') );
     &notice( [ "info" ], "| account: " . ($account ? $account : '<unknown>' ) );
