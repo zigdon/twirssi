@@ -34,8 +34,10 @@ my $defservice;
 my $poll;
 my $last_poll;
 my $last_friends_poll = 0;
+my $last_blocks_poll = 0;
 my %nicks;
 my %friends;
+my %blocks;
 my %tweet_cache;
 my %state;
 my $failstatus = 0;
@@ -554,7 +556,7 @@ sub cmd_login {
         return;
     }
 
-    %friends = %nicks = ();
+    %blocks = %friends = %nicks = ();
 
     my $service;
     if ( $user =~ /^(.*)@(twitter|identica)$/ ) {
@@ -758,10 +760,13 @@ sub verify_twitter_object {
     Irssi::timeout_remove($poll) if $poll;
     $poll = Irssi::timeout_add( &get_poll_time * 1000, \&get_updates, "" );
     &notice( [ "tweet", "$user\@$service" ],
-        "Logged in as $user\@$service, loading friends list..." );
+        "Logged in as $user\@$service, loading friends list and blocks..." );
     &load_friends();
     &notice( [ "tweet", "$user\@$service" ],
         "loaded friends: " . scalar keys %friends );
+    &load_blocks();
+    &notice( [ "tweet", "$user\@$service" ],
+        "loaded blocks: " . scalar keys %blocks );
 
     %nicks = %friends;
     $nicks{$user} = 0;
@@ -1139,6 +1144,48 @@ sub load_friends {
     return ( $added, $removed );
 }
 
+sub load_blocks {
+    my $fh     = shift;
+    my $page   = 1;
+    my %new_blocks;
+    eval {
+        while ( $page < 11 )
+        {
+            print $fh "type:debug Loading blocks page $page...\n"
+              if ( $fh and &debug );
+            my $blocks;
+	    $blocks = $twit->blocking( { page => $page } );
+	    last unless $blocks;
+            $new_blocks{ $_->{screen_name} } = time foreach @$blocks;
+            $page++;
+        }
+    };
+
+    if ($@) {
+        print $fh "type:debug Error during blocks list update.  Aborted.\n"
+          if $fh;
+        return;
+    }
+
+    my ( $added, $removed ) = ( 0, 0 );
+    print $fh "type:debug Scanning for new blocks...\n" if ( $fh and &debug );
+    foreach ( keys %new_blocks ) {
+        next if exists $blocks{$_};
+        $blocks{$_} = time;
+        $added++;
+    }
+
+    print $fh "type:debug Scanning for removed blocks...\n"
+      if ( $fh and &debug );
+    foreach ( keys %blocks ) {
+        next if exists $new_blocks{$_};
+        delete $blocks{$_};
+        $removed++;
+    }
+
+    return ( $added, $removed );
+}
+
 sub get_updates {
     print scalar localtime, " - get_updates starting" if &debug;
 
@@ -1204,6 +1251,23 @@ sub get_updates {
 
         foreach ( sort keys %friends ) {
             print $fh "$_ $friends{$_}\n";
+        }
+
+        print $fh "__blocks__\n";
+        if ( time - $last_blocks_poll > $settings{blocks_poll} ) {
+            print $fh "__updated ", time, "\n";
+            my ( $added, $removed ) = &load_blocks($fh);
+            if ( $added + $removed ) {
+                print $fh "type:debug %R***%n Blocks list updated: ",
+                  join( ", ",
+                    sprintf( "%d added",   $added ),
+                    sprintf( "%d removed", $removed ) ),
+                  "\n";
+            }
+        }
+
+        foreach ( sort keys %blocks ) {
+            print $fh "$_ $blocks{$_}\n";
         }
 
         if ($error) {
@@ -1421,6 +1485,7 @@ sub do_updates {
               $search->{max_id}, $username, $topic;
 
             foreach my $t ( reverse @{ $search->{results} } ) {
+		next if exists $blocks{ $t->{from_user} };
                 my $text = &get_text( $t, $obj );
                 printf $fh "id:%s account:%s nick:%s type:search topic:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic, $text;
@@ -1457,6 +1522,8 @@ sub do_updates {
 
             # TODO: consider applying ignore-settings to search results
             my @results = @{ $search->{results} };
+
+	    @results = grep { not exists $blocks{ $_->{from_user} } } @results;
             if ( $max_results > 0 ) {
                 splice @results, $max_results;
             }
@@ -1697,9 +1764,22 @@ sub monitor_child {
 
         %friends = ();
         while (<FILE>) {
+            last if /^__blocks__/;
             if (/^__updated (\d+)$/) {
                 $last_friends_poll = $1;
                 print "Friend list updated" if &debug;
+                next;
+            }
+
+            my ( $f, $t ) = split ' ', $_;
+            $nicks{$f} = $friends{$f} = $t;
+        }
+
+        %blocks = ();
+        while (<FILE>) {
+            if (/^__updated (\d+)$/) {
+                $last_blocks_poll = $1;
+                print "Block list updated" if &debug;
                 next;
             }
 
@@ -1715,8 +1795,8 @@ sub monitor_child {
                     next;
                 }
             }
-            my ( $f, $t ) = split ' ', $_;
-            $nicks{$f} = $friends{$f} = $t;
+            my ( $b, $t ) = split ' ', $_;
+            $blocks{$b} = $t;
         }
 
         if ($new_last_poll) {
@@ -2307,6 +2387,7 @@ if ( &window() ) {
               map { "u: $_->{username}\@" . ref($_) } values %twits;
             print "selected: $user\@$defservice";
             print "friends: ", join ", ", sort keys %friends;
+            print "blocks: ", join ", ", sort keys %blocks;
             print "nicks: ",   join ", ", sort keys %nicks;
             print "searches: ", Dumper \%{ $state{__searches} };
             print "windows: ",  Dumper \%{ $state{__windows} };
