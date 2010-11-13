@@ -350,10 +350,12 @@ sub cmd_info {
         return;
     }
 
-    my $account =   $state{__accounts}{$nick}[$id];
-    my $service =   $state{__services}{$nick}[$id];
-#    my $timestamp = $state{__created_ats}{$nick}[$id];
-    my $tweet =     $state{__tweets}{$nick}[$id];
+    my $account       = $state{__accounts}{$nick}[$id];
+    my $service       = $state{__services}{$nick}[$id];
+#    my $timestamp    = $state{__created_ats}{$nick}[$id];
+    my $tweet         = $state{__tweets}{$nick}[$id];
+    my $reply_to_id   = $state{__reply_to_ids}{$nick}[$id];
+    my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
 
     &notice( [ "info" ], ",---------" );
     &notice( [ "info" ], "| nick:    $nick_orig" );
@@ -374,6 +376,10 @@ sub cmd_info {
     } else {
 	&notice( [ "info" ], "| Service: <unknown>" );
 	&notice( [ "info" ], "| URL:     <unknown>" );
+    }
+
+    if ($reply_to_id and $reply_to_user) {
+	&notice( [ "info" ], "| ReplyTo: $reply_to_user:$reply_to_id" );
     }
     &notice( [ "info" ], "`---------" );
     
@@ -1253,6 +1259,20 @@ sub load_blocks {
     return ( $added, $removed );
 }
 
+sub get_reply_to {
+    # extract reply-to-information from tweets
+    my $t = shift;
+
+    if ($t->{in_reply_to_screen_name}
+	and $t->{in_reply_to_status_id}) {
+	return sprintf 'reply_to_user:%s reply_to_id:%s ',
+	    $t->{in_reply_to_screen_name},
+	    $t->{in_reply_to_status_id};
+    } else {
+	return '';
+    }
+}
+
 sub get_updates {
     print scalar localtime, " - get_updates starting" if &debug;
 
@@ -1456,8 +1476,8 @@ sub do_updates {
         next
           if $t->{user}{screen_name} eq $username
               and not $settings{own_tweets};
-        printf $fh "id:%s account:%s nick:%s type:%s created_at:%s %s\n",
-          $t->{id}, $username, $t->{user}{screen_name}, $reply,
+        printf $fh "id:%s account:%s %snick:%s type:%s created_at:%s %s\n",
+          $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name}, $reply,
           &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
@@ -1489,8 +1509,8 @@ sub do_updates {
           if exists $friends{ $t->{user}{screen_name} };
 
         my $text = &get_text( $t, $obj );
-        printf $fh "id:%s account:%s nick:%s type:tweet created_at:%s %s\n",
-          $t->{id}, $username, $t->{user}{screen_name},
+        printf $fh "id:%s account:%s %snick:%s type:tweet created_at:%s %s\n",
+          $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name},
           &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
@@ -1517,8 +1537,8 @@ sub do_updates {
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
         $text =~ s/[\n\r]/ /g;
-        printf $fh "id:%s account:%s nick:%s type:dm created_at:%s %s\n",
-          $t->{id}, $username, $t->{sender_screen_name},
+        printf $fh "id:%s account:%s %snick:%s type:dm created_at:%s %s\n",
+          $t->{id}, $username, &get_reply_to($t), $t->{sender_screen_name},
           &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
@@ -1559,8 +1579,8 @@ sub do_updates {
             foreach my $t ( reverse @{ $search->{results} } ) {
 		next if exists $blocks{ $t->{from_user} };
                 my $text = &get_text( $t, $obj );
-                printf $fh "id:%s account:%s nick:%s type:search topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $t->{from_user}, $topic,
+                printf $fh "id:%s account:%s %snick:%s type:search topic:%s created_at:%s %s\n",
+                  $t->{id}, $username, &get_reply_to($t),$t->{from_user}, $topic,
                   &encode_for_file($t->{created_at}), $text;
                 $new_poll_id = $t->{id}
                   if not $new_poll_id
@@ -1604,8 +1624,8 @@ sub do_updates {
 
                 my $text = &get_text( $t, $obj );
                 printf $fh
-                  "id:%s account:%s nick:%s type:search_once topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $t->{from_user}, $topic,
+                  "id:%s account:%s %snick:%s type:search_once topic:%s created_at:%s %s\n",
+                  $t->{id}, $username, &get_reply_to($t), $t->{from_user}, $topic,
                   &encode_for_file($t->{created_at}), $text;
             }
         }
@@ -1666,16 +1686,16 @@ sub get_timeline {
 
             if ($context) {
                 my $ctext = &get_text( $context, $obj );
-                printf $fh "id:%s account:%s nick:%s type:tweet created_at:%s %s\n",
-                  $context->{id}, $username,
+                printf $fh "id:%s account:%s %snick:%s type:tweet created_at:%s %s\n",
+                  $context->{id}, $username, &get_reply_to($context),
                   $context->{user}{screen_name},
                   &encode_for_file($context->{created_at}),
                   $ctext;
                 $reply = "reply";
             }
         }
-        printf $fh "id:%s account:%s nick:%s type:%s created_at:%s %s\n",
-          $t->{id}, $username, $t->{user}{screen_name}, $reply,
+        printf $fh "id:%s account:%s %snick:%s type:%s created_at:%s %s\n",
+          $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name}, $reply,
           &encode_for_file($t->{created_at}), $text;
         $last_id = $t->{id} if $last_id < $t->{id};
     }
@@ -1743,7 +1763,7 @@ sub monitor_child {
             my $hilight = 0;
             my %meta;
 
-            foreach my $key (qw/id account nick type topic created_at/) {
+            foreach my $key (qw/id account reply_to_user reply_to_id nick type topic created_at/) {
                 if (s/^$key:((?:\S|\\ )+)\s*//) {
                     $meta{$key} = $1;
                     $meta{$key} =~ s/%20/ /g;
@@ -1753,7 +1773,7 @@ sub monitor_child {
             # avoid internal breakage by sneaky nicknames
 	    # to be added: created_ats
             next if ($meta{nick} and $meta{nick} =~ 
-              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id|accounts|services)$/);
+              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id|accounts|services|reply_to_users|reply_to_ids)$/);
 
 	    # convert from text to timestamp
 	    if (exists $meta{created_at}) {
@@ -1796,9 +1816,9 @@ sub monitor_child {
                 $state{ lc $meta{nick} }[$marker]           = $meta{id};
                 $state{__indexes}{ $meta{nick} }            = $marker;
                 $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
-                $state{__accounts}{ lc $meta{nick} }[$marker] = $meta{account};
-                $state{__services}{ lc $meta{nick} }[$marker] = $meta{service};
-#                $state{__created_ats}{ lc $meta{nick} }[$marker] = $meta{created_at};
+                foreach my $key (qw/account service reply_to_id reply_to_user/) { # created_at
+                    $state{"__${key}s"}{ lc $meta{nick} }[$marker] = $meta{$key};
+	        }
                 $marker                                     = ":$marker";
             }
 
