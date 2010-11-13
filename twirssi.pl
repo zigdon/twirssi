@@ -1600,7 +1600,7 @@ sub monitor_child {
                 }
             }
 
-            my $account = "";
+            my ($account, $account_service) = ("", $meta{account});
             $meta{account} =~ s/\@(\w+)$//;
             $meta{service} = $1;
             if ( lc $meta{service} eq lc $settings{default_service} ) {
@@ -1641,11 +1641,11 @@ sub monitor_child {
                     $meta{type}, $account, $meta{topic},
                     $meta{nick}, $marker,  $_
                   ];
-                if ( exists $state{__searches}{ $meta{account} }{ $meta{topic} }
+                if ( exists $state{__searches}{ $account_service }{ $meta{topic} }
                     and $meta{id} >
-                    $state{__searches}{ $meta{account} }{ $meta{topic} } )
+                    $state{__searches}{ $account_service }{ $meta{topic} } )
                 {
-                    $state{__searches}{ $meta{account} }{ $meta{topic} } =
+                    $state{__searches}{ $account_service }{ $meta{topic} } =
                       $meta{id};
                 }
             } elsif ( $meta{type} eq 'search_once' ) {
@@ -1667,11 +1667,11 @@ sub monitor_child {
                 print "Search '$meta{topic}' returned id $meta{id}" if &debug;
                 if (
                     not
-                    exists $state{__searches}{ $meta{account} }{ $meta{topic} }
+                    exists $state{__searches}{ $account_service }{ $meta{topic} }
                     or $meta{id} >=
-                    $state{__searches}{ $meta{account} }{ $meta{topic} } )
+                    $state{__searches}{ $account_service }{ $meta{topic} } )
                 {
-                    $state{__searches}{ $meta{account} }{ $meta{topic} } =
+                    $state{__searches}{ $account_service }{ $meta{topic} } =
                       $meta{id};
                 } elsif (&debug) {
                     print "Search '$meta{topic}' returned invalid id $meta{id}";
@@ -2427,6 +2427,14 @@ if ( &window() ) {
                 my $ref = JSON::Any->jsonToObj($json);
                 %state = %$ref;
                 my $num = keys %{ $state{__indexes} };
+
+                # remove buggy subscriptions without service
+                foreach my $account (keys %{$state{__searches}}) {
+                    if ($account !~ /@/) {
+                         delete $state{__searches}->{$account};
+                    }
+                }
+
                 &notice( sprintf "Loaded old replies from %d contact%s.",
                     $num, ( $num == 1 ? "" : "s" ) );
                 &cmd_list_search;
