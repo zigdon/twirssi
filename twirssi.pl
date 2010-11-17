@@ -15,7 +15,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.5.0beta";
+$VERSION = "2.5.1beta";
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -1619,6 +1619,10 @@ sub monitor_child {
                 }
             }
 
+            # avoid internal breakage by sneaky nicknames
+            next if ($meta{nick} and $meta{nick} =~ 
+              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id)$/);
+
             if ( $meta{type} and $meta{type} eq 'fix_replies_index' ) {
                 $fix_replies_index{ $meta{account} } = $meta{id};
                 print "fix_replies_index for $meta{account} set to $meta{id}"
@@ -2400,7 +2404,7 @@ if ( &window() ) {
         "twirssi_dump",
         sub {
             print "twits: ", join ", ",
-              map { "u: $_->{username}\@" . ref($_) } values %twits;
+              map { "u: $_\@" . ref($twits{$_}) } keys %twits;
             print "selected: $user\@$defservice";
             print "friends: ", join ", ", sort keys %friends;
             print "nicks: ",   join ", ", sort keys %nicks;
