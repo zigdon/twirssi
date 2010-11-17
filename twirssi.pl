@@ -2113,7 +2113,7 @@ sub event_setup_changed {
             $logfile_fh->autoflush(1);
         } else {
             &notice( ["error"],
-                "ERROR: Failed to appen $settings{logfile_path}: $!" );
+                "ERROR: Failed to append to $settings{logfile_path}: $!" );
             undef $logfile_fh;
         }
     }
