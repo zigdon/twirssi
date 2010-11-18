@@ -1642,25 +1642,8 @@ sub monitor_child {
                 }
             }
 
-            my $account = "";
             $meta{account} =~ s/\@(\w+)$//;
             $meta{service} = $1;
-            if ( lc $meta{service} eq lc $settings{default_service} ) {
-                $account = "$meta{account}: "
-                  if lc "$meta{account}\@$meta{service}" ne lc
-                      "$user\@$defservice";
-            } else {
-                $account = "$meta{account}\@$meta{service}: ";
-            }
-
-            my $marker = "";
-            if ( $meta{type} ne 'dm' and $meta{nick} and $meta{id} ) {
-                $marker = ( $state{__indexes}{ $meta{nick} } + 1 ) % 100;
-                $state{ lc $meta{nick} }[$marker]           = $meta{id};
-                $state{__indexes}{ $meta{nick} }            = $marker;
-                $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
-                $marker                                     = ":$marker";
-            }
 
             my $hilight_color =
               $irssi_to_mirc_colors{ $settings{hilight_color} };
@@ -1695,19 +1678,31 @@ sub monitor_child {
                 $_ .= ' ' . $timestamp if $timestamp ne '';
             }
 
-            if ( $meta{type} =~ /tweet|reply/ ) {
-                push @lines,
-                  [
-                    ( MSGLEVEL_PUBLIC | $hilight ),
-                    $meta{type}, $account, $meta{nick}, $marker, $_
-                  ];
+            my %common_attribs = (
+                    type    => $meta{type},    account => $meta{account},
+                    service => $meta{service}, nick    => $meta{nick},
+                    text    => $_,             topic   => $meta{topic},
+                    level   => ($meta{type} eq 'dm'
+                                   ? ( MSGLEVEL_MSGS | $hilight )
+                                   : ($meta{type} eq 'error'
+                                       ? MSGLEVEL_MSGS
+                                       : ( MSGLEVEL_PUBLIC | $hilight ))),
+            );
+
+            if ( $meta{type} ne 'dm' and $meta{nick} and $meta{id} ) {
+                my $marker = ( $state{__indexes}{ $meta{nick} } + 1 ) % 100;
+                $state{ lc $meta{nick} }[$marker]           = $meta{id};
+                $state{__indexes}{ $meta{nick} }            = $marker;
+                $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
+                $common_attribs{marker}                     = ":$marker";
+            }
+
+            if ( $meta{type} =~ /tweet|reply/
+                    or $meta{type} eq 'dm'
+                    or $meta{type} eq 'error' ) {
+                push @lines, { %common_attribs };
             } elsif ( $meta{type} eq 'search' ) {
-                push @lines,
-                  [
-                    ( MSGLEVEL_PUBLIC | $hilight ),
-                    $meta{type}, $account, $meta{topic},
-                    $meta{nick}, $marker,  $_
-                  ];
+                push @lines, { %common_attribs };
                 if ( exists $state{__searches}{ $meta{account} }{ $meta{topic} }
                     and $meta{id} >
                     $state{__searches}{ $meta{account} }{ $meta{topic} } )
@@ -1716,20 +1711,9 @@ sub monitor_child {
                       $meta{id};
                 }
             } elsif ( $meta{type} eq 'search_once' ) {
-                push @lines,
-                  [
-                    ( MSGLEVEL_PUBLIC | $hilight ),
-                    $meta{type}, $account, $meta{topic},
-                    $meta{nick}, $marker,  $_
-                  ];
+                push @lines, { %common_attribs };
                 my $username = &normalize_username( $meta{account} );
                 delete $search_once{$username}->{ $meta{topic} };
-            } elsif ( $meta{type} eq 'dm' ) {
-                push @lines,
-                  [
-                    ( MSGLEVEL_MSGS | $hilight ),
-                    $meta{type}, $account, $meta{nick}, $_
-                  ];
             } elsif ( $meta{type} eq 'searchid' ) {
                 print "Search '$meta{topic}' returned id $meta{id}" if &debug;
                 if (
@@ -1753,8 +1737,6 @@ sub monitor_child {
                   $meta{id}
                   if $state{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
                       $meta{id};
-            } elsif ( $meta{type} eq 'error' ) {
-                push @lines, [ MSGLEVEL_MSGS, $_ ];
             } elsif ( $meta{type} eq 'debug' ) {
                 print "$_" if &debug,;
             } else {
@@ -1793,11 +1775,27 @@ sub monitor_child {
                 print "First call, not printing updates" if &debug;
             } else {
                 foreach my $line (@lines) {
-                    &window( $line->[1], $line->[2], $line->[3] )->printformat(
-                        $line->[0],
-                        "twirssi_" . $line->[1],
-                        @$line[ 2 .. $#$line - 1 ],
-                        &hilight( $line->[-1] )
+                    my $ac_svc = $line->{account} . '@' . $line->{service};
+                    my $win_name = &window( $line->{type},    $ac_svc,
+                                            $line->{topic} );
+                    my $ac_tag = '';
+                    if ( lc $line->{service} ne lc $settings{default_service} ) {
+                        $ac_tag = "$ac_svc: ";
+                    } elsif ( lc $ac_svc ne lc "$user\@$defservice"
+                            and $line->{account} ne $win_name ) {
+                        $ac_tag = $line->{account} . ': ';
+                    }
+                    my @print_opts = (
+                        $line->{level},
+                        "twirssi_" . $line->{type},
+                        $ac_tag,
+                    );
+                    push @print_opts, $line->{topic}  if $line->{type} =~ /search/;
+                    push @print_opts, $line->{nick}   if $line->{type} ne 'error';
+                    push @print_opts, $line->{marker} if defined $line->{marker};
+
+                    Irssi::window_find_name($win_name)->printformat(
+                        @print_opts, &hilight( $line->{text} )
                     );
                     &write_log($line);
                 }
@@ -1878,24 +1876,19 @@ sub monitor_child {
 }
 
 sub write_log {
+    my $line = shift;
     return unless $logfile_fh;
-
-    #                0         1     2        3      4     5     6
-    # tweet/reply: [ msglevel, type, account, nick,  :num, msg ];
-    # search:      [ msglevel, type, account, topic, nick, :num, msg ];
-    # dm:          [ msglevel, type, account, nick,  msg ];
-    # error:       [ msglevel, msg ];
-    my @params = @{ $_[0] };
-    print $logfile_fh scalar localtime, " - ";
-    if ( $params[1] eq 'dm' ) {
-        print $logfile_fh "DM \@$params[3]: $params[4]\n";
-    } elsif ( $params[1] eq 'search' or $params[1] eq 'search_once' ) {
-        print $logfile_fh "Search $params[3]: [\@$params[4]] $params[6]\n";
-    } elsif ( $params[1] eq 'tweet' or $params[1] eq 'reply' ) {
-        print $logfile_fh "[\@$params[3]] $params[5]\n";
+    print $logfile_fh scalar localtime, ' - ';
+    if ( $line->{type} eq 'dm' ) {
+        print $logfile_fh 'DM @', $line->{nick}, ':';
+    } elsif ( $line->{type} eq 'search' or $line->{type} eq 'search_once' ) {
+        print $logfile_fh "Search $line->{topic}: [\@$line->{nick}]";
+    } elsif ( $line->{type} eq 'tweet' or $line->{type} eq 'reply' ) {
+        print $logfile_fh "[\@$line->{nick}]";
     } else {
-        print $logfile_fh "ERR: $params[1]\n";
+        print $logfile_fh 'ERR:';
     }
+    print $logfile_fh ' ', $line->{text}, "\n";
 }
 
 sub save_state {
@@ -1921,13 +1914,15 @@ sub notice {
         ( $type, $tag ) = @{ shift @_ };
     }
     foreach my $msg (@_) {
-        &window( $type, $tag )->print( "%R***%n $msg", MSGLEVEL_PUBLIC );
+        Irssi::window_find_name(&window( $type, $tag ))->print(
+            "%R***%n $msg", MSGLEVEL_PUBLIC );
     }
 }
 
 sub ccrap {
     foreach my $msg (@_) {
-        &window()->print( "%R***%n $msg", MSGLEVEL_CLIENTCRAP );
+        Irssi::window_find_name(&window())->print(
+            "%R***%n $msg", MSGLEVEL_CLIENTCRAP );
     }
 }
 
@@ -2251,24 +2246,20 @@ sub get_text {
 }
 
 sub window {
-    my $type  = shift || "default";
-    my $uname = shift || "default";
+    my $type    = shift || "default";
+    my $uname   = lc(shift || "default");
+    my $topic   = lc(shift || '');
 
     $type = "search" if $type eq 'search_once';
-    my $topic = ($type eq 'search' ? shift : '');
 
     my $win;
     if ( exists $state{__windows}{$type} ) {
-        my $uname_svc = $uname;
-        $uname_svc =~ s/:\s*$/\@$defservice/;
         $win =
              $state{__windows}{$type}{$uname}
-          || $state{__windows}{$type}{lc $uname_svc}
-          || $state{__windows}{$type}{lc $topic}
+          || $state{__windows}{$type}{$topic}
           || $state{__windows}{$type}{$user}
           || $state{__windows}{$type}{default}
           || $settings{window};
-        print "win($type, $uname, $uname_svc, $topic) -> $win" if (&debug);
     } else {
         $win = $settings{window};
     }
@@ -2277,16 +2268,15 @@ sub window {
         my $newwin = Irssi::Windowitem::window_create( $win, 1 );
         if ($newwin) {
             $newwin->set_name($win);
-            return $newwin;
+            return $win;
         } else {
             Irssi::active_win()->print("Failed to create window $win!");
             $win = $settings{window};
         }
     }
 
-    print "window($type, $uname) -> $win" if (&debug);
-
-    return Irssi::window_find_name($win);
+    print "window($type, $uname, $topic) -> $win" if (&debug);
+    return $win;
 }
 
 sub window_to_account {
@@ -2370,7 +2360,8 @@ Irssi::settings_add_bool( "twirssi", "twirssi_timestamp_truncate_ws_only", 1 );
 $last_poll = time - &get_poll_time;
 
 &event_setup_changed();
-if ( &window() ) {
+my $win = window();
+if ( Irssi::window_find_name($win) ) {
     Irssi::command_bind( "dm",                         "cmd_direct" );
     Irssi::command_bind( "dm_as",                      "cmd_direct_as" );
     Irssi::command_bind( "tweet",                      "cmd_tweet" );
