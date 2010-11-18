@@ -1677,6 +1677,7 @@ sub monitor_child {
                 }
             }
 
+            $meta{username} = $meta{account};	# username is account@Service
             $meta{account} =~ s/\@(\w+)$//;
             $meta{service} = $1;
 
@@ -1738,39 +1739,38 @@ sub monitor_child {
                 push @lines, { %common_attribs };
             } elsif ( $meta{type} eq 'search' ) {
                 push @lines, { %common_attribs };
-                if ( exists $state{__searches}{ $meta{account} }{ $meta{topic} }
+                if ( exists $state{__searches}{ $meta{username} }{ $meta{topic} }
                     and $meta{id} >
-                    $state{__searches}{ $meta{account} }{ $meta{topic} } )
+                    $state{__searches}{ $meta{username} }{ $meta{topic} } )
                 {
-                    $state{__searches}{ $meta{account} }{ $meta{topic} } =
+                    $state{__searches}{ $meta{username} }{ $meta{topic} } =
                       $meta{id};
                 }
             } elsif ( $meta{type} eq 'search_once' ) {
                 push @lines, { %common_attribs };
-                my $username = &normalize_username( $meta{account} );
-                delete $search_once{$username}->{ $meta{topic} };
+                delete $search_once{ $meta{username} }->{ $meta{topic} };
             } elsif ( $meta{type} eq 'searchid' ) {
                 print "Search '$meta{topic}' returned id $meta{id}" if &debug;
                 if (
                     not
-                    exists $state{__searches}{ $meta{account} }{ $meta{topic} }
+                    exists $state{__searches}{ $meta{username} }{ $meta{topic} }
                     or $meta{id} >=
-                    $state{__searches}{ $meta{account} }{ $meta{topic} } )
+                    $state{__searches}{ $meta{username} }{ $meta{topic} } )
                 {
-                    $state{__searches}{ $meta{account} }{ $meta{topic} } =
+                    $state{__searches}{ $meta{username} }{ $meta{topic} } =
                       $meta{id};
                 } elsif (&debug) {
                     print "Search '$meta{topic}' returned invalid id $meta{id}";
                 }
             } elsif ( $meta{type} eq 'last_id' ) {
-                $state{__last_id}{"$meta{account}\@$meta{service}"}{$_} =
+                $state{__last_id}{ $meta{username} }{$_} =
                   $meta{id}
-                  if $state{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
+                  if $state{__last_id}{ $meta{username} }{$_} <
                       $meta{id};
             } elsif ( $meta{type} eq 'last_id_fixreplies' ) {
-                $state{__last_id}{"$meta{account}\@$meta{service}"}{$_} =
+                $state{__last_id}{ $meta{username} }{$_} =
                   $meta{id}
-                  if $state{__last_id}{"$meta{account}\@$meta{service}"}{$_} <
+                  if $state{__last_id}{ $meta{username} }{$_} <
                       $meta{id};
             } elsif ( $meta{type} eq 'debug' ) {
                 print "$_" if &debug,;
@@ -2553,6 +2553,8 @@ if ( Irssi::window_find_name($win) ) {
             eval {
                 my $ref = JSON::Any->jsonToObj($json);
                 %state = %$ref;
+		# remove legacy broken searches (without service name)
+                map { /\@/ or delete $state{__searches}{$_} } keys %{$state{__searches}};
                 my $num = keys %{ $state{__indexes} };
                 &notice( sprintf "Loaded old replies from %d contact%s.",
                     $num, ( $num == 1 ? "" : "s" ) );
