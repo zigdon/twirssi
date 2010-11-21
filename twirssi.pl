@@ -1697,7 +1697,7 @@ sub monitor_child {
         while (<FILE>) {
             last if /^__friends__/;
             unless (/\n$/) {    # skip partial lines
-                                # &debug("Skipping partial line: $_");
+                # &debug("Skipping partial line: $_");
                 next;
             }
             chomp;
@@ -1817,9 +1817,11 @@ sub monitor_child {
                 $last_friends_poll = $1;
                 &debug("Friend list updated");
                 next;
-            }
-
-            if (/^-- (\d+)$/) {
+            } elsif (/^type:debug\s/) {
+                chomp;
+                &debug($_);
+                next;
+            } elsif (/^-- (\d+)$/) {
                 $new_last_poll = $1;
                 if ( $new_last_poll >= $last_poll ) {
                     last;
