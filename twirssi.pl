@@ -160,14 +160,14 @@ sub cmd_retweet_as {
     my $nick;
     $id =~ s/[^\w\d\-:]+//g;
     ( $nick, $id ) = split /:/, $id;
-    unless ( exists $state{ lc $nick } ) {
+    unless ( exists $state{__ids}{ lc $nick } ) {
         &notice( [ "tweet", $username ],
             "Can't find a tweet from $nick to retweet!" );
         return;
     }
 
     $id = $state{__indexes}{$nick} unless $id;
-    unless ( $state{ lc $nick }[$id] ) {
+    unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "tweet", $username ],
             "Can't find a tweet numbered $id from $nick to retweet!" );
         return;
@@ -205,12 +205,12 @@ sub cmd_retweet_as {
                 {
                     status => $data,
 
-                    # in_reply_to_status_id => $state{ lc $nick }[$id]
+                    # in_reply_to_status_id => $state{__ids}{ lc $nick }[$id]
                 }
             );
         } else {
             $success =
-              $twits{$username}->retweet( { id => $state{ lc $nick }[$id] } );
+              $twits{$username}->retweet( { id => $state{__ids}{ lc $nick }[$id] } );
             $success = $success->{id} if ref $success;
         }
         &notice( [ "tweet", $username ], "Update failed" ) unless $success;
@@ -354,14 +354,14 @@ sub cmd_reply_as {
     my $nick;
     $id =~ s/[^\w\d\-:]+//g;
     ( $nick, $id ) = split /:/, $id;
-    unless ( exists $state{ lc $nick } ) {
+    unless ( exists $state{__ids}{ lc $nick } ) {
         &notice( [ "reply", $username ],
             "Can't find a tweet from $nick to reply to!" );
         return;
     }
 
     $id = $state{__indexes}{$nick} unless $id;
-    unless ( $state{ lc $nick }[$id] ) {
+    unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "reply", $username ],
             "Can't find a tweet numbered $id from $nick to reply to!" );
         return;
@@ -380,7 +380,7 @@ sub cmd_reply_as {
             $twits{$username}->update(
                 {
                     status                => $data,
-                    in_reply_to_status_id => $state{ lc $nick }[$id]
+                    in_reply_to_status_id => $state{__ids}{ lc $nick }[$id]
                 }
             )
           )
@@ -1692,6 +1692,7 @@ sub monitor_child {
 
     if ( open FILE, $filename ) {
         binmode FILE, ":" . &get_charset;
+        my $hilight_color = $irssi_to_mirc_colors{ $settings{hilight_color} };
         my @lines;
         my %new_cache;
         while (<FILE>) {
@@ -1701,7 +1702,6 @@ sub monitor_child {
                 next;
             }
             chomp;
-            my $hilight = 0;
             my %meta;
 
             foreach my $key (qw/id account nick type topic created_at/) {
@@ -1710,10 +1710,6 @@ sub monitor_child {
                     $meta{$key} =~ s/%20/ /g;
                 }
             }
-
-            # avoid internal breakage by sneaky nicknames
-            next if ($meta{nick} and $meta{nick} =~ 
-              /^__(indexes|windows|channels|searches|fixreplies|tweets|last_tweet|last_id)$/);
 
             if ( $meta{type} and $meta{type} eq 'fix_replies_index' ) {
                 $fix_replies_index{ $meta{account} } = $meta{id};
@@ -1737,29 +1733,28 @@ sub monitor_child {
             $meta{account} =~ s/\@(\w+)$//;
             $meta{service} = $1;
 
-            my $hilight_color =
-              $irssi_to_mirc_colors{ $settings{hilight_color} };
-            my $nick = "\@$meta{account}";
-            if ( $_ =~ /\Q$nick\E(?:\W|$)/i ) {
-                $meta{nick} = "\cC$hilight_color$meta{nick}\cO";
-                $hilight = MSGLEVEL_HILIGHT;
-            }
-
             my %common_attribs = (
                     username => $meta{username}, epoch   => &date_to_epoch($meta{created_at}),
                     type     => $meta{type},     account => $meta{account},
                     service  => $meta{service},  nick    => $meta{nick},
+                    hilight  => 0,               hi_nick => $meta{nick},
                     text     => $_,              topic   => $meta{topic},
-                    level    => ($meta{type} eq 'dm'
-                                   ? ( MSGLEVEL_MSGS | $hilight )
-                                   : ($meta{type} eq 'error'
-                                       ? MSGLEVEL_MSGS
-                                       : ( MSGLEVEL_PUBLIC | $hilight ))),
+                    level    => MSGLEVEL_PUBLIC,
             );
+
+            if ($meta{type} eq 'dm' or $meta{type} eq 'error') {
+                $common_attribs{level} = MSGLEVEL_MSGS;
+            }
+
+            my $nick = "\@meta{account}";
+            if ( $_ =~ /\Q$nick\E(?:\W|$)/i ) {
+                $common_attribs{level}   |= MSGLEVEL_HILIGHT;
+                $common_attribs{hi_nick} = "\cC$hilight_color$meta{nick}\cO";
+            }
 
             if ( $meta{type} ne 'dm' and $meta{nick} and $meta{id} ) {
                 my $marker = ( $state{__indexes}{ $meta{nick} } + 1 ) % 100;
-                $state{ lc $meta{nick} }[$marker]           = $meta{id};
+                $state{__ids}{ lc $meta{nick} }[$marker]    = $meta{id};
                 $state{__indexes}{ $meta{nick} }            = $marker;
                 $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
                 $common_attribs{marker}                     = ":$marker";
@@ -1817,7 +1812,7 @@ sub monitor_child {
                 $last_friends_poll = $1;
                 &debug("Friend list updated");
                 next;
-            } elsif (/^type:debug\s/) {
+            } elsif (s/^type:debug\s+//) {
                 chomp;
                 &debug($_);
                 next;
@@ -1853,6 +1848,7 @@ sub monitor_child {
                             and lc $line->{account} ne lc $win_name ) {
                         $ac_tag = $line->{account} . ': ';
                     }
+
                     my @print_opts = (
                         $line->{level},
                         "twirssi_" . $line->{type},
@@ -1860,7 +1856,7 @@ sub monitor_child {
                     );
                     push @print_opts, (lc $line->{topic} ne lc $win_name ? $line->{topic} . ':' : '')
                       if $line->{type} =~ /search/;
-                    push @print_opts, $line->{nick}   if $line->{type} ne 'error';
+                    push @print_opts, $line->{hi_nick} if $line->{type} ne 'error';
                     push @print_opts, $line->{marker} if defined $line->{marker};
 
                     # set timestamp
@@ -1995,7 +1991,6 @@ sub write_log {
     return unless my $logfile_obj = &ensure_logfile($win_name);
     my $fh = $logfile_obj->{fh};
     for my $log_line (&log_format($line, $logfile_obj->{filename}, $logfile_obj, $date_ref, 1)) {
-        # $log_line =~ s/[^[:print:]]//g;
         print $fh $log_line, "\n";
     }
 }
@@ -2017,13 +2012,13 @@ sub log_format {
 
     my $out = sprintf('%02d:%02d:%02d ', $date_ref->[2], $date_ref->[1], $date_ref->[0]);
     if ( $line->{type} eq 'dm' ) {
-        $out .= 'DM @' . $line->{nick} . ':';
+        $out .= 'DM @' . $line->{hi_nick} . ':';
     } elsif ( $line->{type} eq 'search' or $line->{type} eq 'search_once' ) {
         $out .= '[' . ($target_name =~ /$line->{topic}/ ? '' : "$line->{topic}:")
-                . '@' . $line->{nick} . ']';
+                . '@' . $line->{hi_nick} . ']';
     } elsif ( $line->{type} eq 'tweet' or $line->{type} eq 'reply' ) {
         $out .= '<' . ($target_name =~ /$line->{account}/ ? '' : "$line->{account}:")
-                . '@' . $line->{nick} . '>';
+                . '@' . $line->{hi_nick} . '>';
     } else {
         $out .= 'ERR:';
     }
@@ -2608,7 +2603,7 @@ if ( Irssi::window_find_name(window()) ) {
                 my ( $nick, $num ) = split /:/, lc $_[0], 2;
                 $num = $state{__last_tweet}{ &normalize_username($nick) }
                   unless ( defined $num );
-                return $state{$nick}[$num];
+                return $state{__ids}{$nick}[$num];
             }
         )
     );
@@ -2683,6 +2678,8 @@ if ( Irssi::window_find_name(window()) ) {
             eval {
                 my $ref = JSON::Any->jsonToObj($json);
                 %state = %$ref;
+		# fix legacy vulnerable ids
+                for (grep !/^__\w+$/, keys %state) { $state{__ids}{$_} = $state{$_}; delete $state{$_}; }
 		# remove legacy broken searches (without service name)
                 map { /\@/ or delete $state{__searches}{$_} } keys %{$state{__searches}};
 		# convert legacy/broken window tags (without @service, or unnormalized)
