@@ -129,21 +129,8 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
   <li><code>twirssi_avoid_ssl</code> - Default off.  If off, twirssi will
       attempt to use SSL for all network communications.  Changes take effect
       next time twirssi is loaded.</li>
-  <li><code>twirssi_timestamp_append</code> - If on, twirssi will append the actual
-      timestamp of the tweet/search/dm to the end of the message (default is off).</li>
-  <li><code>twirssi_timestamp_color</code> - If set, this string defines the color
-      of the timestamp (see twirssi_timestamp_append) (default is "%y").</li>
   <li><code>twirssi_timestamp_format</code> - This string defines the format
-      (see strftime) of timestamps (see twirssi_timestamp_append)
-      (default is "%Y-%m-%d %H:%M:%S").</li>
-  <li><code>twirssi_timestamp_truncate</code> - If on, then timestamps (see
-      twirssi_timestamp_append) are shortened by removing any prefix that is
-      common with (i.e. also prefixes) the current time (default is on).
-      See twirssi_timestamp_truncate_ws_only for how truncation occurs.</li>
-  <li><code>twirssi_timestamp_truncate_ws_only</code> - If on (the default),
-      then timestamps truncation occurs at whitespace only.  When off, any
-      truncated occurs at a non-alphanumeric character.  Note:
-      twirssi_timestamp_truncate must also be on.</li>
+      (see TimeStamp's strftime) of timestamps (default is "%H:%M:%S").</li>
 
   <li><code>twitter_passwords</code> - A comma separated list of passwords to auto-login</li>
   <li><code>twitter_poll_interval</code> - How often should new messages be
@@ -162,6 +149,7 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       on a twitter operation.  Should help avoid irssi pinging out of IRC
       servers when twitter is slow.</li>
   <li><code>twitter_usernames</code> - A comma separated list of usernames to auto-login.  Note that the last one will be the default account used after startup.</li>
+  <li><code>twitter_update_usernames</code> - A comma-separated list of usernames to give priority when updating.</li>
   <li><code>twitter_window</code> - Which irssi window should twitter updates be sent to</li>
 </ul>
 
