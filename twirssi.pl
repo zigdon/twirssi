@@ -2694,23 +2694,6 @@ if ( Irssi::window_find_name(window()) ) {
                         delete $state{__windows}{$type}{$tag};
                     }
                 }
-### DO NOT PUBLISH BELOW BLOCK
-		# convert legacy broken channel tags (without @service)
-                for my $type (keys %{$state{__channels}}) {
-                    next if $type eq 'search' or $type eq '*';
-                    for my $tag (keys %{$state{__channels}{$type}}) {
-                        if (ref $state{__channels}{$type}{$tag} ) {
-                            next if $tag eq '*';
-                            my $new_tag = $tag;
-                            $new_tag =~ s/\@\@/\@/g;
-                            $new_tag = &normalize_username($new_tag);
-                            next if -1 == index($new_tag, '@') or $new_tag eq $tag;
-                            $state{__channels}{$type}{$new_tag} = { %{ $state{__channels}{$type}{$tag} } };
-                        }
-                        delete $state{__channels}{$type}{$tag};
-                    }
-                }
-### DO NOT PUBLISH ABOVE BLOCK
                 my $num = keys %{ $state{__indexes} };
                 &notice( sprintf "Loaded old replies from %d contact%s.",
                     $num, ( $num == 1 ? "" : "s" ) );

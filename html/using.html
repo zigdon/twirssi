@@ -113,6 +113,9 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       will make sure the reply begins with @nick.  If off, you can reply to
       someone, but not have their name on the reply</li>
   <li><code>twirssi_replies_store</code> - Location where the /reply map is to be stored.</li>
+  <li><code>twirssi_logfile_path</code> - Location where activity will be logged.
+      Can have per-window (use "$W") and/or per-time (see strftime) logfiles
+      (e.g. "/logs/$W-%Y-%m-%d.log", default is "", i.e. no log).</li>
   <li><code>twirssi_topic_color</code> - If set, #topics will be shown in the
       color set. (default: %r)</li>
   <li><code>twirssi_track_replies</code> - Should twirssi keep track of
@@ -130,7 +133,7 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       attempt to use SSL for all network communications.  Changes take effect
       next time twirssi is loaded.</li>
   <li><code>twirssi_timestamp_format</code> - This string defines the format
-      (see TimeStamp's strftime) of timestamps (default is "%H:%M:%S").</li>
+      of timestamps (see strftime, default is "%H:%M:%S").</li>
 
   <li><code>twitter_passwords</code> - A comma separated list of passwords to auto-login</li>
   <li><code>twitter_poll_interval</code> - How often should new messages be
