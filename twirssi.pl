@@ -1974,12 +1974,12 @@ sub monitor_child {
         }
 
         %friends = ();
-        my $username = $1 if /^__friends__\t(.+)$/;
+        my $username;
         while (<FILE>) {
             if (/^__friends__\t(.+)$/) {
                 $username = $1;
                 next;
-            } elsif (/^__blocks__\t(.+)$/) {
+            } elsif (/^__blocks__$/) {
                 last;
             } elsif (/^__updated (\d+)$/) {
                 $last_friends_poll = $1;
@@ -1995,7 +1995,6 @@ sub monitor_child {
         }
 
         %blocks = ();
-        $username = $1 if /^__blocks__\t(.+)$/;
         while (<FILE>) {
             if (/^__blocks__\t(.+)$/) {
                 $username = $1;
