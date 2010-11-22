@@ -1289,6 +1289,7 @@ sub load_friends {
     foreach ( keys %friends ) {
         next if exists $new_friends{$_};
         delete $friends{$_};
+        print $fh "type:debug removing friend: $_\n" if $fh and &debug();
         $removed++;
     }
 
@@ -1330,6 +1331,7 @@ sub load_blocks {
     foreach ( keys %blocks ) {
         next if exists $new_blocks{$_};
         delete $blocks{$_};
+        print $fh "type:debug removing block: $_\n" if $fh and &debug();
         $removed++;
     }
 
@@ -1697,9 +1699,14 @@ sub do_updates {
             $topic =~ s/ /%20/g;
 
             # TODO: consider applying ignore-settings to search results
-            my @results = @{ $search->{results} };
-
-            @results = grep { not exists $blocks{ $_->{from_user} } } @results;
+            my @results = ();
+            foreach my $res (@{ $search->{results} }) {
+                if (exists $blocks{ $res->{from_user} }) {
+                    print $fh "type:debug blocked $topic: $res->{from_user}\n";
+                    next;
+                }
+                push @results, $res;
+            }
             if ( $max_results > 0 ) {
                 splice @results, $max_results;
             }
@@ -1955,6 +1962,10 @@ sub monitor_child {
         while (<FILE>) {
             if (/^__blocks__$/) {
                 last;
+            } elsif (/^__updated (\d+)$/) {
+                $last_friends_poll = $1;
+                &debug("Friends list updated");
+                next;
             } elsif (s/^type:debug\s+//) {
                 chomp;
                 &debug($_);
