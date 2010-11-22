@@ -36,8 +36,10 @@ my $defservice;
 my $poll;
 my $last_poll;
 my $last_friends_poll = 0;
+my $last_blocks_poll = 0;
 my %nicks;
 my %friends;
+my %blocks;
 my %tweet_cache;
 my %state;
 my $failstatus = 0;
@@ -315,6 +317,68 @@ sub cmd_broadcast {
     }
 }
 
+sub cmd_info {
+    my ( $data, $server, $win ) = @_;
+
+    $data =~ s/^\s+|\s+$//g;
+    unless ( $data ) {
+        &notice( ["info"], "Usage: /twitter_info <nick[:num]>" );
+        return;
+    }
+
+    $data =~ s/[^\w\-:]+//g;
+    my ( $nick_orig, $id ) = split /:/, $data;
+    my $nick = lc $nick_orig;
+    unless ( exists $state{__ids}{ $nick } ) {
+        &notice( [ "info" ],
+            "Can't find any tweet from $nick_orig!" );
+        return;
+    }
+
+    $id = $state{__indexes}{$nick_orig} unless $id;
+    my $statusid = $state{__ids}{$nick}[$id];
+    unless ( $statusid ) {
+        &notice( [ "info" ],
+            "Can't find a tweet numbered $id from $nick_orig!" );
+        return;
+    }
+
+    my $account       = $state{__accounts}{$nick}[$id];
+    my $service       = $state{__services}{$nick}[$id];
+    my $timestamp     = $state{__created_ats}{$nick}[$id];
+    my $tweet         = $state{__tweets}{$nick}[$id];
+    my $reply_to_id   = $state{__reply_to_ids}{$nick}[$id];
+    my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
+
+    &notice( [ "info" ], ",---------" );
+    &notice( [ "info" ], "| nick:    $nick_orig" );
+    &notice( [ "info" ], "| id:      $statusid" );
+    &notice( [ "info" ], "| time:    " . ($timestamp
+                             ? DateTime->from_epoch( epoch => $timestamp, time_zone => $local_tz)
+                             : '<unknown>') );
+    &notice( [ "info" ], "| account: " . ($account ? $account : '<unknown>' ) );
+    &notice( [ "info" ], "| text:    " . ($tweet ? $tweet : '<unknown>' ) );
+
+    if ( $service ) {
+       &notice( [ "info" ], "| Service: $service" );
+       if ( $service eq 'Twitter' ) {
+           &notice( [ "info" ], "| URL:     http://twitter.com/$nick/statuses/$statusid" );
+       } elsif ( $service eq 'Identica') {
+           &notice( [ "info" ], "| URL:     http://identi.ca/notice/$statusid" );
+       } else {
+           &notice( [ "info" ], "| URL:     <unknown>" );
+       }
+    } else {
+       &notice( [ "info" ], "| Service: <unknown>" );
+       &notice( [ "info" ], "| URL:     <unknown>" );
+    }
+
+    if ($reply_to_id and $reply_to_user) {
+       &notice( [ "info" ], "| ReplyTo: $reply_to_user:$reply_to_id" );
+    }
+    &notice( [ "info" ], "`---------" );
+}
+
 sub cmd_reply {
     my ( $data, $server, $win ) = @_;
 
@@ -559,7 +623,7 @@ sub cmd_login {
         return;
     }
 
-    %friends = %nicks = ();
+    %blocks = %friends = %nicks = ();
 
     my $service;
     if ( $user =~ /^(.*)@(Twitter|Identica)$/ ) {
@@ -763,10 +827,13 @@ sub verify_twitter_object {
     Irssi::timeout_remove($poll) if $poll;
     $poll = Irssi::timeout_add( &get_poll_time * 1000, \&get_updates, "" );
     &notice( [ "tweet", "$user\@$service" ],
-        "Logged in as $user\@$service, loading friends list..." );
+        "Logged in as $user\@$service, loading friends list and blocks..." );
     &load_friends();
     &notice( [ "tweet", "$user\@$service" ],
         "loaded friends: " . scalar keys %friends );
+    &load_blocks();
+    &notice( [ "tweet", "$user\@$service" ],
+        "loaded blocks: " . scalar keys %blocks );
 
     %nicks = %friends;
     $nicks{$user} = 0;
@@ -1228,6 +1295,61 @@ sub load_friends {
     return ( $added, $removed );
 }
 
+sub load_blocks {
+    my $fh     = shift;
+    my $page   = 1;
+    my %new_blocks;
+    eval {
+        while ( $page < 11 ) {
+            print $fh "type:debug Loading blocks page $page...\n"
+              if $fh and &debug();
+            my $blocks;
+            $blocks = $twit->blocking( { page => $page } );
+            last unless $blocks;
+            $new_blocks{ $_->{screen_name} } = time foreach @$blocks;
+            $page++;
+        }
+    };
+
+    if ($@) {
+        print $fh "type:debug Error during blocks list update.  Aborted.\n"
+          if $fh;
+        return;
+    }
+
+    my ( $added, $removed ) = ( 0, 0 );
+    print $fh "type:debug Scanning for new blocks...\n" if $fh and &debug();
+    foreach ( keys %new_blocks ) {
+        next if exists $blocks{$_};
+        $blocks{$_} = time;
+        $added++;
+    }
+
+    print $fh "type:debug Scanning for removed blocks...\n"
+      if $fh and &debug();
+    foreach ( keys %blocks ) {
+        next if exists $new_blocks{$_};
+        delete $blocks{$_};
+        $removed++;
+    }
+
+    return ( $added, $removed );
+}
+
+sub get_reply_to {
+    # extract reply-to-information from tweets
+    my $t = shift;
+
+    if ($t->{in_reply_to_screen_name}
+       and $t->{in_reply_to_status_id}) {
+       return sprintf 'reply_to_user:%s reply_to_id:%s ',
+           $t->{in_reply_to_screen_name},
+           $t->{in_reply_to_status_id};
+    } else {
+       return '';
+    }
+}
+
 sub get_updates {
     &debug("get_updates starting");
 
@@ -1304,6 +1426,23 @@ sub get_updates {
             print $fh "$_ $friends{$_}\n";
         }
 
+        print $fh "__blocks__\n";
+        if ( time - $last_blocks_poll > $settings{blocks_poll} ) {
+            print $fh "__updated ", time, "\n";
+            my ( $added, $removed ) = &load_blocks($fh);
+            if ( $added + $removed ) {
+                print $fh "type:debug %R***%n Blocks list updated: ",
+                  join( ", ",
+                    sprintf( "%d added",   $added ),
+                    sprintf( "%d removed", $removed ) ),
+                  "\n";
+            }
+        }
+
+        foreach ( sort keys %blocks ) {
+            print $fh "$_ $blocks{$_}\n";
+        }
+
         if ($error) {
             print $fh "type:debug Update encountered errors.  Aborted\n";
             print $fh "-- $last_poll";
@@ -1343,7 +1482,7 @@ sub do_updates {
             print $fh "type:debug Ignoring timeline for $username\n" if &debug();
         } else {
             if ( $state{__last_id}{$username}{timeline} ) {
-                $tweets = $obj->home_timeline( { count => 100 } );
+                $tweets = $obj->home_timeline( { count => $settings{track_replies} } );
             } else {
                 $tweets = $obj->home_timeline();
             }
@@ -1423,8 +1562,8 @@ sub do_updates {
         next
           if $t->{user}{screen_name} eq $username
               and not $settings{own_tweets};
-        printf $fh "id:%s account:%s nick:%s type:%s created_at:%s %s\n",
-          $t->{id}, $username, $t->{user}{screen_name}, $reply,
+        printf $fh "id:%s account:%s %snick:%s type:%s created_at:%s %s\n",
+          $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name}, $reply,
           &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
@@ -1454,8 +1593,8 @@ sub do_updates {
           if exists $friends{ $t->{user}{screen_name} };
 
         my $text = &get_text( $t, $obj );
-        printf $fh "id:%s account:%s nick:%s type:tweet created_at:%s %s\n",
-          $t->{id}, $username, $t->{user}{screen_name},
+        printf $fh "id:%s account:%s %snick:%s type:tweet created_at:%s %s\n",
+          $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name},
           &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
@@ -1482,8 +1621,8 @@ sub do_updates {
     foreach my $t ( reverse @$tweets ) {
         my $text = decode_entities( $t->{text} );
         $text =~ s/[\n\r]/ /g;
-        printf $fh "id:%s account:%s nick:%s type:dm created_at:%s %s\n",
-          $t->{id}, $username, $t->{sender_screen_name},
+        printf $fh "id:%s account:%s %snick:%s type:dm created_at:%s %s\n",
+          $t->{id}, $username, &get_reply_to($t), $t->{sender_screen_name},
           &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
@@ -1559,6 +1698,8 @@ sub do_updates {
 
             # TODO: consider applying ignore-settings to search results
             my @results = @{ $search->{results} };
+
+            @results = grep { not exists $blocks{ $_->{from_user} } } @results;
             if ( $max_results > 0 ) {
                 splice @results, $max_results;
             }
@@ -1566,8 +1707,8 @@ sub do_updates {
 
                 my $text = &get_text( $t, $obj );
                 printf $fh
-                  "id:%s account:%s nick:%s type:search_once topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $t->{from_user}, $topic,
+                  "id:%s account:%s %snick:%s type:search_once topic:%s created_at:%s %s\n",
+                  $t->{id}, $username, &get_reply_to($t), $t->{from_user}, $topic,
                   &encode_for_file($t->{created_at}), $text;
             }
         }
@@ -1628,16 +1769,16 @@ sub get_timeline {
 
             if ($context) {
                 my $ctext = &get_text( $context, $obj );
-                printf $fh "id:%s account:%s nick:%s type:tweet created_at:%s %s\n",
-                  $context->{id}, $username,
+                printf $fh "id:%s account:%s %snick:%s type:tweet created_at:%s %s\n",
+                  $context->{id}, $username, &get_reply_to($context),
                   $context->{user}{screen_name},
                   &encode_for_file($context->{created_at}),
                   $ctext;
                 $reply = "reply";
             }
         }
-        printf $fh "id:%s account:%s nick:%s type:%s created_at:%s %s\n",
-          $t->{id}, $username, $t->{user}{screen_name}, $reply,
+        printf $fh "id:%s account:%s %snick:%s type:%s created_at:%s %s\n",
+          $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name}, $reply,
           &encode_for_file($t->{created_at}), $text;
         $last_id = $t->{id} if $last_id < $t->{id};
     }
@@ -1704,7 +1845,7 @@ sub monitor_child {
             chomp;
             my %meta;
 
-            foreach my $key (qw/id account nick type topic created_at/) {
+            foreach my $key (qw/id account reply_to_user reply_to_id nick type topic created_at/) {
                 if (s/^$key:((?:\S|\\ )+)\s*//) {
                     $meta{$key} = $1;
                     $meta{$key} =~ s/%20/ /g;
@@ -1732,9 +1873,10 @@ sub monitor_child {
             $meta{username} = &normalize_username($meta{account});	# username is account@Service
             $meta{account} =~ s/\@(\w+)$//;
             $meta{service} = $1;
+            $meta{created_at} = &date_to_epoch($meta{created_at});
 
             my %common_attribs = (
-                    username => $meta{username}, epoch   => &date_to_epoch($meta{created_at}),
+                    username => $meta{username}, epoch   => $meta{created_at},
                     type     => $meta{type},     account => $meta{account},
                     service  => $meta{service},  nick    => $meta{nick},
                     hilight  => 0,               hi_nick => $meta{nick},
@@ -1753,10 +1895,13 @@ sub monitor_child {
             }
 
             if ( $meta{type} ne 'dm' and $meta{nick} and $meta{id} ) {
-                my $marker = ( $state{__indexes}{ $meta{nick} } + 1 ) % 100;
+                my $marker = ( $state{__indexes}{ $meta{nick} } + 1 ) % $settings{track_replies};
                 $state{__ids}{ lc $meta{nick} }[$marker]    = $meta{id};
                 $state{__indexes}{ $meta{nick} }            = $marker;
                 $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
+                foreach my $key (qw/account service reply_to_id reply_to_user created_at/) {
+                    $state{"__${key}s"}{ lc $meta{nick} }[$marker] = $meta{$key};
+                }
                 $common_attribs{marker}                     = ":$marker";
             }
 
@@ -1808,10 +1953,8 @@ sub monitor_child {
 
         %friends = ();
         while (<FILE>) {
-            if (/^__updated (\d+)$/) {
-                $last_friends_poll = $1;
-                &debug("Friend list updated");
-                next;
+            if (/^__blocks__$/) {
+                last;
             } elsif (s/^type:debug\s+//) {
                 chomp;
                 &debug($_);
@@ -1829,6 +1972,31 @@ sub monitor_child {
             }
             my ( $f, $t ) = split ' ', $_;
             $nicks{$f} = $friends{$f} = $t;
+        }
+
+        %blocks = ();
+        while (<FILE>) {
+            if (/^__updated (\d+)$/) {
+                $last_blocks_poll = $1;
+                &debug("Block list updated");
+                next;
+            } elsif (s/^type:debug\s+//) {
+                chomp;
+                &debug($_);
+                next;
+            } elsif (/^-- (\d+)$/) {
+                $new_last_poll = $1;
+                if ( $new_last_poll >= $last_poll ) {
+                    last;
+                } else {
+                    &debug("Impossible!  "
+                      . "new_last_poll=$new_last_poll < last_poll=$last_poll!");
+                    undef $new_last_poll;
+                    next;
+                }
+            }
+            my ( $b, $t ) = split ' ', $_;
+            $blocks{$b} = $t;
         }
 
         if ($new_last_poll) {
@@ -1864,12 +2032,10 @@ sub monitor_child {
                     if ($last_ymd{wins}{$win_name}
                             ne (my $ymd = sprintf('%04d-%02d-%02d', $date[5]+1900, $date[4]+1, $date[3]))) {
                         Irssi::window_find_name($win_name)->printformat(MSGLEVEL_PUBLIC, 'twirssi_new_day', $ymd, '');
-                        #  &debug("$win_name ymd=$ymd");
                         $last_ymd{wins}{$win_name} = $ymd;
                     }
                     my $ts = DateTime->from_epoch( epoch => $line->{epoch}, time_zone => $local_tz
                                                                 )->strftime($settings{timestamp_format});
-                    #  &debug("$win_name ts=$ts");
                     Irssi::settings_set_str('timestamp_format', $ts);
                     Irssi::window_find_name($win_name)->printformat(
                         @print_opts, &hilight( $line->{text} )
@@ -1878,7 +2044,6 @@ sub monitor_child {
                     &write_channels($line, \@date);
                 }
                 # recall timestamp format
-                #  &debug("TS=$old_tf");
                 Irssi::settings_set_str('timestamp_format', $old_tf);
             }
 
@@ -2144,7 +2309,7 @@ sub sig_complete {
 
     if (
         $linestart =~
-        m{^/twitter_delete\s*$|^/(?:retweet|twitter_reply)(?:_as)?\s*$}
+        m{^/twitter_delete\s*$|^/(?:retweet|twitter_info|twitter_reply)(?:_as)?\s*$}
         or (    $settings{use_reply_aliases}
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
@@ -2233,6 +2398,7 @@ sub event_setup_changed {
     $settings{search_results} =
       Irssi::settings_get_int("twitter_search_results");
     $settings{timeout} = Irssi::settings_get_int("twitter_timeout");
+    $settings{track_replies} = Irssi::settings_get_int("twirssi_track_replies");
 
     $settings{bitlbee_server} = Irssi::settings_get_str("bitlbee_server");
     $settings{hilight_color}  = Irssi::settings_get_str("hilight_color");
@@ -2504,6 +2670,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
 Irssi::settings_add_int( "twirssi", "twitter_friends_poll",   600 );
 Irssi::settings_add_int( "twirssi", "twitter_timeout",        30 );
 Irssi::settings_add_int( "twirssi", "twitter_search_results", 5 );
+Irssi::settings_add_int( "twirssi", "twirssi_track_replies",  100 );
 
 Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
@@ -2527,6 +2694,7 @@ if ( Irssi::window_find_name(window()) ) {
     Irssi::command_bind( "retweet",                    "cmd_retweet" );
     Irssi::command_bind( "retweet_as",                 "cmd_retweet_as" );
     Irssi::command_bind( "twitter_broadcast",          "cmd_broadcast" );
+    Irssi::command_bind( "twitter_info",               "cmd_info" );
     Irssi::command_bind( "twitter_reply",              "cmd_reply" );
     Irssi::command_bind( "twitter_reply_as",           "cmd_reply_as" );
     Irssi::command_bind( "twitter_login",              "cmd_login" );
@@ -2558,6 +2726,7 @@ if ( Irssi::window_find_name(window()) ) {
               map { "u: $_\@" . ref($twits{$_}) } keys %twits;
             print "selected: $user\@$defservice";
             print "friends: ", join ", ", sort keys %friends;
+            print "blocks: ", join ", ", sort keys %blocks;
             print "nicks: ",   join ", ", sort keys %nicks;
             print "searches: ", Dumper \%{ $state{__searches} };
             print "windows: ",  Dumper \%{ $state{__windows} };

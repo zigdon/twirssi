@@ -22,8 +22,7 @@
   <li><code>/dm_as &lt;account&gt; &lt;username&gt; &lt;message&gt;</code> -
       Send a direct message to username from the specified account</li>
   <li><code>/twitter_reply &lt;username&gt;:&lt;num&gt;</code> - Reply to a
-      particular tweet.  Only 100 are remembered for each user, and this can be
-      completely disabled by changing the twirssi_track_replies variable.</li>
+      particular tweet (see twirssi_track_replies variable).</li>
   <li><code>/twitter_reply_as &lt;account&gt; &lt;username&gt;:&lt;num&gt;</code>
       - Same as /twitter_reply but allowing specifying an account to reply from.</li>
   <li><code>/reply &lt;username&gt;:&lt;num&gt;</code> - Same as
@@ -45,6 +44,8 @@
       posts by username, even for people who you do not follow</li>
   <li><code>/twitter_del_follow_extra &lt;username&gt;</code> - Stop showing
       all the posts by username</li>
+  <li><code>/twitter_info &lt;username&gt;:&lt;num&gt;</code> - Show details about
+      a remembered tweet.  See twirssi_track_replies variable.</li>
   <li><code>/twitter_list_follow_extra</code> - Show the list of all the
       usernames in the extra follow loop</li>
   <li><code>/twitter_list_subscriptions</code> - List all the existing search
@@ -118,9 +119,9 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       (e.g. "/logs/$W-%Y-%m-%d.log", default is "", i.e. no log).</li>
   <li><code>twirssi_topic_color</code> - If set, #topics will be shown in the
       color set. (default: %r)</li>
-  <li><code>twirssi_track_replies</code> - Should twirssi keep track of
-      individual IDs of incoming twitters?  If enabled (which is the default)
-      incoming tweets will show a :num appended to them.  This is requried for
+  <li><code>twirssi_track_replies</code> - The number of tweets per user to
+      remember - individual IDs.  If non-zero (the default is 100), incoming
+      tweets will show a :num appended to them.  This is requried for
       /reply and /twitter_reply functionallity.</li>
   <li><code>twirssi_use_reply_aliases</code> - Enable /reply and /reply_as as
       aliases to /twitter_reply and /twitter_reply_as.  Requires a reload of
