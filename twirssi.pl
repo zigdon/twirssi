@@ -1219,19 +1219,19 @@ sub load_friends {
 
 sub load_blocks {
     my $fh     = shift;
-    my $page   = 1;
     my %new_blocks;
     eval {
-        while ( $page < 11 )
-        {
-            print $fh "type:debug Loading blocks page $page...\n"
-              if ( $fh and &debug );
-            my $blocks;
-	    $blocks = $twit->blocking( { page => $page } );
-	    last unless $blocks;
-            $new_blocks{ $_->{screen_name} } = time foreach @$blocks;
-            $page++;
-        }
+        foreach my $t ( keys %twits ) {
+	    foreach my $page (1..10)
+	    {
+		print $fh "type:debug Loading blocks page $page...\n"
+		    if ( $fh and &debug );
+		my $blocks;
+		$blocks = $twits{$t}->blocking( { page => $page } );
+		last unless $blocks;
+		$new_blocks{ $_->{screen_name} } = time foreach @$blocks;
+	    }
+	}
     };
 
     if ($@) {
