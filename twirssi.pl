@@ -1663,6 +1663,7 @@ sub do_updates {
               $search->{max_id}, $username, $topic;
 
             foreach my $t ( reverse @{ $search->{results} } ) {
+                next if exists $blocks{ $t->{from_user} };
                 my $text = &get_text( $t, $obj );
                 printf $fh "id:%s account:%s nick:%s type:search topic:%s created_at:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic,
@@ -1970,16 +1971,6 @@ sub monitor_child {
                 chomp;
                 &debug($_);
                 next;
-            } elsif (/^-- (\d+)$/) {
-                $new_last_poll = $1;
-                if ( $new_last_poll >= $last_poll ) {
-                    last;
-                } else {
-                    &debug("Impossible!  "
-                      . "new_last_poll=$new_last_poll < last_poll=$last_poll!");
-                    undef $new_last_poll;
-                    next;
-                }
             }
             my ( $f, $t ) = split ' ', $_;
             $nicks{$f} = $friends{$f} = $t;
