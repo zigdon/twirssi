@@ -1149,15 +1149,11 @@ sub load_blocks {
     my %new_blocks;
     eval {
         foreach my $t ( keys %twits ) {
-	    foreach my $page (1..10)
-	    {
-		print $fh "type:debug Loading blocks page $page...\n"
-		    if ( $fh and &debug );
-		my $blocks;
-		$blocks = $twits{$t}->blocking( { page => $page } );
-		last unless $blocks;
-		$new_blocks{ $_->{screen_name} } = time foreach @$blocks;
-	    }
+	    print $fh "type:debug Loading blocks page ALL...\n"
+		if ( $fh and &debug );
+	    my $blocks;
+	    $blocks = $twits{$t}->blocking();
+	    $new_blocks{ $_->{screen_name} } = time foreach @$blocks;
 	}
     };
 
