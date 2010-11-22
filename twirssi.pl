@@ -1178,7 +1178,7 @@ sub load_friends {
             print $fh "type:debug Loading friends page $page...\n"
               if ( $fh and &debug );
             my $friends;
-            if ( ref $twit =~ /^Net::Twitter/ ) {
+            if ( ref($twit) =~ /^Net::Twitter/) {
                 $friends = $twit->friends( { cursor => $cursor } );
                 last unless $friends;
                 $cursor  = $friends->{next_cursor};
