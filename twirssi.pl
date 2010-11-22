@@ -353,7 +353,7 @@ sub cmd_info {
     if ( $service ) {
 	&notice( [ "info" ], "| Service: $service" );
 	if ( $service eq 'Twitter' ) {
-	    &notice( [ "info" ], "| URL:     http://twitter.com/$nick/statuses/$statusid" );
+	    &notice( [ "info" ], "| URL:     http://twitter.com/$nick_orig/statuses/$statusid" );
 	} elsif ( $service eq 'Identica') {
 	    &notice( [ "info" ], "| URL:     http://identi.ca/notice/$statusid" );
 	} else {
