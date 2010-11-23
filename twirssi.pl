@@ -361,7 +361,7 @@ sub cmd_info {
     &notice( [ "info" ], ",---------" );
     &notice( [ "info" ], "| nick:    $nick_orig" );
     &notice( [ "info" ], "| id:      $statusid" );
-    &notice( [ "info" ], "| type:    $type" );
+    &notice( [ "info" ], "| type:    " . ($type ? $type : '<unknown>') );
 #    &notice( [ "info" ], "| time:    " . ($timestamp ? DateTime->from_epoch( epoch => $timestamp ) : '<unknown>') );
     &notice( [ "info" ], "| account: " . ($account ? $account : '<unknown>' ) );
     &notice( [ "info" ], "| text:    " . ($tweet ? $tweet : '<unknown>' ) );
