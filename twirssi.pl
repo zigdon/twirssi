@@ -342,10 +342,12 @@ sub cmd_info {
     my $tweet         = $state{__tweets}{$nick}[$id];
     my $reply_to_id   = $state{__reply_to_ids}{$nick}[$id];
     my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
+    my $type          = $state{__types}{$nick}[$id];
 
     &notice( [ "info" ], ",---------" );
     &notice( [ "info" ], "| nick:    $nick_orig" );
     &notice( [ "info" ], "| id:      $statusid" );
+    &notice( [ "info" ], "| type:    $type" );
 #    &notice( [ "info" ], "| time:    " . ($timestamp ? DateTime->from_epoch( epoch => $timestamp ) : '<unknown>') );
     &notice( [ "info" ], "| account: " . ($account ? $account : '<unknown>' ) );
     &notice( [ "info" ], "| text:    " . ($tweet ? $tweet : '<unknown>' ) );
@@ -1655,7 +1657,7 @@ sub monitor_child {
             # avoid internal breakage by sneaky nicknames
 	    # to be added: created_ats
             next if ($meta{nick} and $meta{nick} =~ 
-              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id|accounts|services|reply_to_users|reply_to_ids)$/);
+              /^__(indexes|windows|searches|fixreplies|tweets|last_tweet|last_id|accounts|services|reply_to_users|reply_to_ids|types)$/);
 
             if ( $meta{type} and $meta{type} eq 'fix_replies_index' ) {
                 $fix_replies_index{ $meta{account} } = $meta{id};
@@ -1693,7 +1695,7 @@ sub monitor_child {
                 $state{ lc $meta{nick} }[$marker]           = $meta{id};
                 $state{__indexes}{ $meta{nick} }            = $marker;
                 $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
-                foreach my $key (qw/account service reply_to_id reply_to_user/) { # created_at
+                foreach my $key (qw/account service reply_to_id reply_to_user type/) { # created_at
                     $state{"__${key}s"}{ lc $meta{nick} }[$marker] = $meta{$key};
 	        }
                 $marker                                     = ":$marker";
