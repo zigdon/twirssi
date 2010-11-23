@@ -2208,7 +2208,8 @@ sub log_format {
         $ymd_obj->{ymd} = $ymd;
     }
 
-    my $out = sprintf('%02d:%02d:%02d ', $date_ref->[2], $date_ref->[1], $date_ref->[0]);
+    my $out = '';
+    $out .= sprintf('%02d:%02d:%02d ', $date_ref->[2], $date_ref->[1], $date_ref->[0]) if $to_file;
     if ( $line->{type} eq 'dm' ) {
         $out .= 'DM @' . $line->{hi_nick} . ':';
     } elsif ( $line->{type} eq 'search' or $line->{type} eq 'search_once' ) {
