@@ -637,7 +637,7 @@ sub cmd_login {
     if (    $service eq 'Twitter'
         and $settings{use_oauth} )
     {
-        &debug("Attempting OAuth for $user\@$service");
+        &debug("$user\@$service: Attempting OAuth");
         eval {
             if ( $service eq 'Identica' )
             {
@@ -672,7 +672,7 @@ sub cmd_login {
                 while (<OAUTH>) {
                     chomp;
                     next unless /^$user\@$service (\S+) (\S+)/i;
-                    &debug("Trying cached oauth creds for $user\@$service");
+                    &debug("$user\@$service: Trying cached oauth creds");
                     $twit->access_token($1);
                     $twit->access_token_secret($2);
                     last;
@@ -691,7 +691,7 @@ sub cmd_login {
                 }
                 &notice(
                     ["error"],
-                    "Twirssi not authorized to access $service for $user.",
+                    "$user: Twirssi not authorized to access $service.",
                     "Please authorize at the following url, then enter the PIN",
                     "supplied with /twirssi_oauth $user\@$service <pin>",
                     $url
@@ -822,7 +822,7 @@ sub verify_twitter_object {
         return;
     }
 
-    &debug("saving object for $user\@$service");
+    &debug("$user\@$service: saving object");
     $twits{"$user\@$service"} = $twit;
     Irssi::timeout_remove($poll) if $poll;
     $poll = Irssi::timeout_add( &get_poll_time * 1000, \&get_updates, "" );
@@ -1258,7 +1258,7 @@ sub load_friends {
     eval {
         while ( $page < 11 and $cursor ne "0" )
         {
-            &debug($fh, "Loading friends page $page...");
+            &debug($fh, "$username: Loading friends page $page...");
             my $friends;
             if ( ref($u_twit) =~ /^Net::Twitter/ ) {
                 $friends = $u_twit->friends( { cursor => $cursor } );
@@ -1276,26 +1276,26 @@ sub load_friends {
 
     if ($@) {
         if ($fh) {
-            print $fh "type:debug Error during friends list update.  Aborted.\n";
+            print $fh "type:debug $username: Error during friends list update.  Aborted.\n";
         } else {
-            print "Error during friends list update.  Aborted.";
+            print "$username: Error during friends list update.  Aborted.";
         }
         return;
     }
 
     my ( $added, $removed ) = ( 0, 0 );
-    &debug($fh, "Scanning for new friends...");
+    # &debug($fh, "$username: Scanning for new friends...");
     foreach ( keys %new_friends ) {
         next if exists $friends{$username}{$_};
         $friends{$username}{$_} = time;
         $added++;
     }
 
-    &debug($fh, "Scanning for removed friends...");
+    # &debug($fh, "$username: Scanning for removed friends...");
     foreach ( keys %{ $friends{$username} } ) {
         next if exists $new_friends{$_};
         delete $friends{$username}{$_};
-        &debug($fh, "removing friend: $_");
+        &debug($fh, "$username: removing friend: $_");
         $removed++;
     }
 
@@ -1309,18 +1309,19 @@ sub load_blocks {
     my %new_blocks;
     eval {
         for my $page (1..10) {
-            &debug($fh, "Loading blocks page $page...");
+            &debug($fh, "$username: Loading blocks page $page...");
             my $blocks = $u_twit->blocking( { page => $page } );
             last if not defined $blocks or @$blocks == 0
                     or defined $new_blocks{ $blocks->[0]->{screen_name} };
-            &debug($fh, "Blocks page $page... " . scalar(@$blocks) . " first block: " . $blocks->[0]->{screen_name});
+            &debug($fh, "$username: Blocks page $page... " . scalar(@$blocks)
+                        . " first block: " . $blocks->[0]->{screen_name});
             $new_blocks{ $_->{screen_name} } = time foreach @$blocks;
         }
     };
 
     if ($@) {
         if ($fh) {
-            print $fh "type:debug Error during blocks list update.  Aborted.\n";
+            print $fh "type:debug $username: Error during blocks list update.  Aborted.\n";
         } else {
             print "Error during blocks list update.  Aborted.";
         }
@@ -1328,18 +1329,18 @@ sub load_blocks {
     }
 
     my ( $added, $removed ) = ( 0, 0 );
-    &debug($fh, "Scanning for new blocks...");
+    # &debug($fh, "$username: Scanning for new blocks...");
     foreach ( keys %new_blocks ) {
         next if exists $blocks{$username}{$_};
         $blocks{$username}{$_} = time;
         $added++;
     }
 
-    &debug($fh, "Scanning for removed blocks...");
+    # &debug($fh, "$username: Scanning for removed blocks...");
     foreach ( keys %{ $blocks{$username} } ) {
         next if exists $new_blocks{$_};
         delete $blocks{$username}{$_};
-        &debug($fh, "removing block: $_");
+        &debug($fh, "$username: removing block: $_");
         $removed++;
     }
 
@@ -1426,7 +1427,7 @@ sub get_updates {
                 print $fh "__updated ", time, "\n";
                 my ( $added, $removed ) = &load_friends($twits{$username}, $username, $fh);
                 if ( $added + $removed ) {
-                    print $fh "type:debug %R***%n Friends list updated: ",
+                    print $fh "type:debug %R***%n $username: Friends list updated: ",
                       join( ", ",
                         sprintf( "%d added",   $added ),
                         sprintf( "%d removed", $removed ) ),
@@ -1446,7 +1447,7 @@ sub get_updates {
                 print $fh "__updated ", time, "\n";
                 my ( $added, $removed ) = &load_blocks($twits{$username}, $username, $fh);
                 if ( $added + $removed ) {
-                    print $fh "type:debug %R***%n Blocks list updated: ",
+                    print $fh "type:debug %R***%n $username: Blocks list updated: ",
                       join( ", ",
                         sprintf( "%d added",   $added ),
                         sprintf( "%d removed", $removed ) ),
@@ -1474,18 +1475,35 @@ sub get_updates {
     &debug("get_updates ends");
 }
 
+sub remove_ignored {
+    my $text = shift;
+    my $ignore_ref = shift;
+    my $strip_ref = shift;
+
+    foreach my $tag (@$ignore_ref) {
+        next unless $text =~ /\b\Q$tag\E\b/i;
+        $text = (&debug() ? "(ignored: $tag) $text" : '');
+        last;
+    }
+
+    foreach my $tag ($strip_ref) {
+        $text =~ s/\b\Q$tag\E\b//gi;
+    }
+    return $text;
+}
+
 sub do_updates {
     my ( $fh, $username, $obj, $cache ) = @_;
 
     eval {
         my $rate_limit = $obj->rate_limit_status();
         if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
-            &notice( ["error"], "Rate limit exceeded for $username" );
+            &notice( ["error"], "$username: Rate limit exceeded" );
             return undef;
         }
     };
 
-    &debug($fh, "Polling for updates for $username");
+    &debug($fh, "$username: Polling for updates");
     my $tweets;
     my $new_poll_id      = 0;
     my @ignored_accounts = $settings{ignored_accounts}
@@ -1495,7 +1513,7 @@ sub do_updates {
         if ( grep { &normalize_username($_) eq $username } @ignored_accounts )
         {
             $tweets = ();
-            print $fh "type:debug Ignoring timeline for $username\n" if &debug();
+            &debug($fh, "$username: Ignoring timeline");
         } else {
             if ( $state{__last_id}{$username}{timeline} ) {
                 $tweets = $obj->home_timeline( { count => $settings{track_replies} } );
@@ -1506,7 +1524,7 @@ sub do_updates {
     };
 
     if ($@) {
-        print $fh "type:debug Error during home_timeline call for $username: Aborted.\n";
+        print $fh "type:debug $username: Error during home_timeline call: Aborted.\n";
         print $fh "type:debug : $_\n" foreach split /\n/, Dumper($@);
         return undef;
     }
@@ -1517,12 +1535,12 @@ sub do_updates {
             eval { $error = JSON::Any->jsonToObj( $obj->get_error() ) };
             unless ($@) { $error = $obj->get_error() }
             print $fh
-              "type:debug API Error during home_timeline call for $username: Aborted\n";
+              "type:debug $username: API Error during home_timeline call: Aborted\n";
             print $fh "type:debug : $_\n" foreach split /\n/, Dumper($error);
 
         } else {
             print $fh
-              "type:debug API Error during home_timeline call for $username. Aborted.\n";
+              "type:debug $username: API Error during home_timeline call. Aborted.\n";
         }
         return undef;
     }
@@ -1537,18 +1555,7 @@ sub do_updates {
         my $text = &get_text( $t, $obj );
         my $reply = "tweet";
 
-        my $match = 0;
-        foreach my $tag (@ignore_tags) {
-            next unless $text =~ /\b\Q$tag\E\b/i;
-            $match = 1;
-            $text = "(ignored: $tag) $text" if &debug();
-            last;
-        }
-        next if not &debug() and $match;
-
-        foreach my $tag (@strip_tags) {
-            $text =~ s/(?:\b|^)\Q$tag\E(?:\b|$)//gi;
-        }
+        next if '' eq ($text = &remove_ignored($text, \@ignore_tags, \@strip_tags));
 
         if ( $t->{in_reply_to_screen_name}
             and $username !~ /^\Q$t->{in_reply_to_screen_name}\E\@/i
@@ -1586,7 +1593,7 @@ sub do_updates {
     printf $fh "id:%s account:%s type:last_id timeline\n",
       $new_poll_id, $username;
 
-    &debug($fh, "Polling for replies for $username since " . $state{__last_id}{$username}{reply});
+    &debug($fh, "$username: Polling for replies since " . $state{__last_id}{$username}{reply});
     $new_poll_id = 0;
     eval {
         if ( $state{__last_id}{$username}{reply} )
@@ -1600,7 +1607,7 @@ sub do_updates {
     };
 
     if ($@) {
-        print $fh "type:debug Error during replies call for $username.  Aborted.\n";
+        print $fh "type:debug $username: Error during replies call.  Aborted.\n";
         return undef;
     }
 
@@ -1609,14 +1616,15 @@ sub do_updates {
           if exists $friends{$username}{ $t->{user}{screen_name} };
 
         my $text = &get_text( $t, $obj );
+        $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
+        next if '' eq ($text = &remove_ignored($text, \@ignore_tags, \@strip_tags));
         printf $fh "id:%s account:%s %snick:%s type:tweet created_at:%s %s\n",
           $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name},
           &encode_for_file($t->{created_at}), $text;
-        $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
     printf $fh "id:%s account:%s type:last_id reply\n", $new_poll_id, $username;
 
-    &debug($fh, "Polling for DMs for $username");
+    &debug($fh, "$username: Polling for DMs");
     $new_poll_id = 0;
     eval {
         if ( $state{__last_id}{$username}{dm} )
@@ -1630,7 +1638,7 @@ sub do_updates {
     };
 
     if ($@) {
-        print $fh "type:debug Error during direct_messages call for $username.  Aborted.\n";
+        print $fh "type:debug $username: Error during direct_messages call.  Aborted.\n";
         return undef;
     }
 
@@ -1644,11 +1652,11 @@ sub do_updates {
     }
     printf $fh "id:%s account:%s type:last_id dm\n", $new_poll_id, $username;
 
-    &debug($fh, "Polling for subscriptions for $username");
+    &debug($fh, "$username: Polling for subscriptions");
     if ( $obj->can('search') and $state{__searches}{$username} ) {
         my $search;
         foreach my $topic ( sort keys %{ $state{__searches}{$username} } ) {
-            print $fh "type:debug searching for $topic for $username since ",
+            print $fh "type:debug $username: Search '$topic' id was ",
               "$state{__searches}{$username}{$topic}\n";
             eval {
                 $search = $obj->search(
@@ -1661,13 +1669,13 @@ sub do_updates {
 
             if ($@) {
                 print $fh
-                  "type:debug Error during search($topic) call for $username.  Aborted.\n";
+                  "type:debug $username: Error during search($topic) call.  Aborted.\n";
                 return undef;
             }
 
             unless ( $search->{max_id} ) {
-                print $fh "type:debug Invalid search results when searching",
-                  " for $topic for $username. Aborted.\n";
+                print $fh "type:debug $username: Invalid search results when searching",
+                  " for $topic. Aborted.\n";
                 return undef;
             }
 
@@ -1679,36 +1687,37 @@ sub do_updates {
             foreach my $t ( reverse @{ $search->{results} } ) {
                 next if exists $blocks{$username}{ $t->{from_user} };
                 my $text = &get_text( $t, $obj );
-                printf $fh "id:%s account:%s nick:%s type:search topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $t->{from_user}, $topic,
-                  &encode_for_file($t->{created_at}), $text;
                 $new_poll_id = $t->{id}
                   if not $new_poll_id
                       or $t->{id} < $new_poll_id;
+                next if '' eq ($text = &remove_ignored($text, \@ignore_tags, \@strip_tags));
+                printf $fh "id:%s account:%s nick:%s type:search topic:%s created_at:%s %s\n",
+                  $t->{id}, $username, $t->{from_user}, $topic,
+                  &encode_for_file($t->{created_at}), $text;
             }
         }
     }
 
-    &debug($fh, "Polling for one-time searches for $username");
+    &debug($fh, "$username: Polling for one-time searches");
     if ( $obj->can('search') and exists $search_once{$username} ) {
         my $search;
         foreach my $topic ( sort keys %{ $search_once{$username} } ) {
             my $max_results = $search_once{$username}->{$topic};
 
             print $fh
-              "type:debug searching once for $topic (max $max_results) for $username\n";
+              "type:debug $username: search $topic once (max $max_results)\n";
             eval { $search = $obj->search( { 'q' => $topic } ); };
 
             if ($@) {
                 print $fh
-"type:debug Error during search_once($topic) call for $username.  Aborted.\n";
+"type:debug $username: Error during search_once($topic) call.  Aborted.\n";
                 return undef;
             }
 
             unless ( $search->{max_id} ) {
                 print $fh
-                  "type:debug Invalid search results when searching once",
-                  " for $topic for $username. Aborted.\n";
+                  "type:debug $username: Invalid search results when searching once",
+                  " for $topic. Aborted.\n";
                 return undef;
             }
             $topic =~ s/ /%20/g;
@@ -1717,7 +1726,7 @@ sub do_updates {
             my @results = ();
             foreach my $res (@{ $search->{results} }) {
                 if (exists $blocks{$username}{ $res->{from_user} }) {
-                    print $fh "type:debug for $username blocked $topic: $res->{from_user}\n";
+                    print $fh "type:debug $username: blocked $topic: $res->{from_user}\n";
                     next;
                 }
                 push @results, $res;
@@ -1728,6 +1737,7 @@ sub do_updates {
             foreach my $t ( reverse @results ) {
 
                 my $text = &get_text( $t, $obj );
+                next if '' eq ($text = &remove_ignored($text, \@ignore_tags, \@strip_tags));
                 printf $fh
                   "id:%s account:%s %snick:%s type:search_once topic:%s created_at:%s %s\n",
                   $t->{id}, $username, &get_reply_to($t), $t->{from_user}, $topic,
@@ -1736,7 +1746,7 @@ sub do_updates {
         }
     }
 
-    &debug($fh, "Done for $username");
+    &debug($fh, "$username: Done");
 
     return 1;
 }
@@ -1746,7 +1756,7 @@ sub get_timeline {
     my $tweets;
     my $last_id = $state{__last_id}{$username}{$target};
 
-    print $fh "type:debug for $username get_timeline("
+    print $fh "type:debug $username: get_timeline("
       . "$fix_replies_index{$username}=$target > $last_id) started."
       . "  username = $username\n";
     eval {
@@ -1760,14 +1770,14 @@ sub get_timeline {
 
     if ($@) {
         print $fh
-          "type:debug Error during user_timeline($target) call for $username: Aborted.\n";
+          "type:debug Error $username: during user_timeline($target) call: Aborted.\n";
         print $fh "type:debug : $_\n" foreach split /\n/, Dumper($@);
         return undef;
     }
 
     unless ($tweets) {
         print $fh
-          "type:debug user_timeline($target) call returned undef for $username!  Aborted\n";
+          "type:debug $username: user_timeline($target) call returned undef!  Aborted\n";
         return 1;
     }
 
@@ -1876,7 +1886,7 @@ sub monitor_child {
 
             if ( $meta{type} and $meta{type} eq 'fix_replies_index' ) {
                 $fix_replies_index{ $meta{account} } = $meta{id};
-                &debug("fix_replies_index for $meta{account} set to $meta{id}");
+                &debug("$meta{account}: fix_replies_index set to $meta{id}");
                 next;
             }
 
@@ -1944,7 +1954,7 @@ sub monitor_child {
                 push @lines, { %common_attribs };
                 delete $search_once{ $meta{username} }->{ $meta{topic} };
             } elsif ( $meta{type} eq 'searchid' ) {
-                &debug("Search '$meta{topic}' returned id $meta{id}");
+                &debug("$meta{username}: Search '$meta{topic}' got id $meta{id}");
                 if (
                     not
                     exists $state{__searches}{ $meta{username} }{ $meta{topic} }
@@ -1954,7 +1964,7 @@ sub monitor_child {
                     $state{__searches}{ $meta{username} }{ $meta{topic} } =
                       $meta{id};
                 } else {
-                    &debug("Search '$meta{topic}' returned invalid id $meta{id}");
+                    &debug("$meta{username}: Search '$meta{topic}' bad id $meta{id}");
                 }
             } elsif ( $meta{type} eq 'last_id' ) {
                 $state{__last_id}{ $meta{username} }{$_} =
@@ -1983,7 +1993,7 @@ sub monitor_child {
                 last;
             } elsif (/^__updated (\d+)$/) {
                 $last_friends_poll = $1;
-                &debug("Friends list updated");
+                &debug("$username: Friends list updated");
                 next;
             } elsif (s/^type:debug\s+//) {
                 chomp;
@@ -2001,7 +2011,7 @@ sub monitor_child {
                 next;
             } elsif (/^__updated (\d+)$/) {
                 $last_blocks_poll = $1;
-                &debug("Block list updated");
+                &debug("$username: Block list updated");
                 next;
             } elsif (s/^type:debug\s+//) {
                 chomp;
@@ -2012,7 +2022,7 @@ sub monitor_child {
                 if ( $new_last_poll >= $last_poll ) {
                     last;
                 } else {
-                    &debug("Impossible!  "
+                    &debug("$username: Impossible!  "
                       . "new_last_poll=$new_last_poll < last_poll=$last_poll!");
                     undef $new_last_poll;
                     next;
