@@ -2062,10 +2062,11 @@ sub monitor_child {
 
                     # set timestamp
                     my @date = localtime($line->{epoch});
-                    if ($last_ymd{wins}{$win_name}
-                            ne (my $ymd = sprintf('%04d-%02d-%02d', $date[5]+1900, $date[4]+1, $date[3]))) {
+                    if (not defined $last_ymd{wins}{$win_name}
+                        or $last_ymd{wins}{$win_name}->{ymd}
+                              ne (my $ymd = sprintf('%04d-%02d-%02d', $date[5]+1900, $date[4]+1, $date[3]))) {
                         Irssi::window_find_name($win_name)->printformat(MSGLEVEL_PUBLIC, 'twirssi_new_day', $ymd, '');
-                        $last_ymd{wins}{$win_name} = $ymd;
+                        $last_ymd{wins}{$win_name}->{ymd} = $ymd;
                     }
                     my $ts = DateTime->from_epoch( epoch => $line->{epoch}, time_zone => $local_tz
                                                                 )->strftime($settings{timestamp_format});
@@ -2168,7 +2169,8 @@ sub write_channels {
                 for my $channame (@{ $state{__channels}{$type}{$tag}{$net_tag} }) {
                     next if defined $msg_seen{$net_tag}{$channame};
                     my $server = Irssi::server_find_tag($net_tag);
-                    for my $log_line (&log_format($line, $channame, $last_ymd{chans}, $date_ref)) {
+                    $last_ymd{chans}{$channame} = {} if not defined $last_ymd{chans}{$channame};
+                    for my $log_line (&log_format($line, $channame, $last_ymd{chans}{$channame}, $date_ref)) {
                         if (defined $server) {
                             $server->command("msg -$net_tag $channame $log_line");
                             $msg_seen{$net_tag}{$channame} = 1;
