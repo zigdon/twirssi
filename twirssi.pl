@@ -1480,14 +1480,16 @@ sub remove_ignored {
     my $ignore_ref = shift;
     my $strip_ref = shift;
 
+    my $text_no_colors = &remove_colors($text);
     foreach my $tag (@$ignore_ref) {
-        next unless $text =~ /\b\Q$tag\E\b/i;
+        next unless $text_no_colors =~ /(?:^|\b|\s)\Q$tag\E(?:\b|\s|$)/i;
         $text = (&debug() ? "(ignored: $tag) $text" : '');
         last;
     }
 
     foreach my $tag ($strip_ref) {
-        $text =~ s/\b\Q$tag\E\b//gi;
+        $text =~ s/\cC\d{2}\Q$tag\E\cO//gi;   # with then without colors
+        $text =~ s/(^|\b|\s)\Q$tag\E(\b|\s|$)/$1$2/gi;
     }
     return $text;
 }
@@ -2410,7 +2412,6 @@ sub event_setup_changed {
         ignored_accounts
         ignored_tags
         location
-        logfile_path
         nick_color
         oauth_store
         replies_store
@@ -2429,6 +2430,7 @@ sub event_setup_changed {
         [ 'avoid_ssl',         'twirssi_avoid_ssl' ],
         [ 'debug',             'twirssi_debug' ],
         [ 'notify_timeouts',   'twirssi_notify_timeouts' ],
+        [ 'logging',           'twirssi_logging' ],
         [ 'own_tweets',        'show_own_tweets' ],
         [ 'to_away',           'tweet_to_away' ],
         [ 'upgrade_beta',      'twirssi_upgrade_beta' ],
@@ -2464,17 +2466,26 @@ sub event_setup_changed {
 
 sub ensure_logfile() {
     my $win_name = shift;
-    return unless $settings{logfile_path};
-    my $new_logfile = strftime($settings{logfile_path}, localtime());
-    if ($new_logfile !~ s/\$W/$win_name/g) {
+    return unless $settings{logging};
+    my $new_logfile = Irssi::settings_get_str('autolog_path');
+    return if $new_logfile eq '';
+    $new_logfile =~ s/^~/$ENV{HOME}/;
+    $new_logfile = strftime($new_logfile, localtime());
+    $new_logfile =~ s/\$(tag\b|\{tag\})/twirssi/g;
+    if ($new_logfile !~ s/\$(0\b|\{0\})/$win_name/g) {
+        # not per-window logging, so use default window name as key
         $win_name = $settings{window};
     }
-    return $logfile{$win_name} if $new_logfile eq $logfile{$win_name}->{filename} and defined $logfile{$win_name};
+    return $logfile{$win_name} if defined $logfile{$win_name} and $new_logfile eq $logfile{$win_name}->{filename};
+    return if not &ensure_dir_for($new_logfile);
+    my $old_umask = umask(0177);
     &debug("Logging to $new_logfile");
+    my $res;
     if ( my $fh = FileHandle->new( $new_logfile, '>>' ) ) {
+        umask($old_umask);
         binmode $fh, ':utf8';
         $fh->autoflush(1);
-        return $logfile{$win_name} = {
+        $res = $logfile{$win_name} = {
 		'fh' => $fh,
         	'filename' => $new_logfile,
                 'ymd' => '',
@@ -2482,8 +2493,24 @@ sub ensure_logfile() {
     } else {
         &notice( ["error"],
             "ERROR: Failed to append to $new_logfile: $!" );
+    }
+    umask($old_umask);
+    return $res;
+}
+
+sub ensure_dir_for {
+    my $path = shift;
+    if (not $path =~ s@/[^/]+$@@) {
+        &debug("Cannot cd up $path");
         return;
     }
+    return 1 if $path eq '' or -d $path or $path eq '/';
+    return if not &ensure_dir_for($path);
+    if (not mkdir($path, 0700)) {
+        &debug("Cannot make $path: $!");
+        return;
+    }
+    return 1;
 }
 
 sub get_poll_time {
@@ -2687,8 +2714,7 @@ Irssi::theme_register(
     ]
 );
 
-Irssi::settings_add_int( "twirssi", "twitter_poll_interval", 300 );
-Irssi::settings_add_str( "twirssi", "twitter_poll_schedule",   "" );
+Irssi::settings_add_str( "twirssi", "twitter_poll_schedule",    "" );
 Irssi::settings_add_str( "twirssi", "twirssi_charset",          "utf8" );
 Irssi::settings_add_str( "twirssi", "twitter_window",           "twitter" );
 Irssi::settings_add_str( "twirssi", "bitlbee_server",           "bitlbee" );
@@ -2705,7 +2731,6 @@ Irssi::settings_add_str( "twirssi", "twirssi_timestamp_format", "%H:%M:%S" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_tags",     "" );
 Irssi::settings_add_str( "twirssi", "twirssi_stripped_tags",    "" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_accounts", "" );
-Irssi::settings_add_str( "twirssi", "twirssi_logfile_path",     "" );
 Irssi::settings_add_str( "twirssi", "twirssi_retweet_format",
     'RT $n: "$t" ${-- $c$}' );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
@@ -2715,6 +2740,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
 Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
     Irssi::get_irssi_dir . "/scripts/twirssi.oauth" );
 
+Irssi::settings_add_int( "twirssi", "twitter_poll_interval", 300 );
 Irssi::settings_add_int( "twirssi", "twitter_friends_poll",   600 );
 Irssi::settings_add_int( "twirssi", "twitter_timeout",        30 );
 Irssi::settings_add_int( "twirssi", "twitter_search_results", 5 );
@@ -2730,6 +2756,7 @@ Irssi::settings_add_bool( "twirssi", "twirssi_always_shorten",    0 );
 Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_avoid_ssl",         0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_oauth",         1 );
+Irssi::settings_add_bool( "twirssi", "twirssi_logging",           0 );
 
 $last_poll = time - &get_poll_time;
 

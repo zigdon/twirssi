@@ -114,9 +114,9 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       will make sure the reply begins with @nick.  If off, you can reply to
       someone, but not have their name on the reply</li>
   <li><code>twirssi_replies_store</code> - Location where the /reply map is to be stored.</li>
-  <li><code>twirssi_logfile_path</code> - Location where activity will be logged.
-      Can have per-window (use "$W") and/or per-time (see strftime) logfiles
-      (e.g. "/logs/$W-%Y-%m-%d.log", default is "", i.e. no log).</li>
+  <li><code>twirssi_logging</code> - If On, twirssi windows are logged to files
+      determined by the <code>autolog_path</code> (system/log) setting -
+      wherein "$tag" is "twirssi".  (default is Off)</li>
   <li><code>twirssi_topic_color</code> - If set, #topics will be shown in the
       color set. (default: %r)</li>
   <li><code>twirssi_track_replies</code> - The number of tweets per user to
