@@ -168,7 +168,7 @@ sub cmd_retweet_as {
         return;
     }
 
-    $id = $state{__indexes}{$nick} unless $id;
+    $id = $state{__indexes}{lc $nick} unless $id;
     unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "tweet", $username ],
             "Can't find a tweet numbered $id from $nick to retweet!" );
@@ -335,7 +335,7 @@ sub cmd_info {
         return;
     }
 
-    $id = $state{__indexes}{$nick_orig} unless $id;
+    $id = $state{__indexes}{$nick} unless defined $id;
     my $statusid = $state{__ids}{$nick}[$id];
     unless ( $statusid ) {
         &notice( [ "info" ],
@@ -350,8 +350,8 @@ sub cmd_info {
     my $reply_to_id   = $state{__reply_to_ids}{$nick}[$id];
     my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
 
-    &notice( [ "info" ], ",---------" );
-    &notice( [ "info" ], "| nick:    $nick_orig" );
+    &notice( [ "info" ], ",--------- $nick:$id" );
+    &notice( [ "info" ], "| nick:    $nick_orig (http://twitter.com/$nick_orig)" );
     &notice( [ "info" ], "| id:      $statusid" );
     &notice( [ "info" ], "| time:    " . ($timestamp
                              ? DateTime->from_epoch( epoch => $timestamp, time_zone => $local_tz)
@@ -424,7 +424,7 @@ sub cmd_reply_as {
         return;
     }
 
-    $id = $state{__indexes}{$nick} unless $id;
+    $id = $state{__indexes}{lc $nick} unless $id;
     unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "reply", $username ],
             "Can't find a tweet numbered $id from $nick to reply to!" );
@@ -1547,6 +1547,9 @@ sub do_updates {
         return undef;
     }
 
+    print $fh "type:debug $username got ", scalar(@$tweets), " tweets, first: ",
+                        (sort {$a->{id} <=> $b->{id}} @$tweets)[0]->{id}, "\n";
+
     my @ignore_tags = $settings{ignored_tags}
       ? split /\s*,\s*/, $settings{ignored_tags}
       : ();
@@ -1929,9 +1932,9 @@ sub monitor_child {
             }
 
             if ( $meta{type} ne 'dm' and $meta{nick} and $meta{id} ) {
-                my $marker = ( $state{__indexes}{ $meta{nick} } + 1 ) % $settings{track_replies};
+                my $marker = ( $state{__indexes}{ lc $meta{nick} } + 1 ) % $settings{track_replies};
                 $state{__ids}{ lc $meta{nick} }[$marker]    = $meta{id};
-                $state{__indexes}{ $meta{nick} }            = $marker;
+                $state{__indexes}{ lc $meta{nick} }            = $marker;
                 $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
                 foreach my $key (qw/account service reply_to_id reply_to_user created_at/) {
                     $state{"__${key}s"}{ lc $meta{nick} }[$marker] = $meta{$key};
@@ -2365,7 +2368,7 @@ sub sig_complete {
       )
     {    # /twitter_reply gets a nick:num
         $word =~ s/^@//;
-        @$complist = map { "$_:$state{__indexes}{$_}" }
+        @$complist = map { "$_:$state{__indexes}{lc $_}" }
           sort { $nicks{$b} <=> $nicks{$a} }
           grep /^\Q$word/i,
           keys %{ $state{__indexes} };
