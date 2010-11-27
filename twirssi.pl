@@ -37,7 +37,7 @@ my $poll;
 my $last_poll;
 my $last_friends_poll = 0;
 my $last_blocks_poll = 0;
-my %nicks;
+my %nicks;                      # $nicks{$screen_name} = last seen/mentioned time
 my %friends;
 my %blocks;
 my %tweet_cache;
@@ -53,6 +53,13 @@ my %settings;
 my %last_ymd;
 my @datetime_parser;
 my $local_tz = DateTime::TimeZone->new( name => 'local' );
+
+my %meta_to_twit = (    # map file keys to twitter keys
+        'id'		=> 'id',
+	'created_at'    => 'created_at',
+        'reply_to_user'	=> 'in_reply_to_screen_name',
+        'reply_to_id'	=> 'in_reply_to_status_id',
+);
 
 my %irssi_to_mirc_colors = (
     '%k' => '01',
@@ -1361,6 +1368,86 @@ sub get_reply_to {
     }
 }
 
+sub cmd_user {
+    my $target = shift;
+    $target =~ s/(?::\d+)?\s*$//;
+    &debug("cmd_user $target starting");
+    return unless &logged_in($twit);
+    my $tweets;
+    eval { $tweets = $twit->user_timeline({ id => $target, }); };
+    if ($@) {
+        print "Error during user_timeline $target call: Aborted.";
+        &debug("cmd_user: $_\n") foreach split "\n", Dumper($@);
+        return;
+    }
+    my $lines_ref = [];
+    my $cache = {};
+    my $username = "$user\@$defservice";
+    foreach my $t ( reverse @$tweets ) {
+        my $t_or_reply = &tweet_or_reply($twit, $t, $username, $cache, undef);
+        push @$lines_ref, { &meta_to_line(&tweet_to_meta($twit, $t, $username, $t_or_reply)) };
+    }
+    &write_lines($lines_ref, 0);
+
+    &debug("cmd_user ends");
+}
+
+sub tweet_to_meta {
+    my $obj      = shift;
+    my $t        = shift;
+    my $username = shift;
+    my $type     = shift;
+    my $topic    = shift;
+    my %meta     = (
+        username => $username,
+        type     => $type,
+        nick     => ($type eq 'dm' ? $t->{sender_screen_name}
+                                    : ($type =~ /^search/ ? $t->{from_user}
+                                                          : $t->{user}{screen_name})),
+    );
+    ($meta{account}, $meta{service}) = split('@', $username, 2);
+    foreach my $meta_key (keys %meta_to_twit) {
+        $meta{$meta_key} = $t->{$meta_to_twit{$meta_key}} if defined $t->{$meta_to_twit{$meta_key}};
+    }
+    $meta{created_at} = &date_to_epoch($meta{created_at});
+    $meta{topic} = $topic if defined $topic;
+    $meta{text} = &get_text($t, $obj);
+    return \%meta;
+}
+
+sub tweet_or_reply {
+    my $obj      = shift;
+    my $t        = shift;
+    my $username = shift;
+    my $cache    = shift;
+    my $fh       = shift;
+
+    my $type = 'tweet';
+    if ( $t->{in_reply_to_screen_name}
+        and $username !~ /^\Q$t->{in_reply_to_screen_name}\E\@/i
+        and not exists $friends{$username}{ $t->{in_reply_to_screen_name} } )
+    {
+        $nicks{ $t->{in_reply_to_screen_name} } = time;
+        unless ( $cache->{ $t->{in_reply_to_status_id} } ) {
+            eval {
+                $cache->{ $t->{in_reply_to_status_id} } =
+                  $obj->show_status( $t->{in_reply_to_status_id} );
+            };
+        }
+        if (my $t_reply = $cache->{ $t->{in_reply_to_status_id} }) {
+            my $ctext = &get_text( $t_reply, $obj );
+            printf $fh "id:%s account:%s %snick:%s type:tweet created_at:%s %s\n",
+              $t_reply->{id}, $username, &get_reply_to($t_reply),
+              $t_reply->{user}{screen_name},
+              &encode_for_file($t_reply->{created_at}),
+              $ctext
+              if defined $fh;
+            $type = "reply";
+        }
+    }
+    return $type;
+}
+
 sub get_updates {
     &debug("get_updates starting");
 
@@ -1374,7 +1461,7 @@ sub get_updates {
     }
 
     my ( $fh, $filename ) = File::Temp::tempfile();
-    binmode( $fh, ":" . &get_charset );
+    binmode( $fh, ":" . &get_charset() );
     $child_pid = fork();
 
     if ($child_pid) {    # parent
@@ -1558,41 +1645,15 @@ sub do_updates {
       : ();
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
-        my $reply = "tweet";
-
         next if '' eq ($text = &remove_ignored($text, \@ignore_tags, \@strip_tags));
-
-        if ( $t->{in_reply_to_screen_name}
-            and $username !~ /^\Q$t->{in_reply_to_screen_name}\E\@/i
-            and not exists $friends{$username}{ $t->{in_reply_to_screen_name} } )
-        {
-            $nicks{ $t->{in_reply_to_screen_name} } = time;
-            my $context;
-            unless ( $cache->{ $t->{in_reply_to_status_id} } ) {
-                eval {
-                    $cache->{ $t->{in_reply_to_status_id} } =
-                      $obj->show_status( $t->{in_reply_to_status_id} );
-                };
-
-            }
-            $context = $cache->{ $t->{in_reply_to_status_id} };
-
-            if ($context) {
-                my $ctext = &get_text( $context, $obj );
-                printf $fh "id:%s account:%s nick:%s type:tweet created_at:%s %s\n",
-                  $context->{id}, $username,
-                  $context->{user}{screen_name},
-                  &encode_for_file($context->{created_at}),
-                  $ctext;
-                $reply = "reply";
-            }
-        }
+        my $reply = &tweet_or_reply($obj, $t, $username, $cache, $fh);
         next
           if $t->{user}{screen_name} eq $username
               and not $settings{own_tweets};
         printf $fh "id:%s account:%s %snick:%s type:%s created_at:%s %s\n",
           $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name}, $reply,
           &encode_for_file($t->{created_at}), $text;
+
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
     printf $fh "id:%s account:%s type:last_id timeline\n",
@@ -1788,32 +1849,7 @@ sub get_timeline {
 
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
-        my $reply = "tweet";
-        if ( $t->{in_reply_to_screen_name}
-            and $username !~ /^\Q$t->{in_reply_to_screen_name}\E\@/i
-            and not exists $friends{$username}{ $t->{in_reply_to_screen_name} } )
-        {
-            $nicks{ $t->{in_reply_to_screen_name} } = time;
-            my $context;
-            unless ( $cache->{ $t->{in_reply_to_status_id} } ) {
-                eval {
-                    $cache->{ $t->{in_reply_to_status_id} } =
-                      $obj->show_status( $t->{in_reply_to_status_id} );
-                };
-
-            }
-            $context = $cache->{ $t->{in_reply_to_status_id} };
-
-            if ($context) {
-                my $ctext = &get_text( $context, $obj );
-                printf $fh "id:%s account:%s %snick:%s type:tweet created_at:%s %s\n",
-                  $context->{id}, $username, &get_reply_to($context),
-                  $context->{user}{screen_name},
-                  &encode_for_file($context->{created_at}),
-                  $ctext;
-                $reply = "reply";
-            }
-        }
+        my $reply = &tweet_or_reply($obj, $t, $username, $cache, $fh);
         printf $fh "id:%s account:%s %snick:%s type:%s created_at:%s %s\n",
           $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name}, $reply,
           &encode_for_file($t->{created_at}), $text;
@@ -1854,6 +1890,53 @@ sub date_to_epoch {
     return $date->epoch();
 }
 
+sub meta_to_line {
+    my $meta = shift;
+    my %line_attribs = (
+            username => $meta->{username}, epoch   => $meta->{created_at},
+            type     => $meta->{type},     account => $meta->{account},
+            service  => $meta->{service},  nick    => $meta->{nick},
+            hilight  => 0,                 hi_nick => $meta->{nick},
+            text     => $meta->{text},     topic   => $meta->{topic},
+            level    => MSGLEVEL_PUBLIC,
+    );
+
+    if ($meta->{type} eq 'dm' or $meta->{type} eq 'error') {
+        $line_attribs{level} = MSGLEVEL_MSGS;
+    }
+
+    my $nick = "\@$meta->{account}";
+    if ( $meta->{text} =~ /\Q$nick\E(?:\W|$)/i ) {
+        my $hilight_color        = $irssi_to_mirc_colors{ $settings{hilight_color} };
+        $line_attribs{level}  |= MSGLEVEL_HILIGHT;
+        $line_attribs{hi_nick} = "\cC$hilight_color$meta->{nick}\cO";
+    }
+
+    if ( $meta->{type} ne 'dm' and $meta->{nick} and $meta->{id} ) {
+        my $marker;
+        for (my $mark_idx = 0;
+                defined $state{__ids}{ lc $meta->{nick} }
+                  and $mark_idx < @{ $state{__ids}{ lc $meta->{nick} } };
+                $mark_idx++) {
+            if ($state{__ids}{ lc $meta->{nick} }[$mark_idx] eq $meta->{id}) {
+                $marker = $mark_idx;
+                last;
+            }
+        }
+        if (not defined $marker) {
+            $marker = ( $state{__indexes}{ lc $meta->{nick} } + 1 ) % $settings{track_replies};
+            $state{__ids}{ lc $meta->{nick} }[$marker]    = $meta->{id};
+            $state{__indexes}{ lc $meta->{nick} }         = $marker;
+            $state{__tweets}{ lc $meta->{nick} }[$marker] = $meta->{text};
+            foreach my $key (qw/account service reply_to_id reply_to_user created_at/) {
+                $state{"__${key}s"}{ lc $meta->{nick} }[$marker] = $meta->{$key};
+            }
+        }
+        $line_attribs{marker} = ":$marker";
+    }
+    return %line_attribs;
+}
+
 sub monitor_child {
     my ($data)   = @_;
     my $filename = $data->[0];
@@ -1869,8 +1952,7 @@ sub monitor_child {
     # pretend
 
     if ( open FILE, $filename ) {
-        binmode FILE, ":" . &get_charset;
-        my $hilight_color = $irssi_to_mirc_colors{ $settings{hilight_color} };
+        binmode FILE, ":" . &get_charset();
         my @lines;
         my %new_cache;
         while (<FILE>) {
@@ -1911,43 +1993,16 @@ sub monitor_child {
             $meta{account} =~ s/\@(\w+)$//;
             $meta{service} = $1;
             $meta{created_at} = &date_to_epoch($meta{created_at});
+            $meta{text} = $_;
 
-            my %common_attribs = (
-                    username => $meta{username}, epoch   => $meta{created_at},
-                    type     => $meta{type},     account => $meta{account},
-                    service  => $meta{service},  nick    => $meta{nick},
-                    hilight  => 0,               hi_nick => $meta{nick},
-                    text     => $_,              topic   => $meta{topic},
-                    level    => MSGLEVEL_PUBLIC,
-            );
-
-            if ($meta{type} eq 'dm' or $meta{type} eq 'error') {
-                $common_attribs{level} = MSGLEVEL_MSGS;
-            }
-
-            my $nick = "\@meta{account}";
-            if ( $_ =~ /\Q$nick\E(?:\W|$)/i ) {
-                $common_attribs{level}   |= MSGLEVEL_HILIGHT;
-                $common_attribs{hi_nick} = "\cC$hilight_color$meta{nick}\cO";
-            }
-
-            if ( $meta{type} ne 'dm' and $meta{nick} and $meta{id} ) {
-                my $marker = ( $state{__indexes}{ lc $meta{nick} } + 1 ) % $settings{track_replies};
-                $state{__ids}{ lc $meta{nick} }[$marker]    = $meta{id};
-                $state{__indexes}{ lc $meta{nick} }            = $marker;
-                $state{__tweets}{ lc $meta{nick} }[$marker] = $_;
-                foreach my $key (qw/account service reply_to_id reply_to_user created_at/) {
-                    $state{"__${key}s"}{ lc $meta{nick} }[$marker] = $meta{$key};
-                }
-                $common_attribs{marker}                     = ":$marker";
-            }
+            my %line_attribs = &meta_to_line(\%meta);
 
             if ( $meta{type} =~ /tweet|reply/
                     or $meta{type} eq 'dm'
                     or $meta{type} eq 'error' ) {
-                push @lines, { %common_attribs };
+                push @lines, { %line_attribs };
             } elsif ( $meta{type} eq 'search' ) {
-                push @lines, { %common_attribs };
+                push @lines, { %line_attribs };
                 if ( exists $state{__searches}{ $meta{username} }{ $meta{topic} }
                     and $meta{id} >
                     $state{__searches}{ $meta{username} }{ $meta{topic} } )
@@ -1956,7 +2011,7 @@ sub monitor_child {
                       $meta{id};
                 }
             } elsif ( $meta{type} eq 'search_once' ) {
-                push @lines, { %common_attribs };
+                push @lines, { %line_attribs };
                 delete $search_once{ $meta{username} }->{ $meta{topic} };
             } elsif ( $meta{type} eq 'searchid' ) {
                 &debug("$meta{username}: Search '$meta{topic}' got id $meta{id}");
@@ -2043,47 +2098,7 @@ sub monitor_child {
             if ($first_call) {
                 &debug("First call, not printing updates");
             } else {
-                my $old_tf = Irssi::settings_get_str('timestamp_format');
-                foreach my $line (@lines) {
-                    my $win_name = &window( $line->{type},    $line->{username},
-                                            $line->{topic} );
-                    my $ac_tag = '';
-                    if ( lc $line->{service} ne lc $settings{default_service} ) {
-                        $ac_tag = "$line->{username}: ";
-                    } elsif ( $line->{username} ne "$user\@$defservice"
-                            and lc $line->{account} ne lc $win_name ) {
-                        $ac_tag = $line->{account} . ': ';
-                    }
-
-                    my @print_opts = (
-                        $line->{level},
-                        "twirssi_" . $line->{type},
-                        $ac_tag,
-                    );
-                    push @print_opts, (lc $line->{topic} ne lc $win_name ? $line->{topic} . ':' : '')
-                      if $line->{type} =~ /search/;
-                    push @print_opts, $line->{hi_nick} if $line->{type} ne 'error';
-                    push @print_opts, $line->{marker} if defined $line->{marker};
-
-                    # set timestamp
-                    my @date = localtime($line->{epoch});
-                    if (not defined $last_ymd{wins}{$win_name}
-                        or $last_ymd{wins}{$win_name}->{ymd}
-                              ne (my $ymd = sprintf('%04d-%02d-%02d', $date[5]+1900, $date[4]+1, $date[3]))) {
-                        Irssi::window_find_name($win_name)->printformat(MSGLEVEL_PUBLIC, 'twirssi_new_day', $ymd, '');
-                        $last_ymd{wins}{$win_name}->{ymd} = $ymd;
-                    }
-                    my $ts = DateTime->from_epoch( epoch => $line->{epoch}, time_zone => $local_tz
-                                                                )->strftime($settings{timestamp_format});
-                    Irssi::settings_set_str('timestamp_format', $ts);
-                    Irssi::window_find_name($win_name)->printformat(
-                        @print_opts, &hilight( $line->{text} )
-                    );
-                    &write_log($line, $win_name, \@date);
-                    &write_channels($line, \@date);
-                }
-                # recall timestamp format
-                Irssi::settings_set_str('timestamp_format', $old_tf);
+                &write_lines(\@lines, 1);
             }
 
             close FILE;
@@ -2158,6 +2173,53 @@ sub monitor_child {
             $failstatus = 1;
         }
     }
+}
+
+sub write_lines {
+    my $lines_ref   = shift;
+    my $want_extras = shift;
+    my $old_tf = Irssi::settings_get_str('timestamp_format');
+    foreach my $line (@$lines_ref) {
+       my $win_name = &window( $line->{type}, $line->{username}, $line->{topic} );
+       my $ac_tag = '';
+       if ( lc $line->{service} ne lc $settings{default_service} ) {
+            $ac_tag = "$line->{username}: ";
+        } elsif ( $line->{username} ne "$user\@$defservice"
+                and lc $line->{account} ne lc $win_name ) {
+            $ac_tag = $line->{account} . ': ';
+        }
+
+        my @print_opts = (
+            $line->{level},
+            "twirssi_" . $line->{type},
+            $ac_tag,
+        );
+        push @print_opts, (lc $line->{topic} ne lc $win_name ? $line->{topic} . ':' : '')
+          if $line->{type} =~ /search/;
+        push @print_opts, $line->{hi_nick} if $line->{type} ne 'error';
+        push @print_opts, $line->{marker} if defined $line->{marker};
+
+        # set timestamp
+        my @date = localtime($line->{epoch});
+        if (not defined $last_ymd{wins}{$win_name}
+            or $last_ymd{wins}{$win_name}->{ymd}
+                  ne (my $ymd = sprintf('%04d-%02d-%02d', $date[5]+1900, $date[4]+1, $date[3]))) {
+            Irssi::window_find_name($win_name)->printformat(MSGLEVEL_PUBLIC, 'twirssi_new_day', $ymd, '');
+            $last_ymd{wins}{$win_name}->{ymd} = $ymd;
+        }
+        my $ts = DateTime->from_epoch( epoch => $line->{epoch}, time_zone => $local_tz
+                                                    )->strftime($settings{timestamp_format});
+        Irssi::settings_set_str('timestamp_format', $ts);
+        Irssi::window_find_name($win_name)->printformat(
+            @print_opts, &hilight( $line->{text} )
+        );
+        if ($want_extras) {
+            &write_log($line, $win_name, \@date);
+            &write_channels($line, \@date);
+        }
+    }
+    # recall timestamp format
+    Irssi::settings_set_str('timestamp_format', $old_tf);
 }
 
 sub write_channels {
@@ -2327,7 +2389,7 @@ sub too_long {
 sub make_utf8 {
     my $data = shift;
     if ( !utf8::is_utf8($data) ) {
-        return decode &get_charset, $data;
+        return decode &get_charset(), $data;
     } else {
         return $data;
     }
@@ -2375,7 +2437,7 @@ sub sig_complete {
     }
 
     if ( $linestart =~
-/^\/twitter_(?:unfriend|add_follow_extra|del_follow_extra|spam|block)\s*$/
+/^\/twitter_(?:unfriend|add_follow_extra|del_follow_extra|spam|block|user)\s*$/
       )
     {    # /twitter_unfriend gets a nick
         $word =~ s/^@//;
@@ -2773,6 +2835,7 @@ if ( Irssi::window_find_name(window()) ) {
     Irssi::command_bind( "retweet_as",                 "cmd_retweet_as" );
     Irssi::command_bind( "twitter_broadcast",          "cmd_broadcast" );
     Irssi::command_bind( "twitter_info",               "cmd_info" );
+    Irssi::command_bind( "twitter_user",               "cmd_user" );
     Irssi::command_bind( "twitter_reply",              "cmd_reply" );
     Irssi::command_bind( "twitter_reply_as",           "cmd_reply_as" );
     Irssi::command_bind( "twitter_login",              "cmd_login" );
