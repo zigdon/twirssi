@@ -358,7 +358,7 @@ sub cmd_info {
     my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
 
     &notice( [ "info" ], ",--------- $nick:$id" );
-    &notice( [ "info" ], "| nick:    $nick_orig (http://twitter.com/$nick_orig)" );
+    &notice( [ "info" ], "| nick:    $nick_orig <http://twitter.com/$nick_orig>" );
     &notice( [ "info" ], "| id:      $statusid" );
     &notice( [ "info" ], "| time:    " . ($timestamp
                              ? DateTime->from_epoch( epoch => $timestamp, time_zone => $local_tz)
@@ -2156,7 +2156,9 @@ sub monitor_child {
 
         if ( $failstatus < 2 and time - $last_poll > 60 * 60 ) {
             &ccrap(
-                q{     v  v        v},
+              $settings{mini_whale}
+              ? 'FAIL WHALE'
+              : q{     v  v        v},
                 q{     |  |  v     |  v},
                 q{     | .-, |     |  |},
                 q{  .--./ /  |  _.---.| },
@@ -2496,6 +2498,7 @@ sub event_setup_changed {
         [ 'debug',             'twirssi_debug' ],
         [ 'notify_timeouts',   'twirssi_notify_timeouts' ],
         [ 'logging',           'twirssi_logging' ],
+        [ 'mini_whale',        'twirssi_mini_whale' ],
         [ 'own_tweets',        'show_own_tweets' ],
         [ 'to_away',           'tweet_to_away' ],
         [ 'upgrade_beta',      'twirssi_upgrade_beta' ],
@@ -2822,6 +2825,7 @@ Irssi::settings_add_bool( "twirssi", "tweet_window_input",        0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_avoid_ssl",         0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_oauth",         1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_logging",           0 );
+Irssi::settings_add_bool( "twirssi", "twirssi_mini_whale",        0 );
 
 $last_poll = time - &get_poll_time;
 
