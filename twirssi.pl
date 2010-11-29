@@ -1387,7 +1387,7 @@ sub cmd_user {
         my $t_or_reply = &tweet_or_reply($twit, $t, $username, $cache, undef);
         push @$lines_ref, { &meta_to_line(&tweet_to_meta($twit, $t, $username, $t_or_reply)) };
     }
-    &write_lines($lines_ref, 0);
+    &write_lines($lines_ref, 0, 1);
 
     &debug("cmd_user ends");
 }
@@ -2178,9 +2178,13 @@ sub monitor_child {
 }
 
 sub write_lines {
-    my $lines_ref   = shift;
-    my $want_extras = shift;
+    my $lines_ref       = shift;
+    my $want_extras     = shift;
+    my $want_ymd_suffix = shift;
     my $old_tf = Irssi::settings_get_str('timestamp_format');
+    my $ymd_color = $irssi_to_mirc_colors{ $settings{ymd_color} };
+    my @date_now = localtime();
+    my $ymd_now = sprintf('%04d-%02d-%02d', $date_now[5]+1900, $date_now[4]+1, $date_now[3]);
     foreach my $line (@$lines_ref) {
        my $win_name = &window( $line->{type}, $line->{username}, $line->{topic} );
        my $ac_tag = '';
@@ -2203,7 +2207,11 @@ sub write_lines {
 
         # set timestamp
         my @date = localtime($line->{epoch});
-        if (not defined $last_ymd{wins}{$win_name}
+        my $ymd  = sprintf('%04d-%02d-%02d', $date[5]+1900, $date[4]+1, $date[3]);
+        my $ymd_suffix = '';
+        if ($want_ymd_suffix) {
+            $ymd_suffix = " \cC$ymd_color$ymd\cO" if $ymd_now ne $ymd;
+        } elsif (not defined $last_ymd{wins}{$win_name}
             or $last_ymd{wins}{$win_name}->{ymd}
                   ne (my $ymd = sprintf('%04d-%02d-%02d', $date[5]+1900, $date[4]+1, $date[3]))) {
             Irssi::window_find_name($win_name)->printformat(MSGLEVEL_PUBLIC, 'twirssi_new_day', $ymd, '');
@@ -2213,7 +2221,7 @@ sub write_lines {
                                                     )->strftime($settings{timestamp_format});
         Irssi::settings_set_str('timestamp_format', $ts);
         Irssi::window_find_name($win_name)->printformat(
-            @print_opts, &hilight( $line->{text} )
+            @print_opts, &hilight( $line->{text} ) . $ymd_suffix
         );
         if ($want_extras) {
             &write_log($line, $win_name, \@date);
@@ -2480,6 +2488,7 @@ sub event_setup_changed {
         ignored_tags
         location
         nick_color
+        ymd_color
         oauth_store
         replies_store
         retweet_format
@@ -2795,6 +2804,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_broadcast_users",  undef );
 Irssi::settings_add_str( "twirssi", "twirssi_default_service",  "Twitter" );
 Irssi::settings_add_str( "twirssi", "twirssi_nick_color",       "%B" );
 Irssi::settings_add_str( "twirssi", "twirssi_topic_color",      "%r" );
+Irssi::settings_add_str( "twirssi", "twirssi_ymd_color",        "%r" );
 Irssi::settings_add_str( "twirssi", "twirssi_timestamp_format", "%H:%M:%S" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_tags",     "" );
 Irssi::settings_add_str( "twirssi", "twirssi_stripped_tags",    "" );
