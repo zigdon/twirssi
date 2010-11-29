@@ -350,35 +350,29 @@ sub cmd_info {
         return;
     }
 
-    my $account       = $state{__accounts}{$nick}[$id];
-    my $service       = $state{__services}{$nick}[$id];
+    my $username      = $state{__usernames}{$nick}[$id];
     my $timestamp     = $state{__created_ats}{$nick}[$id];
     my $tweet         = $state{__tweets}{$nick}[$id];
     my $reply_to_id   = $state{__reply_to_ids}{$nick}[$id];
     my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
 
+    my $url = '';
+    if ( defined $username ) {
+        if ( $username =~ /\@Twitter/ ) {
+            $url = "http://twitter.com/$nick/statuses/$statusid";
+        } elsif ( $username =~ /\@Identica/ ) {
+            $url = "http://identi.ca/notice/$statusid";
+        }
+    }
+
     &notice( [ "info" ], ",--------- $nick:$id" );
     &notice( [ "info" ], "| nick:    $nick_orig <http://twitter.com/$nick_orig>" );
-    &notice( [ "info" ], "| id:      $statusid" );
+    &notice( [ "info" ], "| id:      $statusid" . ($url ? " <$url>" : ''));
     &notice( [ "info" ], "| time:    " . ($timestamp
                              ? DateTime->from_epoch( epoch => $timestamp, time_zone => $local_tz)
                              : '<unknown>') );
-    &notice( [ "info" ], "| account: " . ($account ? $account : '<unknown>' ) );
+    &notice( [ "info" ], "| account: " . ($username ? $username : '<unknown>' ) );
     &notice( [ "info" ], "| text:    " . ($tweet ? $tweet : '<unknown>' ) );
-
-    if ( $service ) {
-       &notice( [ "info" ], "| Service: $service" );
-       if ( $service eq 'Twitter' ) {
-           &notice( [ "info" ], "| URL:     http://twitter.com/$nick/statuses/$statusid" );
-       } elsif ( $service eq 'Identica') {
-           &notice( [ "info" ], "| URL:     http://identi.ca/notice/$statusid" );
-       } else {
-           &notice( [ "info" ], "| URL:     <unknown>" );
-       }
-    } else {
-       &notice( [ "info" ], "| Service: <unknown>" );
-       &notice( [ "info" ], "| URL:     <unknown>" );
-    }
 
     if ($reply_to_id and $reply_to_user) {
        &notice( [ "info" ], "| ReplyTo: $reply_to_user:$reply_to_id" );
@@ -1435,14 +1429,15 @@ sub tweet_or_reply {
             };
         }
         if (my $t_reply = $cache->{ $t->{in_reply_to_status_id} }) {
-            my $ctext = &get_text( $t_reply, $obj );
-            printf $fh "id:%s account:%s %snick:%s type:tweet created_at:%s %s\n",
-              $t_reply->{id}, $username, &get_reply_to($t_reply),
-              $t_reply->{user}{screen_name},
-              &encode_for_file($t_reply->{created_at}),
-              $ctext
-              if defined $fh;
-            $type = "reply";
+            if (defined $fh) {
+                my $ctext = &get_text( $t_reply, $obj );
+                printf $fh "id:%s account:%s %snick:%s type:tweet created_at:%s %s\n",
+                  $t_reply->{id}, $username, &get_reply_to($t_reply),
+                  $t_reply->{user}{screen_name},
+                  &encode_for_file($t_reply->{created_at}),
+                  $ctext;
+            }
+            $type = 'reply';
         }
     }
     return $type;
@@ -1928,7 +1923,7 @@ sub meta_to_line {
             $state{__ids}{ lc $meta->{nick} }[$marker]    = $meta->{id};
             $state{__indexes}{ lc $meta->{nick} }         = $marker;
             $state{__tweets}{ lc $meta->{nick} }[$marker] = $meta->{text};
-            foreach my $key (qw/account service reply_to_id reply_to_user created_at/) {
+            foreach my $key (qw/username reply_to_id reply_to_user created_at/) {
                 $state{"__${key}s"}{ lc $meta->{nick} }[$marker] = $meta->{$key};
             }
         }
