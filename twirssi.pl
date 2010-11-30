@@ -367,7 +367,11 @@ sub cmd_info {
     }
 
     if ($reply_to_id and $reply_to_user) {
-	&notice( [ "info" ], "| ReplyTo: $reply_to_user:$reply_to_id" );
+	if ( $service eq 'Twitter' ) {
+	    &notice( [ "info" ], "| ReplyTo: http://twitter.com/$reply_to_user/statuses/$reply_to_id" );
+	} elsif ( $service eq 'Identica') {
+	    &notice( [ "info" ], "| ReplyTo: http://identi.ca/notice/$reply_to_id" );
+        }
     }
     &notice( [ "info" ], "`---------" );
     
