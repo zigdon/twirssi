@@ -208,7 +208,7 @@ sub cmd_retweet_as {
 
     my $success = 1;
     eval {
-        if ($modified)
+        if ($modified or $settings{retweet_classic})
         {
             $success = $twits{$username}->update(
                 {
@@ -2509,6 +2509,7 @@ sub event_setup_changed {
         [ 'use_oauth',         'twirssi_use_oauth' ],
         [ 'use_reply_aliases', 'twirssi_use_reply_aliases' ],
         [ 'window_input',      'tweet_window_input' ],
+        [ 'retweet_classic',   'retweet_classic' ],
       )
     {
         $settings{ $_->[0] } = Irssi::settings_get_bool( $_->[1] );
@@ -2831,6 +2832,7 @@ Irssi::settings_add_bool( "twirssi", "twirssi_avoid_ssl",         0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_use_oauth",         1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_logging",           0 );
 Irssi::settings_add_bool( "twirssi", "twirssi_mini_whale",        0 );
+Irssi::settings_add_bool( "twirssi", "retweet_classic",           0 );
 
 $last_poll = time - &get_poll_time;
 
