@@ -1153,7 +1153,7 @@ sub load_blocks {
 		if ( $fh and &debug );
 	    my $blocks;
 	    $blocks = $twits{$t}->blocking();
-	    $new_blocks{ $_->{screen_name} } = time foreach @$blocks;
+	    $new_blocks{ lc $_->{screen_name} } = time foreach @$blocks;
 	}
     };
 
@@ -1481,7 +1481,7 @@ sub do_updates {
               $search->{max_id}, $username, $topic;
 
             foreach my $t ( reverse @{ $search->{results} } ) {
-		next if exists $blocks{ $t->{from_user} };
+		next if exists $blocks{ lc $t->{from_user} };
                 my $text = &get_text( $t, $obj );
                 printf $fh "id:%s account:%s nick:%s type:search topic:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic, $text;
@@ -1519,7 +1519,7 @@ sub do_updates {
             # TODO: consider applying ignore-settings to search results
             my @results = @{ $search->{results} };
 
-	    @results = grep { not exists $blocks{ $_->{from_user} } } @results;
+	    @results = grep { not exists $blocks{ lc $_->{from_user} } } @results;
             if ( $max_results > 0 ) {
                 splice @results, $max_results;
             }
