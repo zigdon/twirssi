@@ -285,7 +285,7 @@ sub cmd_tweet_as {
     $state{__last_tweet}{$username} = $res->{id};
 
     if ( $username eq "$user\@$defservice" ) {
-        my $away = &update_away($data);
+        my $away = $settings{to_away} ? &update_away($data) : 0;
 
         &notice( [ "tweet", $username ],
             "Update sent" . ( $away ? " (and away msg set)" : "" ) );
@@ -396,7 +396,7 @@ sub cmd_reply_as {
         $nicks{$_} = time;
     }
 
-    my $away = &update_away($data);
+    my $away = $settings{to_away} ? &update_away($data) : 0;
 
     &notice( [ "reply", $username ],
         "Update sent" . ( $away ? " (and away msg set)" : "" ) );
@@ -1867,9 +1867,7 @@ sub ccrap {
 sub update_away {
     my $data = shift;
 
-    if (    $settings{to_away}
-        and $data !~ /\@\w/
-        and $data !~ /^[dD] / )
+    if ( $data !~ /\@\w/ and $data !~ /^[dD] / )
     {
         my $server = Irssi::server_find_tag( $settings{bitlbee_server} );
         if ($server) {
