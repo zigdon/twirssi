@@ -1638,9 +1638,14 @@ sub do_updates {
     my @strip_tags = $settings{stripped_tags}
       ? split /\s*,\s*/, $settings{stripped_tags}
       : ();
+    my @ignored_twits = split(',', lc $settings{ignored_twits});
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
         next if '' eq ($text = &remove_ignored($text, \@ignore_tags, \@strip_tags));
+        if (grep { $_ eq lc $t->{user}{screen_name} } @ignored_twits) {
+            next if not &debug();
+            $text .= ' (IGNORED TWIT)';
+        }
         my $reply = &tweet_or_reply($obj, $t, $username, $cache, $fh);
         next
           if $t->{user}{screen_name} eq $username
@@ -1752,6 +1757,10 @@ sub do_updates {
                   if not $new_poll_id
                       or $t->{id} < $new_poll_id;
                 next if '' eq ($text = &remove_ignored($text, \@ignore_tags, \@strip_tags));
+                if (grep { $_ eq lc $t->{from_user} } @ignored_twits) {
+                    next if not &debug();
+                    $text .= ' (IGNORED TWIT)';
+                }
                 printf $fh "id:%s account:%s nick:%s type:search topic:%s created_at:%s %s\n",
                   $t->{id}, $username, $t->{from_user}, $topic,
                   &encode_for_file($t->{created_at}), $text;
@@ -1799,6 +1808,10 @@ sub do_updates {
 
                 my $text = &get_text( $t, $obj );
                 next if '' eq ($text = &remove_ignored($text, \@ignore_tags, \@strip_tags));
+                if (grep { $_ eq lc $t->{from_user} } @ignored_twits) {
+                    next if not &debug();
+                    $text .= ' (IGNORED TWIT)';
+                }
                 printf $fh
                   "id:%s account:%s %snick:%s type:search_once topic:%s created_at:%s %s\n",
                   $t->{id}, $username, &get_reply_to($t), $t->{from_user}, $topic,
@@ -2480,6 +2493,7 @@ sub event_setup_changed {
         charset
         default_service
         ignored_accounts
+        ignored_twits
         ignored_tags
         location
         nick_color
@@ -2805,6 +2819,7 @@ Irssi::settings_add_str( "twirssi", "twirssi_timestamp_format", "%H:%M:%S" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_tags",     "" );
 Irssi::settings_add_str( "twirssi", "twirssi_stripped_tags",    "" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_accounts", "" );
+Irssi::settings_add_str( "twirssi", "twirssi_ignored_twits",    "" );
 Irssi::settings_add_str( "twirssi", "twirssi_retweet_format",
     'RT $n: "$t" ${-- $c$}' );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
