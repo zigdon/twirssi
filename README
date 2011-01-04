@@ -2,6 +2,8 @@
 You may need to use CPAN or another method to install these modules.
     * WWW::Shorten::TinyURL
     * Net::Twitter
+    * DateTime
+    * DateTime::Format::Strptime
 
 ### Installation ###
 Installation is two part. First 
