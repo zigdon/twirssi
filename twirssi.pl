@@ -789,7 +789,8 @@ sub verify_twitter_object {
 
     if ( my $timeout = $settings{timeout} and $twit->can('ua') ) {
         $twit->ua->timeout($timeout);
-        &notice( ["tweet"], "Twitter timeout set to $timeout" );
+        &notice( ["tweet", "$user\@$service"],
+                 "Twitter timeout set to $timeout" );
     }
 
     unless ( $twit->verify_credentials() ) {
@@ -994,7 +995,7 @@ sub cmd_upgrade {
 
     my $md5;
     unless ( $data or $settings{upgrade_beta} ) {
-        eval { use Digest::MD5; };
+        eval " use Digest::MD5; ";
 
         if ($@) {
             &notice( ["error"],
@@ -2949,7 +2950,8 @@ if ( Irssi::window_find_name(window()) ) {
             "/twitter_follow <username>",
             "create_friend",
             sub {
-                &notice( ["tweet"], "Following $_[0]" );
+                &notice( ["tweet", "$user\@$defservice"],
+                         "Following $_[0]" );
                 $nicks{ $_[0] } = time;
             }
         )
