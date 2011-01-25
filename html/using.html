@@ -5,10 +5,10 @@
       an account on <a href="http://identi.ca/">identi.ca</a>, just append
       @identica to the user name, and make sure <code>Net::Identica</code> is
       installed.</li>
-  <li>Post updates: <code>/tweet I got twirssi working!</code></li>
+  <li>Post updates: <code>/tweet I got #twirssi working!</code></li>
   <li>Every 5 minutes, new updates from twitter will be posted to the named
-  window.  To manually poll, you can always type <code>/twitter_updates</code>, though if
-  you do it too often, twitter will block your access for a while</li>
+      window.  To manually poll, you can always type <code>/twitter_updates</code>,
+      though if you do it too often, twitter will block your access for a while</li>
 </ul>
 
 <h3>Posting Commands</h3>
@@ -36,9 +36,39 @@
   <li><code>/retweet_as &lt;account&gt; &lt;username&gt;:&lt;num&gt;
       [comment]</code> - Retweet someone else, using an alternate account, with
       an optional comment.</li>
+  <li><code>/twitter_broadcast &lt;status&gt;</code> - Tweet to all
+      <code>twirssi_broadcast_users</code> accounts
+      or (if that setting is empty) all logged-in accounts.</li>
+</ul>
+<h3>Window/Channel Commands</h3>
+<ul>
+  <li><code>/twirssi_set_window &lt;type&gt; &lt;tag&gt; &lt;window&gt;</code> -
+      Send certain tweet updates to a given window.
+      <code>Type</code> can be one of
+           <code>tweet</code>, <code>reply</code>, <code>dm</code>, <code>search</code>,
+           <code>error</code>, <code>default</code>.
+      <code>Tag</code> is an account name or search term.
+      <code>Window</code> is the name of the window to (create and) display the updates.
+      If <code>window</code> is <code>-</code> (hyphen), remove the setting.
+      </li>
+  <li><code>/twirssi_list_windows</code> - List all the existing windows
+      (see <code>/twirssi_set_window</code>).</li>
+  <li><code>/twirssi_set_channel &lt;[-]type&gt; &lt;tag&gt; &lt;net_tag&gt; &lt;channel&gt;</code>)
+      Send <code>type</code> twitter results that correspond to <code>tag</code>
+      to the given <code>channel</code> on server <code>net_tag</code>.
+      <code>Type</code> can be one of: <code>tweet</code>, <code>reply</code>, <code>dm</code>,
+           <code>search</code>, <code>error</code> or <code>*</code>.
+           A <code>type</code> of <code>*</code> indicates a wildcard,
+           and <code>tag</code> must then be qualified with Service: <code>user@Service</code>.
+           If <code>type</code> starts with <code>-</code> (hyphen) then remove that setting.
+      <code>Tag</code> is an account or a search term (or <code>*</code> for wildcarding).
+      </li>
+  <li><code>/twirssi_list_channels</code> - List all the existing channels
+      (see <code>/twirssi_set_channel</code>).</li>
 </ul>
 <h3>Other Commands</h3>
 <ul>
+  <li><code>/twirssi_oauth &lt;account&gt; &lt;PIN&gt;</code> - supply a PIN for OAUTH.</li>
   <li><code>/twitter_follow &lt;username&gt;</code> - Start following username</li>
   <li><code>/twitter_add_follow_extra &lt;username&gt;</code> - Show all the
       posts by username, even for people who you do not follow</li>
@@ -46,6 +76,8 @@
       all the posts by username</li>
   <li><code>/twitter_info &lt;username&gt;:&lt;num&gt;</code> - Show details about
       a remembered tweet.  See twirssi_track_replies variable.</li>
+  <li><code>/twitter_user &lt;username&gt;</code> - Get the recent timeline for
+      the username.  Also used to obtain tweets so as to retweet them directly.</li>
   <li><code>/twitter_list_follow_extra</code> - Show the list of all the
       usernames in the extra follow loop</li>
   <li><code>/twitter_list_subscriptions</code> - List all the existing search
@@ -53,11 +85,13 @@
   <li><code>/twitter_login &lt;username&gt; &lt;password&gt;</code> - Log in to twitter</li>
   <li><code>/twitter_logout [&lt;username&gt;]</code> - Log out the current account, or the named account</li>
   <li><code>/twitter_switch &lt;username&gt;</code> - Start using the named account as the default</li>
-
-  <li><code>/twitter_unfollow &lt;username&gt;</code> - Stop following username</li>
-  <li><code>/twitter_block &lt;username&gt;</code> - Block username</li>
-  <li><code>/twitter_unblock &lt;username&gt;</code> - Unblock username</li>
-  <li><code>/twitter_updates</code> - Poll for updates manually</li>
+  <li><code>/twitter_unfollow &lt;username&gt;</code> - Stop following username.</li>
+  <li><code>/twitter_block &lt;username&gt;</code> - Block username.</li>
+  <li><code>/twitter_unblock &lt;username&gt;</code> - Unblock username.</li>
+  <li><code>/twitter_updates</code> - Poll for updates manually.</li>
+  <li><code>/twitter_spam &lt;username&gt;</code> - Report spam.</li>
+  <li><code>/twitter_search &lt;keyword&gt;</code> - Do a one-time search
+      using the current account.</li>
   <li><code>/twitter_subscribe &lt;keyword&gt;</code> - Add a search
       subscription for the current account.</li>
   <li><code>/twitter_unsubscribe &lt;keyword&gt;</code> - Remove an existing search
@@ -65,27 +99,20 @@
   <li><code>/twitter_device_updates &lt;none|im|sms&gt;</code> - Set delivery
       device.  Note that IM delivery is currently disabled by Twitter, and there
       are no timeline when it might be restored.</li>
-  <li><code>/twirssi_version</code> - Report the current version number</li>
-
+  <li><code>/twirssi_version</code> - Report the current version number.</li>
   <li><code>/twirssi_upgrade</code> - Check for a new version of twirssi, and
-      download it if it's there</li>
+      download it if it's there.</li>
+  <li><code>/twirssi_dump</code> - Report the current state of the data.</li>
+  <li><code>/twitter_delete &lt;nick:id&gt;</code> - Remove a tweet from cache.</li>
 </ul>
 
-<h3>Settings</h3>
+<h3>Settings Info</h3>
 <p>These are set by the /set command - <code>/set bitlbee_server</code> will show the
 current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
 <code>bitlbee_tag</code>.</p>
+
+<h3>Look-and-feel Settings</h3>
 <ul>
-  <li><code>bitlbee_server</code> - What is the server tag for bitlbee (used for away messages)</li>
-  <li><code>short_url_provider</code> - What service to use to shorten urls - pick from
-  <a href="http://search.cpan.org/search?query=www%3A%3Ashorten&mode=module"
-      >WWW::Shorten</a></li>
-  <li><code>short_url_args</code> - Some of the WWW::Shorten modules require
-      additional arguments, such as a username or API key.  Enter those here if
-      needed, comma separated.</li>
-  <li><code>twirssi_always_shorten</code> - When false (the default), URLs will
-      only be shortened if the tweet would be too long.  When true, URLs will
-      always be shortened</li>
   <li><code>show_own_tweets</code> - Should our own tweets be displayed?  Defaults to on.</li>
   <li><code>show_reply_context</code> - When set to on, and someone you follow is replying
       to someone you are not, the tweet that generated the reply will be pulled and
@@ -98,47 +125,50 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       retweeted; $t is the text of the original tweet;  $c is the text of the
       optional comment attached;  ${ and $} mark the seciton that should be
       omitted if no comment was provided.
-
   <li><code>twirssi_hilights</code> - Should messages containing your @nick be
       considered IRC hilights.  (default on)</li>
-  <li><code>twirssi_location</code> - Location of the twirssi.pl script, used
-      by <code>/twirssi_upgrade</code></li>
   <li><code>twirssi_nick_color</code> - If set, @nicks will be shown in the
       color set. (default: %B).  Note that the theme variables (twirssi_tweet,
       twirssi_search, twirssi_reply, twirssi_dm) should be updated as
       well.</li>
-  <li><code>twirssi_notify_timeouts</code> - If set, twirssi will emite a
-      message when twitter is being so slow that it fails to retrieve
-      updates.  (default on)</li>
   <li><code>twirssi_replies_autonick</code> - On by default.  If on, /reply
       will make sure the reply begins with @nick.  If off, you can reply to
       someone, but not have their name on the reply</li>
-  <li><code>twirssi_replies_store</code> - Location where the /reply map is to be stored.</li>
-  <li><code>twirssi_logging</code> - If On, twirssi windows are logged to files
-      determined by the <code>autolog_path</code> (system/log) setting -
-      wherein "$tag" is "twirssi".  (default is Off)</li>
   <li><code>twirssi_topic_color</code> - If set, #topics will be shown in the
       color set. (default: %r)</li>
-  <li><code>twirssi_track_replies</code> - The number of tweets per user to
-      remember - individual IDs.  If non-zero (the default is 100), incoming
-      tweets will show a :num appended to them.  This is requried for
-      /reply and /twitter_reply functionallity.</li>
+  <li><code>twirssi_timestamp_format</code> - This string defines the format
+      of timestamps (see strftime, default is "%H:%M:%S").</li>
+  <li><code>twirssi_ignored_accounts</code> - A comma-separated list of own
+      accounts to ignore.</li>
+  <li><code>twirssi_ignored_tags</code> - A comma-separated list of words
+      that will make tweets containing them to be ignored.</li>
+  <li><code>twirssi_stripped_tags</code> - A comma-separated list of words
+      that are removed from tweets.</li>
+  <li><code>twirssi_ignored_twits</code> - A comma-separated list of other's
+      accounts to ignore (e.g. in subscriptions).</li>
   <li><code>twirssi_use_reply_aliases</code> - Enable /reply and /reply_as as
       aliases to /twitter_reply and /twitter_reply_as.  Requires a reload of
       twirssi to take effect.  (default off)</li>
-  <li><code>twirssi_upgrade_beta</code> - Default off.  If on, /twirssi_upgrade
-      will try to grab the most recent version from github, instead of the latest
-      released version.  Note that beta versions might have more bugs than the
-      released version.</li> 
-  <li><code>twirssi_avoid_ssl</code> - Default off.  If off, twirssi will
-      attempt to use SSL for all network communications.  Changes take effect
-      next time twirssi is loaded.</li>
-  <li><code>twirssi_timestamp_format</code> - This string defines the format
-      of timestamps (see strftime, default is "%H:%M:%S").</li>
-  <li><code>twirssi_ignored_twits</code> - A comma-separated list of other's
-      accounts to ignore</li>
-
-  <li><code>twitter_passwords</code> - A comma separated list of passwords to auto-login</li>
+  <li><code>twirssi_always_shorten</code> - When false (the default), URLs will
+      only be shortened if the tweet would be too long.  When true, URLs will
+      always be shortened</li>
+  <li><code>twirssi_charset</code> - Default: utf8.</li>
+  <li><code>twirssi_mini_whale</code> - Default: Off.  When On, show just one line
+      (instead of the really big fail-whale) after a substantial outage period.</li>
+  <li><code>twirssi_ymd_color</code> - Default: %r.  The color to use when showing
+       dates in timestamps.</li>
+  <li><code>twitter_search_results</code> - Default: 5.  How many results to
+       show for the initial search.</li>
+</ul>
+<h3>Network and File Settings</h3>
+<ul>
+  <li><code>bitlbee_server</code> - What is the server tag for bitlbee (used for away messages)</li>
+  <li><code>short_url_provider</code> - What service to use to shorten urls - pick from
+  <a href="http://search.cpan.org/search?query=www%3A%3Ashorten&mode=module"
+      >WWW::Shorten</a></li>
+  <li><code>short_url_args</code> - Some of the WWW::Shorten modules require
+      additional arguments, such as a username or API key.  Enter those here if
+      needed, comma-separated.</li>
   <li><code>twitter_poll_interval</code> - How often should new messages be
       requested from twitter (in seconds).  Default is every 5 minutes.  Keep
       in mind that twitter will rate limit your user (or IP) if you hit them
@@ -147,15 +177,58 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       using a comma-separated list of tuples of the format <code>hhmm-hhmm:interval</code>
       (e.g. <code>2330-0745:900,0200-0600:2500</code>). Each tuple gives the interval
       for a time period.  Later tuples take precedence.  If no period applies,
-      reverts to twitter_poll_interval.</li>
+      reverts to <code>twitter_poll_interval</code>.</li>
   <li><code>twitter_friends_poll</code> - How often should the updated friends
       list be retrieved from the server.  By default, only once every 10
       minutes</li>
   <li><code>twitter_timeout</code> - How long should we wait before giving up
       on a twitter operation.  Should help avoid irssi pinging out of IRC
       servers when twitter is slow.</li>
-  <li><code>twitter_usernames</code> - A comma separated list of usernames to auto-login.  Note that the last one will be the default account used after startup.</li>
-  <li><code>twitter_update_usernames</code> - A comma-separated list of usernames to give priority when updating.</li>
-  <li><code>twitter_window</code> - Which irssi window should twitter updates be sent to</li>
+  <li><code>twirssi_notify_timeouts</code> - If set, twirssi will emit a
+      message when twitter is being so slow that it fails to retrieve
+      updates.  (default on)</li>
+  <li><code>twirssi_avoid_ssl</code> - Default off.  If off, twirssi will
+      attempt to use SSL for all network communications.  Changes take effect
+      next time twirssi is loaded.</li>
+  <li><code>twirssi_oauth_store</code> - Path where OAUTH credentials are stored.</li>
+  <li><code>twirssi_replies_store</code> - Location where the /reply map is to be stored.</li>
+  <li><code>twirssi_logging</code> - If On, twirssi windows are logged to files
+      determined by the <code>autolog_path</code> (system/log) setting -
+      wherein "$tag" is "twirssi".  (default is Off)</li>
+  <li><code>twirssi_track_replies</code> - The number of tweets per user to
+      remember - individual IDs.  If non-zero (the default is 100), incoming
+      tweets will show a <code>:num</code> appended to them.  This is required
+      for /reply and /twitter_reply functionality.</li>
+</ul>
+<h3>Account Settings</h3>
+<ul>
+  <li><code>twirssi_default_service</code> - Default: Twitter. Can be Identica.</li>
+  <li><code>twitter_passwords</code> - A comma-separated list of passwords to auto-login.
+      DEPRECATED.</li>
+  <li><code>twitter_update_usernames</code> - A comma-separated list of usernames to
+      give priority when updating (first is most important).</li>
+  <li><code>twitter_usernames</code> - A comma-separated list of usernames to auto-login.
+      Note that the last one will be the default account used after startup.</li>
+  <li><code>twirssi_broadcast_users</code> - see <code>/twitter_broadcast</code> command.</li>
+  <li><code>twirssi_use_oauth</code> - Default: On.  Login using OAUTH.</li>
+</ul>
+<h3>Window Settings</h3>
+<ul>
+  <li><code>twitter_window</code> - Default: twitter.  The name of the irssi window
+      which will display twitter updates (but see also <code>/twitter_set_window</code>.</li>
+</ul>
+<h3>Upgrading/Developing Twirssi Settings</h3>
+<ul>
+  <li><code>twirssi_location</code> - Location of the twirssi.pl script, used
+      by <code>/twirssi_upgrade</code></li>
+  <li><code>twirssi_upgrade_beta</code> - Default On.  If On, /twirssi_upgrade
+      will try to grab the most recent version from github, instead of the latest
+      released version.  Note that beta versions might have more bugs than the
+      released version.</li> 
+  <li><code>twirssi_upgrade_branch</code> - Default "master".  The name of the
+      branch - at Github - from which you want to (beta) update twirssi.</li>
+  <li><code>twirssi_upgrade_dev</code> - Default "gedge".  Get (beta) updates
+      to twirssi from this account at <a href="http://github.com/">github.com</a>.</li>
+  <li><code>twirssi_debug</code> - Default "off".  Shows debugging.</li>
 </ul>
 

@@ -16,10 +16,10 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.5.1beta";
+$VERSION = "2.5.1gedge";
 %IRSSI   = (
-    authors     => 'Dan Boger',
-    contact     => 'zigdon@gmail.com',
+    authors     => 'Dan Boger, Gedge',
+    contact     => 'zigdon@gmail.com, gedge-oss@yadn.org',
     name        => 'twirssi',
     description => 'Send twitter updates using /tweet.  '
       . 'Can optionally set your bitlbee /away message to same',
@@ -1032,7 +1032,7 @@ sub cmd_upgrade {
 
     my $URL =
       $settings{upgrade_beta}
-      ? "http://github.com/zigdon/twirssi/raw/master/twirssi.pl"
+      ? "http://github.com/$settings{upgrade_dev}/twirssi/raw/$settings{upgrade_branch}/twirssi.pl"
       : "http://twirssi.com/twirssi.pl";
     &notice( ["error"], "Downloading twirssi from $URL" );
     LWP::Simple::getstore( $URL, "$loc.upgrade" );
@@ -2546,6 +2546,8 @@ sub event_setup_changed {
     $settings{url_provider}   = Irssi::settings_get_str("short_url_provider");
     $settings{url_args}       = Irssi::settings_get_str("short_url_args");
     $settings{window}         = Irssi::settings_get_str("twitter_window");
+    $settings{upgrade_branch} = Irssi::settings_get_str("twirssi_upgrade_branch");
+    $settings{upgrade_dev}    = Irssi::settings_get_str("twirssi_upgrade_dev");
 
     &ensure_logfile($settings{window});
 
@@ -2821,6 +2823,8 @@ Irssi::settings_add_str( "twirssi", "twirssi_ignored_tags",     "" );
 Irssi::settings_add_str( "twirssi", "twirssi_stripped_tags",    "" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_accounts", "" );
 Irssi::settings_add_str( "twirssi", "twirssi_ignored_twits",    "" );
+Irssi::settings_add_str( "twirssi", "twirssi_upgrade_dev",      "gedge" );
+Irssi::settings_add_str( "twirssi", "twirssi_upgrade_branch",   "master" );
 Irssi::settings_add_str( "twirssi", "twirssi_retweet_format",
     'RT $n: "$t" ${-- $c$}' );
 Irssi::settings_add_str( "twirssi", "twirssi_location",
@@ -2830,13 +2834,13 @@ Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
 Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
     Irssi::get_irssi_dir . "/scripts/twirssi.oauth" );
 
-Irssi::settings_add_int( "twirssi", "twitter_poll_interval", 300 );
+Irssi::settings_add_int( "twirssi", "twitter_poll_interval",  300 );
 Irssi::settings_add_int( "twirssi", "twitter_friends_poll",   600 );
 Irssi::settings_add_int( "twirssi", "twitter_timeout",        30 );
 Irssi::settings_add_int( "twirssi", "twitter_search_results", 5 );
 Irssi::settings_add_int( "twirssi", "twirssi_track_replies",  100 );
 
-Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      0 );
+Irssi::settings_add_bool( "twirssi", "twirssi_upgrade_beta",      1 );
 Irssi::settings_add_bool( "twirssi", "tweet_to_away",             0 );
 Irssi::settings_add_bool( "twirssi", "show_own_tweets",           1 );
 Irssi::settings_add_bool( "twirssi", "twirssi_debug",             0 );
