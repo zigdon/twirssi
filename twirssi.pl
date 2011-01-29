@@ -1216,7 +1216,7 @@ sub cmd_set_window {
         my $tag = "default";
         if ( @words == 2 ) {
            $tag = lc $words[1];
-           if ($type ne 'search' and $type ne 'default' and $tag ne 'default') {
+           if ($type ne 'search' and ($type ne 'default' or index($tag, '@') >= 0) and $tag ne 'default') {
               $tag = &normalize_username($tag);
            }
            if (substr($tag, -1, 1) eq '@') {
@@ -2501,6 +2501,7 @@ sub event_setup_changed {
         ymd_color
         oauth_store
         replies_store
+        dump_store
         retweet_format
         stripped_tags
         topic_color
@@ -2833,6 +2834,8 @@ Irssi::settings_add_str( "twirssi", "twirssi_replies_store",
     Irssi::get_irssi_dir . "/scripts/twirssi.json" );
 Irssi::settings_add_str( "twirssi", "twirssi_oauth_store",
     Irssi::get_irssi_dir . "/scripts/twirssi.oauth" );
+Irssi::settings_add_str( "twirssi", "twirssi_dump_store",
+    Irssi::get_irssi_dir . "/scripts/twirssi.dump" );
 
 Irssi::settings_add_int( "twirssi", "twitter_poll_interval",  300 );
 Irssi::settings_add_int( "twirssi", "twitter_friends_poll",   600 );
@@ -2909,6 +2912,11 @@ if ( Irssi::window_find_name(window()) ) {
                 print DUMP Dumper \%tweet_cache;
                 close DUMP;
                 print "cache written out to /tmp/twirssi.cache.txt";
+            }
+            if ( open DUMP, ">$settings{dump_store}" ) {
+                print DUMP Dumper \%state;
+                close DUMP;
+                print "state written out to $settings{dump_store}";
             }
         }
     );
