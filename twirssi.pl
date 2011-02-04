@@ -1343,7 +1343,7 @@ sub get_updates {
         }
 
         print $fh "__blocks__\n";
-        if ( time - $last_blocks_poll > $settings{blocks_poll} ) {
+        if ( time - $last_blocks_poll > $settings{friends_poll} ) {
             print $fh "__updated ", time, "\n";
             my ( $added, $removed ) = &load_blocks($fh);
             if ( $added + $removed ) {
