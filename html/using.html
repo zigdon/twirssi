@@ -46,8 +46,10 @@
       Send certain tweet updates to a given window.
       <code>Type</code> can be one of
            <code>tweet</code>, <code>reply</code>, <code>dm</code>, <code>search</code>,
-           <code>error</code>, <code>default</code>.
-      <code>Tag</code> is an account name or search term.
+           <code>sender</code>, <code>error</code>, <code>default</code>.
+      <code>Tag</code> is an account name (that you are logged in as,
+           e.g. <code>username@service</code>), search term
+           or (for type <code>sender</code>) the sender's username.
       <code>Window</code> is the name of the window to (create and) display the updates.
       If <code>window</code> is <code>-</code> (hyphen), remove the setting.
       </li>
@@ -57,7 +59,7 @@
       Send <code>type</code> twitter results that correspond to <code>tag</code>
       to the given <code>channel</code> on server <code>net_tag</code>.
       <code>Type</code> can be one of: <code>tweet</code>, <code>reply</code>, <code>dm</code>,
-           <code>search</code>, <code>error</code> or <code>*</code>.
+           <code>search</code>, <code>sender</code>, <code>error</code> or <code>*</code>.
            A <code>type</code> of <code>*</code> indicates a wildcard,
            and <code>tag</code> must then be qualified with Service: <code>user@Service</code>.
            If <code>type</code> starts with <code>-</code> (hyphen) then remove that setting.
@@ -69,7 +71,8 @@
 <h3>Other Commands</h3>
 <ul>
   <li><code>/twirssi_oauth &lt;account&gt; &lt;PIN&gt;</code> - supply a PIN for OAUTH.</li>
-  <li><code>/twitter_follow &lt;username&gt;</code> - Start following username</li>
+  <li><code>/twitter_follow [<code>-w</code>] &lt;username&gt;</code> - Start following username
+      (with <code>-w</code>, send their tweets to a window of the same name).</li>
   <li><code>/twitter_add_follow_extra &lt;username&gt;</code> - Show all the
       posts by username, even for people who you do not follow</li>
   <li><code>/twitter_del_follow_extra &lt;username&gt;</code> - Stop showing
@@ -92,8 +95,9 @@
   <li><code>/twitter_spam &lt;username&gt;</code> - Report spam.</li>
   <li><code>/twitter_search &lt;keyword&gt;</code> - Do a one-time search
       using the current account.</li>
-  <li><code>/twitter_subscribe &lt;keyword&gt;</code> - Add a search
-      subscription for the current account.</li>
+  <li><code>/twitter_subscribe [<code>-w</code>] &lt;keyword&gt;</code> - Add a search
+      subscription for the current account (with <code>-w</code> send the results
+      to a window of the same name).</li>
   <li><code>/twitter_unsubscribe &lt;keyword&gt;</code> - Remove an existing search
       subscription from the current account.</li>
   <li><code>/twitter_device_updates &lt;none|im|sms&gt;</code> - Set delivery
@@ -104,6 +108,7 @@
       download it if it's there.</li>
   <li><code>/twirssi_dump</code> - Report the current state of the data.</li>
   <li><code>/twitter_delete &lt;nick:id&gt;</code> - Remove a tweet from cache.</li>
+  <li><code>/twirssi_wipe</code> - Remove all tweet/channel/window info and settings.  Caution!</li>
 </ul>
 
 <h3>Settings Info</h3>
@@ -181,6 +186,9 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
   <li><code>twitter_friends_poll</code> - How often should the updated friends
       list be retrieved from the server.  By default, only once every 10
       minutes</li>
+  <li><code>twitter_blocks_poll</code> - How often should the updated blocks
+      list be retrieved from the server.  By default, only once every 15
+      minutes.</li>
   <li><code>twitter_timeout</code> - How long should we wait before giving up
       on a twitter operation.  Should help avoid irssi pinging out of IRC
       servers when twitter is slow.</li>
@@ -199,6 +207,8 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       remember - individual IDs.  If non-zero (the default is 100), incoming
       tweets will show a <code>:num</code> appended to them.  This is required
       for /reply and /twitter_reply functionality.</li>
+  <li><code>twirssi_force_first</code> - Default: off.  If On, show tweets timed
+      before load/reload of script.</li>
 </ul>
 <h3>Account Settings</h3>
 <ul>
@@ -216,6 +226,10 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
 <ul>
   <li><code>twitter_window</code> - Default: twitter.  The name of the irssi window
       which will display twitter updates (but see also <code>/twitter_set_window</code>.</li>
+  <li><code>twirssi_window_priority</code> - Default: account.  The preference
+      for choosing which window will display twitter updates.
+      A setting of <code>account</code> means 'prefer follower';
+      <code>sender</code> means 'prefer tweeter'.</li>
 </ul>
 <h3>Upgrading/Developing Twirssi Settings</h3>
 <ul>
