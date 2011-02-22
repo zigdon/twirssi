@@ -34,7 +34,8 @@ my %oauth;
 my $user;	# current $account
 my $defservice; # current $service
 my $poll_event;		# timeout_add event object (regular update)
-my %last_poll;		# $last_poll{$username|__interval|__poll}{tweets|friends|blocks} = time
+my %last_poll;		# $last_poll{$username}{tweets|friends|blocks}	= time of last update
+			#	    {__interval|__poll}			= time
 my %nicks;              # $nicks{$screen_name} = last seen/mentioned time
 my %friends;		# $friends{$username}{$nick} = $epoch_when_refreshed (rhs value used??)
 my %blocks;		# $blocks {$username}{$nick} = $epoch_when_refreshed (rhs value used??)
@@ -194,7 +195,7 @@ sub cmd_direct_as {
     };
 
     if ($@) {
-        &notice( ["dm"], "DM caused an error: $@" );
+        &notice( ["error"], "DM caused an error: $@" );
         return;
     }
 }
@@ -267,7 +268,7 @@ sub cmd_retweet_as {
     my $modified = $data;
     $data = &shorten($text);
 
-    return if $modified and &too_long($data);
+    return if ($modified or $settings{retweet_classic}) and &too_long($data);
 
     $data = &make_utf8($data);
 
@@ -277,7 +278,6 @@ sub cmd_retweet_as {
             $success = $twits{$username}->update(
                 {
                     status => $data,
-
                     # in_reply_to_status_id => $state{__ids}{ lc $nick }[$id]
                 }
             );
@@ -738,7 +738,7 @@ sub cmd_login {
 
                 if ($@) {
                     &notice( ["error"],
-                        "ERROR: Failed to get OAuth authorization_url: $@" );
+                        "Failed to get OAuth authorization_url: $@" );
                     return;
                 }
                 &notice( ["error"],
@@ -998,8 +998,6 @@ sub cmd_add_search {
         return;
     }
 
-&debug("search $data win:$want_win");
-
     $state{__last_id}{"$user\@$defservice"}{__search}{$data} = 1;
     &notice( [ "search", $data ], "Added subscription for '$data'" );
     &cmd_set_window("search $data $data", $server, $win) if $want_win;
@@ -1193,8 +1191,8 @@ sub cmd_set_channel {
     my @valid_types = qw/ tweet search dm reply sender error * /;
 
     unless ( grep { $type eq $_ } @valid_types ) {
-        &notice("ERROR: Invalid message type '$type'.");
-        &notice('Valid types: ' . join(', ', @valid_types));
+        &notice(['error'], "Invalid message type '$type'.");
+        &notice(['error'], 'Valid types: ' . join(', ', @valid_types));
         return;
     }
 
@@ -1283,8 +1281,8 @@ sub cmd_set_window {
     } elsif ( @words >= 1 ) {
         my $type = lc $words[0];
         unless ( grep { $_ eq $type } @valid_types ) {
-            &notice(
-                "ERROR: Invalid message type '$type'.",
+            &notice(['error'],
+                "Invalid message type '$type'.",
                 'Valid types: ' . join(', ', @valid_types)
             );
             return;
@@ -1302,7 +1300,7 @@ sub cmd_set_window {
               $tag = &normalize_username($tag);
            }
            if (substr($tag, -1, 1) eq '@') {
-              &notice("ERROR: Invalid tag '$tag'.");
+              &notice(['error'], "Invalid tag '$tag'.");
               return;
            }
         }
@@ -1651,7 +1649,7 @@ sub get_updates_child {
                 $fix_replies_index{$username}++;
                 $fix_replies_index{$username} = 0
                       if $fix_replies_index{$username} >= @frusers;
-                print $fh "t:fix_replies_index id:$fix_replies_index{$username} ",
+                print $fh "t:fix_replies_index idx:$fix_replies_index{$username} ",
                       "ac:$username\n";
             }
         }
@@ -1763,7 +1761,7 @@ sub get_tweets {
     };
 
     if ($@) {
-        print $fh "t:error %R$username%n Error during home_timeline call: Aborted.\n";
+        print $fh "t:error $username Error during home_timeline call: Aborted.\n";
         print $fh "t:debug : $_\n" foreach split /\n/, Dumper($@);
         return;
     }
@@ -1997,13 +1995,13 @@ sub get_timeline {
     };
 
     if ($@) {
-        print $fh "t:error %R$username%n user_timeline($target) call: Aborted.\n";
+        print $fh "t:error $username user_timeline($target) call: Aborted.\n";
         print $fh "t:debug : $_\n" foreach split /\n/, Dumper($@);
         return;
     }
 
     unless ($tweets) {
-        print $fh "t:error %R$username%n user_timeline($target) call returned undef!  Aborted\n";
+        print $fh "t:error $username user_timeline($target) call returned undef!  Aborted\n";
         return 1;
     }
 
@@ -2135,8 +2133,7 @@ sub monitor_child {
     # first time we run we don't want to print out *everything*, so we just
     # pretend
 
-    my $old_last_poll_tweets = $last_poll{__poll};
-    my @lines;
+    my @lines = ();
     my %new_cache;
     my %types_per_user = ();
     my $got_errors = 0;
@@ -2175,13 +2172,14 @@ sub monitor_child {
                $got_errors++;
             }
 
-        } elsif (s/^t:(fix_replies_index|searchid|last_id|last_id_fixreplies)\s+//) {
-            my %meta = &cache_to_meta($_, $1, [ qw/id ac topic id_type/ ]);
-            if ( $meta{type} eq 'fix_replies_index' ) {
-                $fix_replies_index{ $meta{username} } = $meta{id};
-                &debug("%G$meta{username}%n fix_replies_index set to $meta{id}");
+        } elsif (s/^t:(fix_replies_index)\s+//) {
+            my %meta = &cache_to_meta($_, $1, [ qw/idx ac topic id_type/ ]);
+            $fix_replies_index{ $meta{username} } = $meta{idx};
+            &debug("%G$meta{username}%n fix_replies_index set to $meta{idx}");
 
-            } elsif ( $meta{type} eq 'searchid' ) {
+        } elsif (s/^t:(searchid|last_id|last_id_fixreplies)\s+//) {
+            my %meta = &cache_to_meta($_, $1, [ qw/id ac topic id_type/ ]);
+            if ( $meta{type} eq 'searchid' ) {
                 &debug("%G$meta{username}%n Search '$meta{topic}' got id $meta{id}");
                 if (not exists $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} }
                         or $meta{id} >= $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} } ) {
@@ -2243,52 +2241,47 @@ sub monitor_child {
         # file was opened, so we tried to parse...
         close $fh;
 
-        if (not $got_errors) {
-            &debug("new last_poll    = $last_poll{__poll}",
-                   "new last_poll_id = " . Dumper( $state{__last_id} ));
-            if ($first_call and not $settings{force_first}) {
-                &debug("First call, not printing updates");
-            } else {
-                &write_lines(\@lines, 1);
-            }
+        # make sure the pid is removed from the waitpid list
+        Irssi::pidwait_remove($child_pid);
 
-            unlink $filename
-              or warn "Failed to remove $filename: $!"
-              unless &debug();
+        # and that we don't leave any zombies behind, somehow
+        waitpid( -1, WNOHANG );
 
-            # commit the pending cache lines to the actual cache, now that
-            # we've printed our output
-            for my $updated_id (keys %new_cache) {
-                $tweet_cache{$updated_id} = $new_cache{$updated_id};
-            }
-
-            # keep enough cached tweets, to make sure we don't show duplicates
-            for my $loop_id ( keys %tweet_cache ) {
-                next if $tweet_cache{$loop_id} >= $last_poll{__poll} - 3600;
-                delete $tweet_cache{$loop_id};
-            }
-
-            # make sure the pid is removed from the waitpid list
-            Irssi::pidwait_remove($child_pid);
-
-            # and that we don't leave any zombies behind, somehow
-            waitpid( -1, WNOHANG );
-
-            &save_state();
-            $failstatus        = 0;
-            if ($is_update) {
-                $first_call        = 0;
-                $update_is_running = 0;
-            }
-            return;	#	RETURN IF SUCCESSFUL
+        &debug("new last_poll    = $last_poll{__poll}",
+               "new last_poll_id = " . Dumper( $state{__last_id} ));
+        if ($first_call and not $settings{force_first}) {
+            &debug("First call, not printing updates");
+        } else {
+            &write_lines(\@lines, 1);
         }
 
-        # there was a failure, so revert
-        $last_poll{__poll} = $old_last_poll_tweets;
+        unlink $filename or warn "Failed to remove $filename: $!" unless &debug();
+
+        # commit the pending cache lines to the actual cache, now that
+        # we've printed our output
+        for my $updated_id (keys %new_cache) {
+            $tweet_cache{$updated_id} = $new_cache{$updated_id};
+        }
+
+        # keep enough cached tweets, to make sure we don't show duplicates
+        for my $loop_id ( keys %tweet_cache ) {
+            next if $tweet_cache{$loop_id} >= $last_poll{__poll} - 3600;
+            delete $tweet_cache{$loop_id};
+        }
+
+        if (not $got_errors) {
+            $failstatus        = 0;
+            &save_state();
+        }
+
+        if ($is_update) {
+            $first_call        = 0;
+            $update_is_running = 0;
+        }
         return;
     }
 
-    # get here only if errors or failed
+    # get here only if failed
 
     if ( $attempts_to_go > 0 ) {
         Irssi::timeout_add_once( $wait_time, 'monitor_child',
@@ -2396,6 +2389,7 @@ sub write_lines {
     # recall timestamp format
     if (defined $old_tf) {
         Irssi::settings_set_str('timestamp_format', $old_tf)
+        &debug((0+@$lines_ref) . " lines, pre-ts: " . $old_tf);
     }
 }
 
@@ -2526,8 +2520,11 @@ sub notice {
             for my $sub_line (split("\n", $msg)) {
                 print $fh "t:$type ", $sub_line, "\n" if $sub_line ne '';
             }
+        } elsif ($type eq 'error') {
+            Irssi::window_find_name(&window( $type, $tag ))->printformat(
+                MSGLEVEL_PUBLIC, 'twirssi_error', $msg);
         } else {
-            my $col = ($type eq 'error' ? '%R' : '%G');
+            my $col = '%G';
             Irssi::window_find_name(&window( $type, $tag ))->print(
                 "${col}***%n $msg", MSGLEVEL_PUBLIC );
         }
@@ -2666,9 +2663,9 @@ sub event_setup_changed {
 						: $setting->[2] eq 's' ? 'str' : '');
         if ($stg_type eq '_') {
             if ($do_add) {
-                print               "ERROR: Bad opt '$setting->[2]' for $setting->[0]";
+                print        "ERROR: Bad opt '$setting->[2]' for $setting->[0]";
             } else {
-                &notice( ["error"], "ERROR: Bad opt '$setting->[2]' for $setting->[0]" );
+                &notice( ["error"], "Bad opt '$setting->[2]' for $setting->[0]" );
             }
             next;
         }
@@ -2707,9 +2704,9 @@ sub event_setup_changed {
                 } elsif ($pre_proc =~ s/^norm_user(?:,|$)//) {
                     $norm_user = 1;
                 } elsif ($do_add) {
-                    print               "ERROR: Bad opt pre-proc '$pre_proc' for $setting->[0]";
+                    print        "ERROR: Bad opt pre-proc '$pre_proc' for $setting->[0]";
                 } else {
-                    &notice( ["error"], "ERROR: Bad opt pre-proc '$pre_proc' for $setting->[0]" );
+                    &notice( ["error"], "Bad opt pre-proc '$pre_proc' for $setting->[0]" );
                 }
                 if ($norm_user) {
                     my @normed = ();
@@ -2769,8 +2766,7 @@ sub ensure_logfile() {
                 'ymd' => '',
 	};
     } else {
-        &notice( ["error"],
-            "ERROR: Failed to append to $new_logfile: $!" );
+        &notice( ["error"], "Failed to append to $new_logfile: $!" );
     }
     umask($old_umask);
     return $res;
@@ -2993,7 +2989,7 @@ Irssi::theme_register(
         'twirssi_search_once', '[$0%r$1%n%B@$2%n$3] $4',
         'twirssi_reply',       '[$0\--> %B@$1%n$2] $3',
         'twirssi_dm',          '[$0%r@$1%n (%WDM%n)] $2',
-        'twirssi_error',       'ERROR: $0',
+        'twirssi_error',       '%RERROR%n: $0',
         'twirssi_new_day',     'Day changed to $0',
     ]
 );
@@ -3110,7 +3106,7 @@ if ( Irssi::window_find_name(window()) ) {
             sub {
                 &cmd_set_window("sender $_[0] $_[0]", $_[1], $_[2])
                         if $_[0] =~ s/^\s*-w\s+// and $_[0] ne '';
-                return @_;
+                return $_[0];
             }
         )
     );
