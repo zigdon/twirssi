@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.5.1gedge101";
+$VERSION = "2.5.1gedge105";
 %IRSSI   = (
     authors     => 'Dan Boger, Gedge',
     contact     => 'zigdon@gmail.com, gedge-oss@yadn.org',
@@ -64,6 +64,7 @@ my %logfile;
 my %settings;
 my %last_ymd;		# $last_ymd{$chan_or_win} = $last_shown_ymd
 my @datetime_parser;
+my %completion_types = ();
 
 my $local_tz = DateTime::TimeZone->new( name => 'local' );
 
@@ -1722,15 +1723,22 @@ sub get_updates_child {
     }
 }
 
-sub remove_ignored {
+sub is_ignored {
     my $text = shift;
+    my $twit = shift;
 
     my $text_no_colors = &remove_colors($text);
     foreach my $tag (@{ $settings{ignored_tags} }) {
-        next unless $text_no_colors =~ /(?:^|\b|\s)\Q$tag\E(?:\b|\s|$)/i;
-        $text = (&debug() ? "(ignored: $tag) $text" : '');
-        last;
+        return $tag if $text_no_colors =~ /(?:^|\b|\s)\Q$tag\E(?:\b|\s|$)/i;
     }
+    if (defined $twit and grep { $_ eq lc $twit } @{ $settings{ignored_twits} }) {
+        return $twit;
+    }
+    return undef;
+}
+
+sub remove_tags {
+    my $text = shift;
 
     foreach my $tag (@{ $settings{stripped_tags} }) {
         $text =~ s/\cC\d{2}\Q$tag\E\cO//gi;   # with then without colors
@@ -1788,15 +1796,13 @@ sub get_tweets {
 
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
-        next if '' eq ($text = &remove_ignored($text));
-        if (grep { $_ eq lc $t->{user}{screen_name} } @{ $settings{ignored_twits} }) {
-            next if not &debug();
-            $text .= ' (IGNORED TWIT)';
-        }
+        $text = &remove_tags($text);
+        my $ign = &is_ignored($text, $t->{user}{screen_name});
+        $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
         my $reply = &tweet_or_reply($obj, $t, $username, $cache, $fh);
         next if $t->{user}{screen_name} eq $username and not $settings{own_tweets};
-        printf $fh "t:%s id:%s ac:%s %snick:%s created_at:%s %s\n",
-            $reply, $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name},
+        printf $fh "t:%s id:%s ac:%s %s%snick:%s created_at:%s %s\n",
+            $reply, $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}{screen_name},
             &encode_for_file($t->{created_at}), $text;
 
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
@@ -1824,9 +1830,11 @@ sub get_tweets {
 
         my $text = &get_text( $t, $obj );
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
-        next if '' eq ($text = &remove_ignored($text));
-        printf $fh "t:tweet id:%s ac:%s %snick:%s created_at:%s %s\n",
-          $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name},
+        $text = &remove_tags($text);
+        my $ign = &is_ignored($text);
+        $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
+        printf $fh "t:tweet id:%s ac:%s %s%snick:%s created_at:%s %s\n",
+          $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}{screen_name},
           &encode_for_file($t->{created_at}), $text;
     }
     printf $fh "t:last_id id:%s ac:%s id_type:reply\n", $new_poll_id, $username;
@@ -1902,20 +1910,17 @@ sub do_subscriptions {
             }
 
             $state{__last_id}{$username}{__search}{$topic} = $search->{max_id};
-            $topic =~ s/ /%20/g;
             printf $fh "t:searchid id:%s ac:%s topic:%s\n",
-              $search->{max_id}, $username, $topic;
+              $search->{max_id}, $username, &encode_for_file($topic);
 
             foreach my $t ( reverse @{ $search->{results} } ) {
                 next if exists $blocks{$username}{ $t->{from_user} };
                 my $text = &get_text( $t, $obj );
-                next if '' eq ($text = &remove_ignored($text));
-                if (grep { $_ eq lc $t->{from_user} } @{ $settings{ignored_twits} }) {
-                    next if not &debug();
-                    $text .= ' (IGNORED TWIT)';
-                }
-                printf $fh "t:search id:%s ac:%s nick:%s topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $t->{from_user}, $topic,
+                $text = &remove_tags($text);
+                my $ign = &is_ignored($text, $t->{from_user});
+                $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
+                printf $fh "t:search id:%s ac:%s %snick:%s topic:%s created_at:%s %s\n",
+                  $t->{id}, $username, $ign, $t->{from_user}, $topic,
                   &encode_for_file($t->{created_at}), $text;
             }
         }
@@ -1947,7 +1952,6 @@ sub do_searches {
                   " for $topic. Aborted.\n";
                 return;
             }
-            $topic =~ s/ /%20/g;
 
             # TODO: consider applying ignore-settings to search results
             my @results = ();
@@ -1962,15 +1966,12 @@ sub do_searches {
                 splice @results, $max_results;
             }
             foreach my $t ( reverse @results ) {
-
                 my $text = &get_text( $t, $obj );
-                next if '' eq ($text = &remove_ignored($text));
-                if (grep { $_ eq lc $t->{from_user} } @{ $settings{ignored_twits} }) {
-                    next if not &debug();
-                    $text .= ' (IGNORED TWIT)';
-                }
-                printf $fh "t:search_once id:%s ac:%s %snick:%s topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, &get_reply_to($t), $t->{from_user}, $topic,
+                $text = &remove_tags($text);
+                my $ign = &is_ignored($text, $t->{from_user});
+                $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
+                printf $fh "t:search_once id:%s ac:%s %s%snick:%s topic:%s created_at:%s %s\n",
+                  $t->{id}, $username, $ign, &get_reply_to($t), $t->{from_user}, &encode_for_file($topic),
                   &encode_for_file($t->{created_at}), $text;
             }
         }
@@ -2021,7 +2022,15 @@ sub get_timeline {
 
 sub encode_for_file {
     my $datum = shift;
+    $datum =~ s/\t/%09/g;
     $datum =~ s/ /%20/g;
+    return $datum;
+}
+
+sub decode_from_file {
+    my $datum = shift;
+    $datum =~ s/%20/ /g;
+    $datum =~ s/%09/\t/g;
     return $datum;
 }
 
@@ -2070,7 +2079,12 @@ sub meta_to_line {
         $line_attribs{hi_nick} = "\cC$hilight_color$meta->{nick}\cO";
     }
 
-    if ( $meta->{type} ne 'dm' and $meta->{nick} and $meta->{id} ) {
+    if (defined $meta->{ign}) {
+        $line_attribs{ignoring} = 1;
+        $line_attribs{marker} = '-' . $meta->{ign};  # must have a marker for tweet theme
+
+    } elsif ( $meta->{type} ne 'dm' and $meta->{nick} and $meta->{id} and not $meta->{ign} ) {
+        ### not ignored, so we probably want it cached and create a :marker...
         my $marker;
         for (my $mark_idx = 0;
                 defined $state{__ids}{ lc $meta->{nick} }
@@ -2103,7 +2117,7 @@ sub cache_to_meta {
         if ($line =~ s/^$key:(\S+)\s*//) {
             $key = 'account' if $key eq 'ac';
             $meta{$key} = $1;
-            $meta{$key} =~ s/%20/ /g;
+            $meta{$key} = &decode_from_file($meta{$key});
             if ($key eq 'account') {
                 $meta{username} = &normalize_username($meta{account});	# username is account@Service
                 $meta{account} =~ s/\@(\w+)$//;
@@ -2197,7 +2211,7 @@ sub monitor_child {
             }
 
         } elsif (s/^t:(tweet|dm|reply|search|search_once)\s+//x) {
-            my %meta = &cache_to_meta($_, $1, [ qw/id ac reply_to_user reply_to_id nick topic created_at/ ]);
+            my %meta = &cache_to_meta($_, $1, [ qw/id ac ign reply_to_user reply_to_id nick topic created_at/ ]);
 
             next if exists $new_cache{ $meta{id} };
             $new_cache{ $meta{id} } = time;
@@ -2342,9 +2356,10 @@ sub write_lines {
     my $old_tf;
     #	&debug("line: " . Dumper $lines_ref);
     foreach my $line (@$lines_ref) {
-       my $win_name = &window( $line->{type}, $line->{username}, $line->{nick}, $line->{topic} );
-       my $ac_tag = '';
-       if ( lc $line->{service} ne lc $settings{default_service} ) {
+        my $line_want_extras = $want_extras;
+        my $win_name = &window( $line->{type}, $line->{username}, $line->{nick}, $line->{topic} );
+        my $ac_tag = '';
+        if ( lc $line->{service} ne lc $settings{default_service} ) {
             $ac_tag = "$line->{username}: ";
         } elsif ( $line->{username} ne "$user\@$defservice"
                 and lc $line->{account} ne lc $win_name ) {
@@ -2365,7 +2380,17 @@ sub write_lines {
         my @date = localtime($line->{epoch});
         my $ymd  = sprintf('%04d-%02d-%02d', $date[5]+1900, $date[4]+1, $date[3]);
         my $ymd_suffix = '';
-        if ($want_ymd_suffix) {
+        if (defined $line->{ignoring}) {
+            next if not $settings{debug};
+            $line->{text} = "\cC$irssi_to_mirc_colors{'%b'}IGNORED\cO " . $line->{text};
+            if ($settings{debug_win_name} ne '' ) {
+                $win_name = $settings{debug_win_name};
+            } else {
+                $win_name = '(status)';
+                $line->{text} = "%g[$IRSSI{name}] %n " . $line->{text};
+            }
+            $line_want_extras = 0;
+        } elsif ($want_ymd_suffix) {
             $ymd_suffix = " \cC$ymd_color$ymd\cO" if $ymd_now ne $ymd;
         } elsif (not defined $last_ymd{wins}{$win_name}
                   or $last_ymd{wins}{$win_name}->{ymd} ne $ymd) {
@@ -2377,18 +2402,18 @@ sub write_lines {
         if (not defined $old_tf) {
             $old_tf = Irssi::settings_get_str('timestamp_format');
         }
-        Irssi::settings_set_str('timestamp_format', $ts);
+        Irssi::command("^set timestamp_format $ts");
         Irssi::window_find_name($win_name)->printformat(
             @print_opts, &hilight( $line->{text} ) . $ymd_suffix
         );
-        if ($want_extras) {
+        if ($line_want_extras) {
             &write_log($line, $win_name, \@date);
             &write_channels($line, \@date);
         }
     }
     # recall timestamp format
     if (defined $old_tf) {
-        Irssi::settings_set_str('timestamp_format', $old_tf)
+        Irssi::command("^set timestamp_format $old_tf");
         &debug((0+@$lines_ref) . " lines, pre-ts: " . $old_tf);
     }
 }
@@ -2606,32 +2631,35 @@ sub logged_in {
 sub sig_complete {
     my ( $complist, $window, $word, $linestart, $want_space ) = @_;
 
-    if (
-        $linestart =~
-        m{^/twitter_delete\s*$|^/(?:retweet|twitter_info|twitter_reply)(?:_as)?\s*$}
-        or (    $settings{use_reply_aliases}
-            and $linestart =~ /^\/reply(?:_as)?\s*$/ )
-      ) {    # /twitter_reply gets a nick:num
+    my $cmdchars = quotemeta Irssi::settings_get_str('cmdchars');
+
+    if ($linestart =~ s@^ ( [$cmdchars] (?:twitter|twirssi|tweet|dm) \w* ) _as $@$1$2@x
+            or grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'account'} }) {
+        # '*_as' expects account
+        $word =~ s/^@//;
+        @$complist = grep /^\Q$word/i, map { s/\@.*// and $_ } keys %twits;
+        return;
+    }
+
+    if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'tweet'} }) {
+        # 'tweet' expects nick:num (we offer last num for each nick)
         $word =~ s/^@//;
         @$complist = map { "$_:$state{__indexes}{lc $_}" }
           sort { $nicks{$b} <=> $nicks{$a} }
-          grep /^\Q$word/i,
-          keys %{ $state{__indexes} };
+            grep /^\Q$word/i, keys %{ $state{__indexes} };
     }
 
-    if ( $linestart =~
-/^\/twitter_(?:unfriend|add_follow_extra|del_follow_extra|spam|block|user)\s*$/
-      ) {    # /twitter_unfriend gets a nick
+    if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'nick'} }) {
+        # 'nick' expects a nick
         $word =~ s/^@//;
         push @$complist, grep /^\Q$word/i,
           sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
     }
 
-    # /tweet, /tweet_as, /dm, /dm_as - complete @nicks (and nicks as the first
-    # arg to dm)
-    if ( $linestart =~ /^\/(?:tweet|dm)/ ) {
+    # anywhere in line...
+    if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? }x } @{ $completion_types{'re_nick'} }) {
+        # 're_nick' can have @nick anywhere
         my $prefix = $word =~ s/^@//;
-        $prefix = 0 if $linestart eq '/dm' or $linestart eq '/dm_as';
         push @$complist, grep /^\Q$word/i,
           sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
         @$complist = map { "\@$_" } @$complist if $prefix;
@@ -3060,7 +3088,7 @@ if ( Irssi::window_find_name(window()) ) {
         "twirssi_version",
         sub {
             &notice(
-                ["error"],
+                # ["error"],
                 "$IRSSI{name} v$VERSION; "
                   . (
                     $Net::Twitter::VERSION
@@ -3092,6 +3120,32 @@ if ( Irssi::window_find_name(window()) ) {
         )
     );
     Irssi::command_bind(
+        "twitter_fav",
+        &gen_cmd(
+            "/twitter_fav <username:id>",
+            "create_favorite",
+            sub { &notice( ["tweet"], "Tweet favorited." ); },
+            sub {
+                my ( $nick, $num ) = split ':', lc $_[0], 2;
+                return $state{__last_id}{ &normalize_username($nick) }{__sent} unless defined $num;
+                return $state{__ids}{$nick}[$num];
+            }
+        )
+    );
+    Irssi::command_bind(
+        "twitter_unfav",
+        &gen_cmd(
+            "/twitter_unfav <username:id>",
+            "destroy_favorite",
+            sub { &notice( ["tweet"], "Tweet un-favorited." ); },
+            sub {
+                my ( $nick, $num ) = split ':', lc $_[0], 2;
+                return $state{__last_id}{ &normalize_username($nick) }{__sent} unless defined $num;
+                return $state{__ids}{$nick}[$num];
+            }
+        )
+    );
+    Irssi::command_bind(
         "twitter_follow",
         &gen_cmd(
             "/twitter_follow [-w] <username>",
@@ -3111,7 +3165,7 @@ if ( Irssi::window_find_name(window()) ) {
     Irssi::command_bind(
         "twitter_unfollow",
         &gen_cmd(
-            "/twitter_unfriend <username>",
+            "/twitter_unfollow <username>",
             "destroy_friend",
             sub {
                 &notice( ["tweet"], "Stopped following $_[0]" );
@@ -3151,6 +3205,38 @@ if ( Irssi::window_find_name(window()) ) {
             sub { &notice( ["tweet"], "Reported $_[0] for spam" ); }
         )
     );
+
+    %completion_types = (
+        'account' => [
+            'twitter_switch',
+        ],
+        'tweet' => [
+            'retweet',
+            'twitter_delete',
+            'twitter_fav',
+            'twitter_info',
+            'twitter_reply',
+            'twitter_unfav',
+        ],
+        'nick' => [
+            'dm',
+            'twitter_block',
+            'twitter_add_follow_extra',
+            'twitter_del_follow_extra',
+            'twitter_follow',
+            'twitter_spam',
+            'twitter_unblock',
+            'twitter_unfollow',
+            'twitter_user',
+        ],
+        're_nick' => [
+            'dm',
+            'retweet',
+            'tweet',
+        ],
+    );
+    push @{ $completion_types{'tweet'} }, 'reply' if $settings{use_reply_aliases};
+
     Irssi::signal_add_last( 'complete word' => \&sig_complete );
 
     &notice(
