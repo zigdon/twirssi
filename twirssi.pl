@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = "2.5.1gedge105";
+$VERSION = sprintf "%s", q$Version$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger, Gedge',
     contact     => 'zigdon@gmail.com, gedge-oss@yadn.org',
@@ -25,7 +25,7 @@ $VERSION = "2.5.1gedge105";
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => 'Fri Jan 22 14:40:48 PST 2010',
+    changed => '$Date: 2011-03-03 00:57:10 +0000$',
 );
 
 my $twit;	# $twit is current logged-in object (usually one of %twits)
