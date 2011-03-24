@@ -21,5 +21,5 @@ In irssi:
     * If you don't already have a twitter window, create a new window: /win new hidden
     * Name the new window: /win name twitter
     * In that window type: /script load twirssi.pl
-    * Login: /twitter_login username password
+    * Login: /twitter_login username
 

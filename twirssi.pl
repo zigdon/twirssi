@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf "%s", q$Version$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1gedge121$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger, Gedge',
     contact     => 'zigdon@gmail.com, gedge-oss@yadn.org',
@@ -36,7 +36,7 @@ my $defservice; # current $service
 my $poll_event;		# timeout_add event object (regular update)
 my %last_poll;		# $last_poll{$username}{tweets|friends|blocks}	= time of last update
 			#	    {__interval|__poll}			= time
-my %nicks;              # $nicks{$screen_name} = last seen/mentioned time
+my %nicks;              # $nicks{$screen_name} = last seen/mentioned time (for sorting completions)
 my %friends;		# $friends{$username}{$nick} = $epoch_when_refreshed (rhs value used??)
 my %blocks;		# $blocks {$username}{$nick} = $epoch_when_refreshed (rhs value used??)
 my %tweet_cache;	# $tweet_cache{$tweet_id} = time of tweet (helps keep last hour of IDs, to avoid dups)
@@ -111,6 +111,7 @@ my @settings_defn = (
         [ 'use_reply_aliases', 'twirssi_use_reply_aliases', 'b', 0 ],
         [ 'window_input',      'tweet_window_input',        'b', 0 ],
         [ 'retweet_classic',   'retweet_classic',           'b', 0 ],
+        [ 'retweet_show',      'retweet_show',              'b', 0 ],
         [ 'force_first',       'twirssi_force_first',       'b', 0 ],
 
         [ 'friends_poll',      'twitter_friends_poll',      'i', 600 ],
@@ -151,8 +152,6 @@ my %irssi_to_mirc_colors = (
 sub cmd_direct {
     my ( $data, $server, $win ) = @_;
 
-    return unless &logged_in($twit);
-
     my ( $target, $text ) = split ' ', $data, 2;
     unless ( $target and $text ) {
         &notice( ["dm"], "Usage: /dm <nick> <message>" );
@@ -165,8 +164,6 @@ sub cmd_direct {
 sub cmd_direct_as {
     my ( $data, $server, $win ) = @_;
 
-    return unless &logged_in($twit);
-
     my ( $username, $target, $text ) = split ' ', $data, 3;
     unless ( $username and $target and $text ) {
         &notice( ["dm"], "Usage: /dm_as <username> <nick> <message>" );
@@ -174,15 +171,18 @@ sub cmd_direct_as {
     }
 
     return unless $username = &valid_username($username);
+    return unless &logged_in($twits{$username});
 
-    return if &too_long($text);
+    my $target_norm = &normalize_username($target, 1);
+
+    return if &too_long($text, ['dm', $target_norm]);
 
     $text = &make_utf8($text);
 
     eval {
         if ( $twits{$username}
             ->new_direct_message( { user => $target, text => $text } ) ) {
-            &notice( [ "dm", $target ], "DM sent to $target: $text" );
+            &notice( [ "dm", $target_norm ], "DM sent to $target: $text" );
             $nicks{$target} = time;
         } else {
             my $error;
@@ -191,7 +191,7 @@ sub cmd_direct_as {
                 $error = $error->{error};
             };
             die "$error\n" if $error;
-            &notice( [ "dm", $target ], "DM to $target failed" );
+            &notice( [ "dm", $target_norm ], "DM to $target failed" );
         }
     };
 
@@ -203,8 +203,6 @@ sub cmd_direct_as {
 
 sub cmd_retweet {
     my ( $data, $server, $win ) = @_;
-
-    return unless &logged_in($twit);
 
     $data =~ s/^\s+|\s+$//;
     unless ($data) {
@@ -220,8 +218,6 @@ sub cmd_retweet {
 sub cmd_retweet_as {
     my ( $data, $server, $win ) = @_;
 
-    return unless &logged_in($twit);
-
     $data =~ s/^\s+|\s+$//;
     ( my $username, my $id, $data ) = split ' ', $data, 3;
 
@@ -232,6 +228,8 @@ sub cmd_retweet_as {
     }
 
     return unless $username = &valid_username($username);
+
+    return unless &logged_in($twits{$username});
 
     my $nick;
     $id =~ s/[^\w\d\-:]+//g;
@@ -269,11 +267,13 @@ sub cmd_retweet_as {
     my $modified = $data;
     $data = &shorten($text);
 
-    return if ($modified or $settings{retweet_classic}) and &too_long($data);
+    return if ($modified or $settings{retweet_classic})
+              and &too_long($data, ['tweet', $username]);
 
     $data = &make_utf8($data);
 
     my $success = 1;
+    my $extra_info = '';
     eval {
         if ($modified or $settings{retweet_classic}) {
             $success = $twits{$username}->update(
@@ -282,14 +282,18 @@ sub cmd_retweet_as {
                     # in_reply_to_status_id => $state{__ids}{ lc $nick }[$id]
                 }
             );
+            $extra_info = ' (classic/edited)';
         } else {
             $success =
               $twits{$username}->retweet( { id => $state{__ids}{ lc $nick }[$id] } );
-            $success = $success->{id} if ref $success;
+            # $retweeted_id{$username}{ $state{__ids}{ lc $nick }[$id] } = 1;
+            $extra_info = ' (native)';
         }
-        &notice( [ "tweet", $username ], "Update failed" ) unless $success;
     };
-    return unless $success;
+    unless ($success) {
+        &notice( [ "tweet", $username ], "Update failed" );
+        return;
+    }
 
     if ($@) {
         &notice( [ "error", $username ],
@@ -297,17 +301,17 @@ sub cmd_retweet_as {
         return;
     }
 
+    $extra_info .= ' id=' . $success->{id} if $settings{debug};
+
     foreach ( $data =~ /@([-\w]+)/g ) {
         $nicks{$_} = time;
     }
 
-    &notice( [ "tweet", $username ], "Retweet sent" );
+    &notice( [ "tweet", $username ], "Retweet of $nick:$id sent" . $extra_info );
 }
 
 sub cmd_tweet {
     my ( $data, $server, $win ) = @_;
-
-    return unless &logged_in($twit);
 
     $data =~ s/^\s+|\s+$//;
     unless ($data) {
@@ -321,8 +325,6 @@ sub cmd_tweet {
 sub cmd_tweet_as {
     my ( $data, $server, $win ) = @_;
 
-    return unless &logged_in($twit);
-
     $data =~ s/^\s+|\s+$//;
     $data =~ s/\s\s+/ /g;
     ( my $username, $data ) = split ' ', $data, 2;
@@ -334,9 +336,11 @@ sub cmd_tweet_as {
 
     return unless $username = &valid_username($username);
 
+    return unless &logged_in($twits{$username});
+
     $data = &shorten($data);
 
-    return if &too_long($data);
+    return if &too_long($data, ['tweet', $username]);
 
     $data = &make_utf8($data);
 
@@ -361,15 +365,15 @@ sub cmd_tweet_as {
     }
 
     $state{__last_id}{$username}{__sent} = $res->{id};
+    my $id_info = ' id=' . $res->{id} if $settings{debug};
 
-    if ( $username eq "$user\@$defservice" ) {
-        my $away = $settings{to_away} ? &update_away($data) : 0;
-
-        &notice( [ "tweet", $username ],
-            "Update sent" . ( $away ? " (and away msg set)" : "" ) );
-    } else {
-        &notice( [ "tweet", $username ], "Update sent" );
+    my $away_info = '';
+    if ( $username eq "$user\@$defservice"
+          and $settings{to_away}
+          and &update_away($data) ) {
+        $away_info = " (and away msg set)";
     }
+    &notice( [ "tweet", $username ], "Update sent" . $away_info . $id_info );
 }
 
 sub cmd_broadcast {
@@ -442,8 +446,6 @@ sub cmd_info {
 sub cmd_reply {
     my ( $data, $server, $win ) = @_;
 
-    return unless &logged_in($twit);
-
     $data =~ s/^\s+|\s+$//;
     unless ($data) {
         &notice( ["reply"], "Usage: /reply <nick[:num]> <update>" );
@@ -462,8 +464,6 @@ sub cmd_reply {
 sub cmd_reply_as {
     my ( $data, $server, $win ) = @_;
 
-    return unless &logged_in($twit);
-
     $data =~ s/^\s+|\s+$//;
     ( my $username, my $id, $data ) = split ' ', $data, 3;
 
@@ -474,6 +474,8 @@ sub cmd_reply_as {
     }
 
     return unless $username = &valid_username($username);
+
+    return unless &logged_in($twits{$username});
 
     my $nick;
     $id =~ s/[^\w\d\-:]+//g;
@@ -494,7 +496,7 @@ sub cmd_reply_as {
     $data = "\@$nick $data";
     $data = &shorten($data);
 
-    return if &too_long($data);
+    return if &too_long($data, ['reply', $username]);
 
     $data = &make_utf8($data);
 
@@ -1103,7 +1105,7 @@ sub cmd_upgrade {
       $settings{upgrade_beta}
       ? "http://github.com/$settings{upgrade_dev}/twirssi/raw/$settings{upgrade_branch}/twirssi.pl"
       : "http://twirssi.com/twirssi.pl";
-    &notice( ["error"], "Downloading twirssi from $URL" );
+    &notice( ["notice"], "Downloading twirssi from $URL" );
     LWP::Simple::getstore( $URL, "$loc.upgrade" );
 
     unless ( -s "$loc.upgrade" ) {
@@ -1143,7 +1145,7 @@ sub cmd_upgrade {
 
     my ( $dir, $file ) = ( $loc =~ m{(.*)/([^/]+)$} );
     if ( -e "$dir/autorun/$file" ) {
-        &notice( ["error"], "Updating $dir/autorun/$file" );
+        &notice( ["notice"], "Updating $dir/autorun/$file" );
         unlink "$dir/autorun/$file"
           or
           &notice( ["error"], "Failed to remove old $file from autorun: $!" );
@@ -1152,7 +1154,7 @@ sub cmd_upgrade {
             "Failed to create symlink in autorun directory: $!" );
     }
 
-    &notice( ["error"],
+    &notice( ["notice"],
         "Download complete.  Reload twirssi with /script load $file" );
 }
 
@@ -1790,23 +1792,33 @@ sub get_tweets {
         return;
     }
 
+    if (0000000 and $settings{debug} and open my $fh_tl, '>', "/tmp/tl-$username.txt" ) {
+        print $fh_tl Dumper $tweets;
+        close $fh_tl;
+    }
+
     print $fh "t:debug %G$username%n got ", scalar(@$tweets), " tweets, first/last: ",
                         (sort {$a->{id} <=> $b->{id}} @$tweets)[0]->{id}, "/",
                         (sort {$a->{id} <=> $b->{id}} @$tweets)[$#{$tweets}]->{id}, "\n";
 
+    my @own_ids = ();
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
         $text = &remove_tags($text);
         my $ign = &is_ignored($text, $t->{user}{screen_name});
         $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
         my $reply = &tweet_or_reply($obj, $t, $username, $cache, $fh);
-        next if $t->{user}{screen_name} eq $username and not $settings{own_tweets};
+        if ($t->{user}{screen_name} eq $username and not $settings{own_tweets}) {
+            push @own_ids, $t->{id};
+            next;
+        }
         printf $fh "t:%s id:%s ac:%s %s%snick:%s created_at:%s %s\n",
             $reply, $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}{screen_name},
             &encode_for_file($t->{created_at}), $text;
 
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
+    &debug($fh, "%G$username%n skip own " . join(', ', @own_ids) . "\n") if @own_ids;
     printf $fh "t:last_id id:%s ac:%s id_type:timeline\n", $new_poll_id, $username;
 
     &debug($fh, "%G$username%n Polling for replies since " . $state{__last_id}{$username}{reply});
@@ -1987,12 +1999,11 @@ sub get_timeline {
 
     print $fh "t:debug %G$username%n get_timeline("
       . "$fix_replies_index{$username}=$target > $last_id)\n";
+    my $arg_ref = { id => $target, };
+    $arg_ref->{since_id} = $last_id if $last_id;
+    $arg_ref->{include_rts} = 1 if $settings{retweet_show};
     eval {
-        $tweets = $obj->user_timeline({
-                id => $target,
-                ( $last_id ? ( since_id => $last_id ) : () ),
-            }
-        );
+        $tweets = $obj->user_timeline($arg_ref);
     };
 
     if ($@) {
@@ -2148,7 +2159,7 @@ sub monitor_child {
     # pretend
 
     my @lines = ();
-    my %new_cache;
+    my %new_cache = ();
     my %types_per_user = ();
     my $got_errors = 0;
 
@@ -2213,9 +2224,16 @@ sub monitor_child {
         } elsif (s/^t:(tweet|dm|reply|search|search_once)\s+//x) {
             my %meta = &cache_to_meta($_, $1, [ qw/id ac ign reply_to_user reply_to_id nick topic created_at/ ]);
 
-            next if exists $new_cache{ $meta{id} };
+            if (exists $new_cache{ $meta{id} }) {
+                # &debug("Skipping newly-cached $meta{id}");
+                next;
+            }
             $new_cache{ $meta{id} } = time;
-            next if exists $tweet_cache{ $meta{id} };
+            if (exists $tweet_cache{ $meta{id} }) {
+                       # and (not $retweeted_id{$username} or not $retweeted_id{$username}{ $meta{id} });
+                # &debug("Skipping cached $meta{id}");
+                next;
+            }
 
             my %line_attribs = &meta_to_line(\%meta);
             push @lines, { %line_attribs };
@@ -2582,13 +2600,13 @@ sub update_away {
 }
 
 sub too_long {
-    my $data    = shift;
-    my $noalert = shift;
+    my $data     = shift;
+    my $alert_to = shift;
 
     if ( length $data > 140 ) {
-        &notice( ["tweet"],
+        &notice( $alert_to,
             "Tweet too long (" . length($data) . " characters) - aborted" )
-          unless $noalert;
+          if defined $alert_to;
         return 1;
     }
 
@@ -2621,7 +2639,7 @@ sub logged_in {
     my $obj = shift;
     unless ($obj) {
         &notice( ["error"],
-            "Not logged in!  Use /twitter_login username pass!" );
+            "Not logged in!  Use /twitter_login username" );
         return 0;
     }
 
@@ -2633,7 +2651,7 @@ sub sig_complete {
 
     my $cmdchars = quotemeta Irssi::settings_get_str('cmdchars');
 
-    if ($linestart =~ s@^ ( [$cmdchars] (?:twitter|twirssi|tweet|dm) \w* ) _as $@$1$2@x
+    if ($linestart =~ s@^ ( [$cmdchars] (?:twitter|twirssi|tweet|dm|retweet) \w* ) _as $@$1$2@x
             or grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'account'} }) {
         # '*_as' expects account
         $word =~ s/^@//;
@@ -2861,7 +2879,7 @@ sub shorten {
     my $data = shift;
 
     my $provider = $settings{url_provider};
-    if ( ( $settings{always_shorten} or &too_long( $data, 1 ) ) and $provider ) {
+    if ( ( $settings{always_shorten} or &too_long($data) ) and $provider ) {
         my @args;
         if ( $provider eq 'Bitly' ) {
             @args[ 1, 2 ] = split ',', $settings{url_args}, 2;
@@ -2895,7 +2913,7 @@ sub shorten {
 
 sub normalize_username {
     my $user      = shift;
-    my $pre_login = shift;
+    my $non_login = shift;
     return '' if $user eq '';
 
     my ( $username, $service ) = split /\@/, lc($user), 2;
@@ -2903,7 +2921,7 @@ sub normalize_username {
         $service = ucfirst $service;
     } else {
         $service = ucfirst lc $settings{default_service};
-        unless ( $pre_login or exists $twits{"$username\@$service"} ) {
+        unless ( $non_login or exists $twits{"$username\@$service"} ) {
             $service = undef;
             foreach my $t ( sort keys %twits ) {
                 next unless $t =~ /^\Q$username\E\@(Twitter|Identica)/;
