@@ -1459,7 +1459,7 @@ sub cmd_user {
     my $tweets;
     eval { $tweets = $twit->user_timeline({ id => $target, }); };
     if ($@) {
-        print "Error during user_timeline $target call: Aborted.";
+        &notice([ 'error' ], "Error during user_timeline $target call: Aborted.");
         &debug("cmd_user: $_\n") foreach split "\n", Dumper($@);
         return;
     }
@@ -1564,7 +1564,7 @@ sub background_setup {
         rename $filename, "$filename.done";
         exit;
     } else {
-        &ccrap("Failed to fork for background call: $!");
+        &notice([ 'error' ], "Failed to fork for background call: $!");
     }
 }
 
@@ -2325,7 +2325,7 @@ sub monitor_child {
         unlink $filename unless &debug();
 
         if (not $is_update) {
-            &ccrap("Failed to get response.  Giving up.");
+            &notice([ 'error' ], "Failed to get response.  Giving up.");
             return;
         }
 
@@ -2342,7 +2342,7 @@ sub monitor_child {
         }
 
         if ( $failstatus < 2 and time - $last_poll{__poll} > 60 * 60 ) {
-            &ccrap(
+            &notice([ 'error' ],
               $settings{mini_whale}
               ? 'FAIL WHALE'
               : q{     v  v        v},
@@ -2358,7 +2358,7 @@ sub monitor_child {
         }
 
         if ( $failstatus == 0 and time - $last_poll{__poll} < 600 ) {
-            &ccrap("Haven't been able to get updated tweets since $since");
+            &notice([ 'error' ],"Haven't been able to get updated tweets since $since");
             $failstatus = 1;
         }
     }
@@ -2523,7 +2523,7 @@ sub save_state {
             print $fh JSON::Any->objToJson( \%state );
             close $fh;
         } else {
-            &ccrap("Failed to write state to $file: $!");
+            &notice([ 'error' ],"Failed to write state to $file: $!");
         }
     }
 }
@@ -2566,18 +2566,14 @@ sub notice {
         } elsif ($type eq 'error') {
             Irssi::window_find_name(&window( $type, $tag ))->printformat(
                 MSGLEVEL_PUBLIC, 'twirssi_error', $msg);
+        } elsif ($type eq 'crap') {
+            Irssi::window_find_name(&window())->print(
+                "%R***%n $msg", MSGLEVEL_CLIENTCRAP );
         } else {
             my $col = '%G';
             Irssi::window_find_name(&window( $type, $tag ))->print(
                 "${col}***%n $msg", MSGLEVEL_PUBLIC );
         }
-    }
-}
-
-sub ccrap {
-    foreach my $msg (@_) {
-        Irssi::window_find_name(&window())->print(
-            "%R***%n $msg", MSGLEVEL_CLIENTCRAP );
     }
 }
 
@@ -2590,7 +2586,7 @@ sub update_away {
             $server->send_raw("away :$data");
             return 1;
         } else {
-            &ccrap( "Can't find bitlbee server.",
+            &notice([ 'error' ], "Can't find bitlbee server.",
                 "Update bitlbee_server or disable tweet_to_away" );
             return 0;
         }
@@ -2884,7 +2880,7 @@ sub shorten {
         if ( $provider eq 'Bitly' ) {
             @args[ 1, 2 ] = split ',', $settings{url_args}, 2;
             unless ( @args == 3 ) {
-                &ccrap(
+                &notice([ 'crap' ],
                     "WWW::Shorten::Bitly requires a username and API key.",
                     "Set short_url_args to username,API_key or change your",
                     "short_url_provider."
@@ -2994,11 +2990,10 @@ sub window {
 sub ensure_window {
     my $win = shift;
     return $win if Irssi::window_find_name($win);
-    Irssi::active_win()->print("Creating window '$win'.");
-    #   &notice("Creating a new window: '$winname'");
+    &notice([ 'crap' ], "Creating window '$win'.");
     my $newwin = Irssi::Windowitem::window_create( $win, 1 );
     if (not $newwin) {
-        Irssi::active_win()->print("Failed to create window $win!");
+        &notice([ 'error' ], "Failed to create window $win!");
         return;
     }
     $newwin->set_name($win);
@@ -3093,12 +3088,12 @@ if ( Irssi::window_find_name(window()) ) {
             if ( open my $fh, '>', "/tmp/$IRSSI{name}.cache.txt" ) {
                 print $fh Dumper \%tweet_cache;
                 close $fh;
-                print "cache written out to /tmp/$IRSSI{name}.cache.txt";
+                &notice([ 'crap' ], "cache written out to /tmp/$IRSSI{name}.cache.txt");
             }
             if ( open my $fh, '>', "$settings{dump_store}" ) {
                 print $fh Dumper \%state;
                 close $fh;
-                print "state written out to $settings{dump_store}";
+                &notice([ 'crap' ], "state written out to $settings{dump_store}");
             }
         }
     );
