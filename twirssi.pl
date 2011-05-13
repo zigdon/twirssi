@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1gedge121$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1gedge122$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger, Gedge',
     contact     => 'zigdon@gmail.com, gedge-oss@yadn.org',
@@ -125,7 +125,7 @@ my @settings_defn = (
 
 my %meta_to_twit = (    # map file keys to twitter keys
         'id'		=> 'id',
-	'created_at'    => 'created_at',
+        'created_at'    => 'created_at',
         'reply_to_user'	=> 'in_reply_to_screen_name',
         'reply_to_id'	=> 'in_reply_to_status_id',
 );
@@ -308,6 +308,74 @@ sub cmd_retweet_as {
     }
 
     &notice( [ "tweet", $username ], "Retweet of $nick:$id sent" . $extra_info );
+}
+
+
+sub cmd_retweet_to_window {
+    my ( $data, $server, $win ) = @_;
+
+    $data =~ s/^\s+|\s+$//;
+
+    ( my $id, $data ) = split ' ', $data, 2;
+    $id =~ s/[^\w\d\-:]+//g;
+    ( my $nick, $id ) = split ':', $id;
+    unless ( exists $state{__ids}{ lc $nick } ) {
+        &notice( [ "tweet" ],
+            "Can't find a tweet from $nick to retweet!" );
+        return;
+    }
+
+    $id = $state{__indexes}{lc $nick} unless $id;
+    unless ( $state{__ids}{ lc $nick }[$id] ) {
+        &notice( [ "tweet" ],
+            "Can't find a tweet numbered $id from $nick to retweet!" );
+        return;
+    }
+
+    unless ( $state{__tweets}{ lc $nick }[$id] ) {
+        &notice( [ "tweet" ],
+            "The text of this tweet isn't saved, sorry!" );
+        return;
+    }
+
+    my $target = '';
+    my $got_net = 0;
+    my $got_target = 0;
+    while (not $got_target and $data =~ s/^(\S+)\s*//) {
+        my $arg = $1;
+        if (not $got_net and lc($arg) ne '-channel' and lc($arg) ne '-nick' and $arg =~ /^-/) {
+            $got_net = 1;
+        } else {
+            if (lc($arg) eq '-channel' or lc($arg) eq '-nick') {
+                last if not $data =~ s/^(\S+)\s*//;
+                $arg .= " $1";
+            }
+            $got_target = 1;
+        }
+        $target .= ($target ne '' ? ' ' : '') . $arg;
+    }
+    if (not $got_target) {
+        &notice( [ "tweet" ], "Missing target." );
+        return;
+    }
+
+    my $text = $settings{retweet_format};
+    $text =~ s/\$n/\@$nick/g;
+    if ($data) {
+        $text =~ s/\${|\$}//g;
+        $text =~ s/\$c/$data/;
+    } else {
+        $text =~ s/\${.*?\$}//;
+    }
+    $text =~ s/\$t/$state{__tweets}{ lc $nick }[$id]/;
+
+    $server->command("msg $target $text");
+
+    foreach ( $text =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
+    }
+
+    &debug("Retweet of $nick:$id sent to $target");
 }
 
 sub cmd_tweet {
@@ -581,8 +649,8 @@ sub cmd_search {
         $search_once{$username}->{$data} = $settings{search_results};
         &notice( [ "search", $data ], "Searching for '$data'" );
         &get_updates([ 0, [
-				[ $username, { up_searches => [ $data ] } ],
-			],
+                                [ $username, { up_searches => [ $data ] } ],
+                        ],
         ]);
     } else {
         &notice( ["search"], "Usage: /twitter_search <search term>" );
@@ -2049,10 +2117,10 @@ sub date_to_epoch {
     # parse created_at style date to epoch time
     my $date = shift;
     if (not @datetime_parser) {
-	foreach my $date_fmt (
-			'%a %b %d %T %z %Y',	# Fri Nov 05 10:14:05 +0000 2010
-			'%a, %d %b %Y %T %z',	# Fri, 05 Nov 2010 16:59:40 +0000
-		) {
+        foreach my $date_fmt (
+                        '%a %b %d %T %z %Y',	# Fri Nov 05 10:14:05 +0000 2010
+                        '%a, %d %b %Y %T %z',	# Fri, 05 Nov 2010 16:59:40 +0000
+                ) {
             my $parser = DateTime::Format::Strptime->new(pattern => $date_fmt);
             if (not defined $parser) {
                 @datetime_parser = ();
@@ -2699,8 +2767,8 @@ sub event_setup_changed {
     foreach my $setting (@settings_defn) {
         my $setting_changed = 0;
         my $stg_type .= '_' . ($setting->[2] eq 'b' ? 'bool'
-					: $setting->[2] eq 'i' ? 'int'
-						: $setting->[2] eq 's' ? 'str' : '');
+                                        : $setting->[2] eq 'i' ? 'int'
+                                                : $setting->[2] eq 's' ? 'str' : '');
         if ($stg_type eq '_') {
             if ($do_add) {
                 print        "ERROR: Bad opt '$setting->[2]' for $setting->[0]";
@@ -2801,10 +2869,10 @@ sub ensure_logfile() {
         binmode $fh, ':utf8';
         $fh->autoflush(1);
         $res = $logfile{$win_name} = {
-		'fh' => $fh,
+                'fh' => $fh,
                 'filename' => $new_logfile,
                 'ymd' => '',
-	};
+        };
     } else {
         &notice( ["error"], "Failed to append to $new_logfile: $!" );
     }
@@ -3043,6 +3111,7 @@ if ( Irssi::window_find_name(window()) ) {
     Irssi::command_bind( "tweet_as",                   "cmd_tweet_as" );
     Irssi::command_bind( "retweet",                    "cmd_retweet" );
     Irssi::command_bind( "retweet_as",                 "cmd_retweet_as" );
+    Irssi::command_bind( "retweet_to",                 "cmd_retweet_to_window" );
     Irssi::command_bind( "twitter_broadcast",          "cmd_broadcast" );
     Irssi::command_bind( "twitter_info",               "cmd_info" );
     Irssi::command_bind( "twitter_user",               "cmd_user" );
@@ -3225,6 +3294,7 @@ if ( Irssi::window_find_name(window()) ) {
         ],
         'tweet' => [
             'retweet',
+            'retweet_to',
             'twitter_delete',
             'twitter_fav',
             'twitter_info',
@@ -3267,11 +3337,11 @@ if ( Irssi::window_find_name(window()) ) {
             eval {
                 my $ref = JSON::Any->jsonToObj($json);
                 %state = %$ref;
-		# fix legacy vulnerable ids
+                # fix legacy vulnerable ids
                 for (grep !/^__\w+$/, keys %state) { $state{__ids}{$_} = $state{$_}; delete $state{$_}; }
-		# # remove legacy broken searches (without service name)
+                # # remove legacy broken searches (without service name)
                 # map { /\@/ or delete $state{__searches}{$_} } keys %{$state{__searches}};
-		# convert legacy/broken window tags (without @service, or unnormalized)
+                # convert legacy/broken window tags (without @service, or unnormalized)
                 for my $type (keys %{$state{__windows}}) {
                     next if $type eq 'search' or $type eq 'sender';
                     for my $tag (keys %{$state{__windows}{$type}}) {
