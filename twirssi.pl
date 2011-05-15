@@ -2163,7 +2163,7 @@ sub sig_complete {
 
     if (
         $linestart =~
-        m{^/twitter_delete\s*$|^/(?:retweet|twitter_info|twitter_reply)(?:_as)?\s*$}
+        m{^/twitter_(?:delete|info)\s*$|^/(?:retweet|twitter_reply)(?:_as)?\s*$}
         or (    $settings{use_reply_aliases}
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
