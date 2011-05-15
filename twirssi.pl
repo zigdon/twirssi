@@ -231,6 +231,75 @@ sub cmd_retweet_as {
     &notice( [ "tweet", $username ], "Retweet sent" );
 }
 
+
+sub cmd_retweet_to_window {
+    my ( $data, $server, $win ) = @_;
+
+    $data =~ s/^\s+|\s+$//;
+    ( my $id, $data ) = split ' ', $data, 2;
+
+    my $nick;
+    $id =~ s/[^\w\d\-:]+//g;
+    ( $nick, $id ) = split /:/, $id;
+    unless ( exists $state{ lc $nick } ) {
+        &notice( [ "tweet" ],
+            "Can't find a tweet from $nick to retweet!" );
+        return;
+    }
+    
+    $id = $state{__indexes}{$nick} unless $id;
+    unless ( $state{ lc $nick }[$id] ) {
+        &notice( [ "tweet" ],
+            "Can't find a tweet numbered $id from $nick to retweet!" );
+        return;
+    }
+
+    unless ( $state{__tweets}{ lc $nick }[$id] ) {
+        &notice( [ "tweet" ],
+            "The text of this tweet isn't saved, sorry!" );
+        return;
+    }
+
+    my $target = '';
+    my $got_net = 0;
+    my $got_target = 0;
+    while (not $got_target and $data =~ s/^(\S+)\s*//) {
+        my $arg = $1;
+        if (not $got_net and lc($arg) ne '-channel' and lc($arg) ne '-nick' and $arg =~ /^-/) {
+            $got_net = 1;
+        } else {
+            if (lc($arg) eq '-channel' or lc($arg) eq '-nick') {
+                last if not $data =~ s/^(\S+)\s*//;
+                $arg .= " $1";
+            }
+            $got_target = 1;
+        }
+        $target .= ($target ne '' ? ' ' : '') . $arg;
+    }
+    if (not $got_target) {
+        &notice( [ "tweet" ], "Missing target." );
+        return;
+    }
+
+    my $text = $settings{retweet_format};
+    $text =~ s/\$n/\@$nick/g;
+    if ($data) {
+        $text =~ s/\${|\$}//g;
+        $text =~ s/\$c/$data/;
+    } else {
+        $text =~ s/\${.*?\$}//;
+    }
+    $text =~ s/\$t/$state{__tweets}{ lc $nick }[$id]/;
+
+    $server->command("msg $target $text");
+
+    foreach ( $text =~ /@([-\w]+)/g ) {
+        $nicks{$_} = time;
+    }
+
+    &debug("Retweet of $nick:$id sent to $target");
+}
+
 sub cmd_tweet {
     my ( $data, $server, $win ) = @_;
 
@@ -2163,7 +2232,7 @@ sub sig_complete {
 
     if (
         $linestart =~
-        m{^/twitter_(?:delete|info)\s*$|^/(?:retweet|twitter_reply)(?:_as)?\s*$}
+        m{^/twitter_(?:delete|info)\s*$|^/retweet(?:_as|_to)?\s*$|^/twitter_reply(?:_as)?\s*$}
         or (    $settings{use_reply_aliases}
             and $linestart =~ /^\/reply(?:_as)?\s*$/ )
       )
@@ -2509,6 +2578,7 @@ if ( &window() ) {
     Irssi::command_bind( "tweet_as",                   "cmd_tweet_as" );
     Irssi::command_bind( "retweet",                    "cmd_retweet" );
     Irssi::command_bind( "retweet_as",                 "cmd_retweet_as" );
+    Irssi::command_bind( "retweet_to",                 "cmd_retweet_to_window" );
     Irssi::command_bind( "twitter_broadcast",          "cmd_broadcast" );
     Irssi::command_bind( "twitter_info",               "cmd_info" );
     Irssi::command_bind( "twitter_reply",              "cmd_reply" );
