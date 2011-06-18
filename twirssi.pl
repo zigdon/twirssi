@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1gedge122$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1gedge127$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger, Gedge',
     contact     => 'zigdon@gmail.com, gedge-oss@yadn.org',
@@ -28,7 +28,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1gedge122$ =~ /^\w+:\s+v(\S+)/;
     changed => '$Date: 2011-03-03 00:57:10 +0000$',
 );
 
-my $twit;	# $twit is current logged-in object (usually one of %twits)
+my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
 my %twits;	# $twits{$username} = logged-in object
 my %oauth;
 my $user;	# current $account
@@ -175,9 +175,9 @@ sub cmd_direct_as {
 
     my $target_norm = &normalize_username($target, 1);
 
-    return if &too_long($text, ['dm', $target_norm]);
+    $text = &shorten($text);
 
-    $text = &make_utf8($text);
+    return if &too_long($text, ['dm', $target_norm]);
 
     eval {
         if ( $twits{$username}
@@ -269,8 +269,6 @@ sub cmd_retweet_as {
 
     return if ($modified or $settings{retweet_classic})
               and &too_long($data, ['tweet', $username]);
-
-    $data = &make_utf8($data);
 
     my $success = 1;
     my $extra_info = '';
@@ -409,8 +407,6 @@ sub cmd_tweet_as {
     $data = &shorten($data);
 
     return if &too_long($data, ['tweet', $username]);
-
-    $data = &make_utf8($data);
 
     my $success = 1;
     my $res;
@@ -566,8 +562,6 @@ sub cmd_reply_as {
 
     return if &too_long($data, ['reply', $username]);
 
-    $data = &make_utf8($data);
-
     my $success = 1;
     eval {
         unless (
@@ -655,6 +649,38 @@ sub cmd_search {
     } else {
         &notice( ["search"], "Usage: /twitter_search <search term>" );
     }
+}
+
+
+sub cmd_dms_as {
+    my ( $data, $server, $win ) = @_;
+
+    $data =~ s/^\s+|\s+$//g;
+    ( my $username, $data ) = split ' ', $data, 2;
+    unless ( $username ) {
+        &notice( ['dm'], 'Usage: /twitter_dms_as <username>' );
+        return;
+    }
+    return unless $username = &valid_username($username);
+    return unless &logged_in($twits{$username});
+
+    if ( length $data > 0 ) {
+        &notice( ['error'], 'Usage: /' .
+                      ($username eq "$user\@$defservice"
+                          ? 'twitter_dms' : 'twitter_dms_as <username>') );
+        return;
+    }
+    &notice( [ 'dm' ], 'Fetching direct messages' );
+    &get_updates([ 0, [
+                          [ $username, { up_dms => 1 } ],
+                      ],
+    ]);
+}
+
+
+sub cmd_dms {
+    my ( $data, $server, $win ) = @_;
+    &cmd_dms_as("$user $data", $server, $win);
 }
 
 sub cmd_switch {
@@ -1515,8 +1541,45 @@ sub get_reply_to {
 }
 
 sub cmd_wipe {
-    &notice('wiping all info');
-    %state = ();
+    my ( $data, $server, $win ) = @_;
+    my @cache_keys = qw/ __tweets __indexes __ids
+			__usernames __reply_to_ids __reply_to_users __created_ats /;
+    my @surplus_nicks = ();
+    if ($data eq '') {
+        for my $nick (keys %{ $state{__tweets} }) {
+            my $followed = 0;
+            for my $acct (keys %twits) {
+                if (grep { lc($_) eq $nick } keys %{ $friends{$acct} }) {
+                    $followed = 1;
+                    last;
+                }
+            }
+            push @surplus_nicks, $nick if not $followed;
+        }
+    } else {
+        for my $to_wipe (split(/\s+/, $data)) {
+            if (exists $state{$to_wipe}) {
+                &notice("Wiping '$to_wipe' state.");
+                $state{$to_wipe} = {};
+            } elsif ($to_wipe eq '-f') {
+                push @surplus_nicks, keys %{ $state{__tweets} };
+            } elsif ($to_wipe eq '-A') {
+                &notice('Wiping all info/settings.');
+                %state = ();
+            } else {
+                &notice([ 'error' ], "Error: no such twirssi_wipe argument '$to_wipe'.");
+            }
+        }
+    }
+    if (@surplus_nicks) {
+        for my $surplus_nick (@surplus_nicks) {
+            for my $cache_key (@cache_keys) {
+                delete $state{$cache_key}{$surplus_nick};
+            }
+        }
+        &debug('Wiped data for ' . join(',', @surplus_nicks));
+        &notice('Wiped data for ' . (0+@surplus_nicks) . ' nicks.');
+    }
 }
 
 sub cmd_user {
@@ -1728,7 +1791,7 @@ sub get_updates_child {
 
         if (0 == keys(%$what_to_update)
                     or defined $what_to_update->{up_dms}) {
-            $error++ unless &do_dms( $fh, $username, $twits{$username} );
+            $error++ unless &do_dms( $fh, $username, $twits{$username}, $is_regular );
         }
         next if $error > $errors_beforehand;
 
@@ -1923,12 +1986,12 @@ sub get_tweets {
 
 
 sub do_dms {
-    my ( $fh, $username, $obj ) = @_;
+    my ( $fh, $username, $obj, $is_regular ) = @_;
 
     my $new_poll_id = 0;
 
     my $since_args = {};
-    if ( $state{__last_id}{$username}{dm} ) {
+    if ( $is_regular and $state{__last_id}{$username}{dm} ) {
         $since_args->{since_id} = $state{__last_id}{$username}{dm};
         &debug($fh, "%G$username%n Polling for DMs since_id " .
                          $state{__last_id}{$username}{dm});
@@ -2165,22 +2228,23 @@ sub meta_to_line {
     } elsif ( $meta->{type} ne 'dm' and $meta->{nick} and $meta->{id} and not $meta->{ign} ) {
         ### not ignored, so we probably want it cached and create a :marker...
         my $marker;
+        my $lc_nick = lc $meta->{nick};
         for (my $mark_idx = 0;
-                defined $state{__ids}{ lc $meta->{nick} }
-                  and $mark_idx < @{ $state{__ids}{ lc $meta->{nick} } };
+                defined $state{__ids}{ $lc_nick } and $mark_idx < @{ $state{__ids}{ $lc_nick } };
                 $mark_idx++) {
-            if ($state{__ids}{ lc $meta->{nick} }[$mark_idx] eq $meta->{id}) {
+            if ($state{__ids}{ $lc_nick }[$mark_idx] eq $meta->{id}) {
                 $marker = $mark_idx;
                 last;
             }
         }
         if (not defined $marker) {
-            $marker = ( $state{__indexes}{ lc $meta->{nick} } + 1 ) % $settings{track_replies};
-            $state{__ids}{ lc $meta->{nick} }[$marker]    = $meta->{id};
-            $state{__indexes}{ lc $meta->{nick} }         = $marker;
-            $state{__tweets}{ lc $meta->{nick} }[$marker] = $meta->{text};
+            $marker = ( $state{__indexes}{ $lc_nick } + 1 ) % $settings{track_replies};
+            $state{__ids}    { $lc_nick }[$marker] = $meta->{id};
+            $state{__indexes}{ $lc_nick }          = $marker;
+            $state{__tweets} { $lc_nick }[$marker] = $meta->{text};
             foreach my $key (qw/username reply_to_id reply_to_user created_at/) {
-                $state{"__${key}s"}{ lc $meta->{nick} }[$marker] = $meta->{$key} if defined $meta->{$key};
+                # __usernames __reply_to_ids __reply_to_users __created_ats
+                $state{"__${key}s"}{ $lc_nick }[$marker] = $meta->{$key} if defined $meta->{$key};
             }
         }
         $line_attribs{marker} = ":$marker";
@@ -2631,16 +2695,25 @@ sub notice {
             for my $sub_line (split("\n", $msg)) {
                 print $fh "t:$type ", $sub_line, "\n" if $sub_line ne '';
             }
-        } elsif ($type eq 'error') {
-            Irssi::window_find_name(&window( $type, $tag ))->printformat(
-                MSGLEVEL_PUBLIC, 'twirssi_error', $msg);
-        } elsif ($type eq 'crap') {
-            Irssi::window_find_name(&window())->print(
-                "%R***%n $msg", MSGLEVEL_CLIENTCRAP );
         } else {
             my $col = '%G';
-            Irssi::window_find_name(&window( $type, $tag ))->print(
-                "${col}***%n $msg", MSGLEVEL_PUBLIC );
+            my $win_level = MSGLEVEL_PUBLIC;
+            my $win;
+            if ($tag eq '_tw_in_Win') {
+                $win = Irssi::active_win();
+            } elsif ($type eq 'crap') {
+                $win = Irssi::window_find_name(&window());
+                $col = '%R';
+                $win_level = MSGLEVEL_CLIENTCRAP;
+            } else {
+                $win = Irssi::window_find_name(&window( $type, $tag ));
+            }
+
+            if ($type eq 'error') {
+                $win->printformat(MSGLEVEL_PUBLIC, 'twirssi_error', $msg);
+            } else {
+                $win->print("${col}***%n $msg", $win_level );
+            }
         }
     }
 }
@@ -2953,8 +3026,7 @@ sub shorten {
                     "Set short_url_args to username,API_key or change your",
                     "short_url_provider."
                 );
-                $data = &make_utf8($data);
-                return $data;
+                return &make_utf8($data);
             }
         }
 
@@ -2971,8 +3043,7 @@ sub shorten {
         }
     }
 
-    $data = &make_utf8($data);
-    return $data;
+    return &make_utf8($data);
 }
 
 sub normalize_username {
@@ -3047,7 +3118,7 @@ sub window {
         $win = $state{__windows}{'sender'}{$sname};
     }
     $win = $settings{window} if not defined $win;
-    if (not &ensure_window($win)) {
+    if (not &ensure_window($win, '_tw_in_Win')) {
         $win = $settings{window};
     }
 
@@ -3057,11 +3128,12 @@ sub window {
 
 sub ensure_window {
     my $win = shift;
+    my $using_win = shift;
     return $win if Irssi::window_find_name($win);
-    &notice([ 'crap' ], "Creating window '$win'.");
+    &notice([ 'crap', $using_win ], "Creating window '$win'.");
     my $newwin = Irssi::Windowitem::window_create( $win, 1 );
     if (not $newwin) {
-        &notice([ 'error' ], "Failed to create window $win!");
+        &notice([ 'error', $using_win ], "Failed to create window $win!");
         return;
     }
     $newwin->set_name($win);
@@ -3120,6 +3192,8 @@ if ( Irssi::window_find_name(window()) ) {
     Irssi::command_bind( "twitter_login",              "cmd_login" );
     Irssi::command_bind( "twitter_logout",             "cmd_logout" );
     Irssi::command_bind( "twitter_search",             "cmd_search" );
+    Irssi::command_bind( "twitter_dms",                "cmd_dms" );
+    Irssi::command_bind( "twitter_dms_as",             "cmd_dms_as" );
     Irssi::command_bind( "twitter_switch",             "cmd_switch" );
     Irssi::command_bind( "twitter_subscribe",          "cmd_add_search" );
     Irssi::command_bind( "twitter_unsubscribe",        "cmd_del_search" );
@@ -3311,6 +3385,7 @@ if ( Irssi::window_find_name(window()) ) {
             'twitter_unblock',
             'twitter_unfollow',
             'twitter_user',
+            'twitter_dms',	# here for twitter_dms_as
         ],
         're_nick' => [
             'dm',

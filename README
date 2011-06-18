@@ -23,3 +23,8 @@ In irssi:
     * In that window type: /script load twirssi.pl
     * Login: /twitter_login username
 
+### Change Log ###
+
+2011-06-18	Improved /twirssi_wipe (new default action; -A is previous default action)
+2011-06-09	Add URL shortening to DMs (/dm)
+2011-06-06	Add /twitter_dms and /twitter_dms_as (list recent DMs)
