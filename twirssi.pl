@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1gedge127$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1gedge128$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger, Gedge',
     contact     => 'zigdon@gmail.com, gedge-oss@yadn.org',
@@ -2811,6 +2811,20 @@ sub sig_complete {
           sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
     }
 
+    if (     $linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ $}x) {
+        @$complist = grep /^\Q$word/i, map { "-$_->{tag}" } Irssi::servers();
+        return;
+    } elsif ($linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ \s+ -\S+ $}x) {
+        @$complist = grep /^\Q$word/i, qw/ -channel -nick /;
+        return;
+    } elsif ($linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ \s+ -(\S+) \s+ -channel $}x) {
+        my $lc_tag = lc $1;
+        @$complist = map { $_->{name} }
+                         grep { $_->{name} =~ /^\Q$word/i and lc $_->{server}->{tag} eq $lc_tag }
+                             Irssi::channels();
+        return;
+    }
+
     # anywhere in line...
     if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? }x } @{ $completion_types{'re_nick'} }) {
         # 're_nick' can have @nick anywhere
@@ -2819,6 +2833,7 @@ sub sig_complete {
           sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
         @$complist = map { "\@$_" } @$complist if $prefix;
     }
+
 }
 
 sub event_send_text {
