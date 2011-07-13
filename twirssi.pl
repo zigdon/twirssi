@@ -2302,7 +2302,7 @@ if ( &window() ) {
         "twirssi_dump",
         sub {
             print "twits: ", join ", ",
-              map { "u: $_->{username}\@" . ref($_) } values %twits;
+              map { "u: $_\@" . ref($twits{$_}) } keys %twits;
             print "selected: $user\@$defservice";
             print "friends: ", join ", ", sort keys %friends;
             print "nicks: ",   join ", ", sort keys %nicks;
