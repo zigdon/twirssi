@@ -16,16 +16,16 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1gedge128$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta2$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
-    authors     => 'Dan Boger, Gedge',
-    contact     => 'zigdon@gmail.com, gedge-oss@yadn.org',
+    authors     => 'Dan Boger',
+    contact     => 'zigdon@gmail.com',
     name        => 'twirssi',
     description => 'Send twitter updates using /tweet.  '
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-03-03 00:57:10 +0000$',
+    changed => '$Date: 2011-07-13 20:57:10 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -87,7 +87,7 @@ my @settings_defn = (
         [ 'timestamp_format',  'twirssi_timestamp_format',  's', '%H:%M:%S', ],
         [ 'window_priority',   'twirssi_window_priority',   's', 'account', ],
         [ 'upgrade_branch',    'twirssi_upgrade_branch',    's', 'master', ],
-        [ 'upgrade_dev',       'twirssi_upgrade_dev',       's', 'gedge', ],
+        [ 'upgrade_dev',       'twirssi_upgrade_dev',       's', 'zigdon', ],
         [ 'bitlbee_server',    'bitlbee_server',            's', 'bitlbee' ],
         [ 'hilight_color',     'twirssi_hilight_color',     's', '%M' ],
         [ 'passwords',         'twitter_passwords',         's', undef,			'list{,}' ],
