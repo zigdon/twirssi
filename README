@@ -21,5 +21,11 @@ In irssi:
     * If you don't already have a twitter window, create a new window: /win new hidden
     * Name the new window: /win name twitter
     * In that window type: /script load twirssi.pl
-    * Login: /twitter_login username password
+    * Login: /twitter_login username
 
+### Change Log ###
+
+2011-06-22	Improved completion for /retweet_to
+2011-06-18	Improved /twirssi_wipe (new default action; -A is previous default action)
+2011-06-09	Add URL shortening to DMs (/dm)
+2011-06-06	Add /twitter_dms and /twitter_dms_as (list recent DMs)
