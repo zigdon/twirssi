@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1gedge128$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1gedge129$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger, Gedge',
     contact     => 'zigdon@gmail.com, gedge-oss@yadn.org',
@@ -2353,7 +2353,7 @@ sub monitor_child {
                   if $state{__last_id}{ $meta{username} }{__extras}{ $meta{id_type} } < $meta{id};
             }
 
-        } elsif (s/^t:(tweet|dm|reply|search|search_once)\s+//x) {
+        } elsif (s/^t:(tweet|dm|reply|search|search_once)\s+//x) {	# cf theme_register
             my %meta = &cache_to_meta($_, $1, [ qw/id ac ign reply_to_user reply_to_id nick topic created_at/ ]);
 
             if (exists $new_cache{ $meta{id} }) {
@@ -2518,7 +2518,7 @@ sub write_lines {
 
         my @print_opts = (
             $line->{level},
-            "twirssi_" . $line->{type},
+            "twirssi_" . $line->{type},		# cf theme_register
             $ac_tag,
         );
         push @print_opts, (lc $line->{topic} ne lc $win_name ? $line->{topic} . ':' : '')
@@ -3421,8 +3421,8 @@ if ( Irssi::window_find_name(window()) ) {
     my $file = $settings{replies_store};
     if ( $file and -r $file ) {
         if ( open( my $fh, '<', $file ) ) {
-            local $/;
-            my $json = <$fh>;
+            my $json;
+            do { local $/; $json = <$fh>; };
             close $fh;
             eval {
                 my $ref = JSON::Any->jsonToObj($json);
