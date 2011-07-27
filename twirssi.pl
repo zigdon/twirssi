@@ -1439,7 +1439,7 @@ sub get_friends {
         for my $page (1..10) {
             &debug($fh, "%G$username%n Loading friends page $page...");
             my $friends;
-            if ( ref($u_twit) =~ /^Net::Twitter/ ) {
+            if ( $username =~ /\@Twitter/ ) {
                 $friends = $u_twit->friends( { cursor => $cursor } );
                 last unless $friends;
                 $cursor  = $friends->{next_cursor};
