@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta8$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta9$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -25,7 +25,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta8$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-07-30 09:41:33 +0000$',
+    changed => '$Date: 2011-08-02 07:09:02 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -369,6 +369,13 @@ sub cmd_retweet_to_window {
     }
     $text =~ s/\$t/$state{__tweets}{ lc $nick }[$id]/;
 
+    if (not defined $server) {
+        $server = (Irssi::servers())[0];
+        if (not defined $server) {
+            &notice( [ "tweet" ], "No server to send to." );
+            return;
+        }
+    }
     $server->command("msg $target $text");
 
     foreach ( $text =~ /@([-\w]+)/g ) {
