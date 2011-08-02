@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta3$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta8$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -25,7 +25,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta3$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-07-27 22:20:01 +0000$',
+    changed => '$Date: 2011-07-30 09:41:33 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -34,7 +34,7 @@ my %oauth;
 my $user;	# current $account
 my $defservice; # current $service
 my $poll_event;		# timeout_add event object (regular update)
-my %last_poll;		# $last_poll{$username}{tweets|friends|blocks}	= time of last update
+my %last_poll;		# $last_poll{$username}{tweets|friends|blocks|lists}	= time of last update
 			#	    {__interval|__poll}			= time
 my %nicks;              # $nicks{$screen_name} = last seen/mentioned time (for sorting completions)
 my %friends;		# $friends{$username}{$nick} = $epoch_when_refreshed (rhs value used??)
@@ -52,6 +52,7 @@ my %state;
 		#				   {__sent}		= $id_of_last_tweet_from_act
 		#				   {__extras}{$lc_nick}	= $id_of_last_tweet (fix_replies)
 		#				   {__search}{$topic}	= $id_of_last_tweet
+		# $state{__lists}	{$username}{$list_name}		= { id => $list_id, members=>[$nick,...] }
 		# $state{__channels}	{$type}{$tag}{$net_tag}		= [ channel,... ]
 		# $state{__windows}	{$type}{$tag}			=  $window_name
 my $failstatus = 0;		# last update status:  0=ok, 1=warned, 2=failwhaled
@@ -116,6 +117,7 @@ my @settings_defn = (
 
         [ 'friends_poll',      'twitter_friends_poll',      'i', 600 ],
         [ 'blocks_poll',       'twitter_blocks_poll',       'i', 900 ],
+        [ 'lists_poll',        'twitter_lists_poll',        'i', 900 ],
         [ 'poll_interval',     'twitter_poll_interval',     'i', 300 ],
         [ 'poll_schedule',     'twitter_poll_schedule',     's', '',			'list{,}' ],
         [ 'search_results',    'twitter_search_results',    'i', 5 ],
@@ -630,6 +632,29 @@ sub gen_cmd {
       }
 }
 
+sub cmd_listinfo {
+    my ( $data, $server, $win ) = @_;
+
+    $data =~ s/^\s+|\s+$//g;
+    if ( length $data > 0 ) {
+        my ($list_user, $list_name) = split(' ', lc $data, 2);
+        my $list_account = &normalize_username($list_user, 1);
+        my $list_ac = ($list_account eq "$user\@$defservice" ? '' : "$list_account/");
+        if (defined $list_name) {
+            &notice("Getting list: '$list_ac$list_name'");
+        } else {
+            &notice("Getting all lists for '$list_account'");
+        }
+        &get_updates([ 0, [
+                                [ "$user\@$defservice", { up_lists => [ $list_user, $list_name ] } ],
+                        ],
+        ]);
+
+    } else {
+        &notice( ['error'], 'Usage: /twitter_listinfo [ <user> [<list name>] ]' );
+    }
+}
+
 sub cmd_search {
     my ( $data, $server, $win ) = @_;
 
@@ -783,6 +808,7 @@ sub cmd_login {
     $username = &normalize_username($username, 1);
     ( $user, $defservice ) = split('@', $username, 2);
 
+    $state{__lists}{$username} = {};
     $blocks{$username} = {};
     $friends{$username} = {};
 
@@ -799,7 +825,7 @@ sub cmd_login {
             } else {
                 $twit = Net::Twitter->new(
                     traits =>
-                      [ 'API::REST', 'OAuth', 'API::Search', 'RetryOnError' ],
+                      [ 'API::REST', 'OAuth', 'API::Search', 'API::Lists', 'RetryOnError' ],
                     (
                         grep tr/a-zA-Z/n-za-mN-ZA-M/, map $_,
                         pbafhzre_xrl => 'OMINiOzn4TkqvEjKVioaj',
@@ -990,17 +1016,6 @@ sub verify_twitter_object {
 
     # &get_updates([ 1, [ "$user\@$service", {} ], ]);
     &ensure_updates();
-
-if (0) { # XXX
-    &notice( [ "tweet", "$user\@$service" ],
-        "Logged in as $user\@$service, loading friends list and blocks..." );
-    &get_friends($twit, "$user\@$service", undef, 1);
-    &notice( [ "tweet", "$user\@$service" ],
-        "loaded friends: " . scalar keys %{ $friends{"$user\@$service"} } );
-    &get_blocks($twit, "$user\@$service", undef, 1);
-    &notice( [ "tweet", "$user\@$service" ],
-        "loaded blocks: " . scalar keys %{ $blocks{"$user\@$service"} } );
-}
 
     foreach my $scr_name (keys %{ $friends{"$user\@$service"} }) {
         $nicks{$scr_name} = $friends{"$user\@$service"}{$scr_name};
@@ -1433,45 +1448,24 @@ sub get_friends {
     my $fh        = shift;
     my $is_update = shift;
 
-    my $cursor      = -1;
-    my %new_friends = ();
-    eval {
-        for my $page (1..10) {
-            &debug($fh, "%G$username%n Loading friends page $page...");
-            my $friends;
-            if ( $username =~ /\@Twitter/ ) {
-                $friends = $u_twit->friends( { cursor => $cursor } );
-                last unless $friends;
-                $cursor  = $friends->{next_cursor};
-                $friends = $friends->{users};
-            } else {
-                $friends = $u_twit->friends( { page => $page } );
-                last unless $friends;
-            }
-            $new_friends{ $_->{screen_name} } = time foreach @$friends;
-            last if $cursor eq '0';
-        }
-    };
+    my $new_friends = &scan_cursor('friends', $u_twit, $username, $fh,
+				{ fn=>'friends', cp=>(index($username, '@Twitter') != -1 ? 'c' : 'p'),
+					set_key=>'users', item_key=>'screen_name', });
+    return if not defined $new_friends;
 
-    if ($@) {
-        &notice(['error', $username, $fh], "$username: Error updating friends list.  Aborted.");
-        &debug($fh, "%G$username%n Error updating friends list: $@");
-        return;
-    }
-
-    return \%new_friends if not $is_update;
+    return $new_friends if not $is_update;
 
     my ( $added, $removed ) = ( 0, 0 );
     # &debug($fh, "%G$username%n Scanning for new friends...");
-    foreach ( keys %new_friends ) {
+    foreach ( keys %$new_friends ) {
         next if exists $friends{$username}{$_};
-        $friends{$username}{$_} = $new_friends{$_};
+        $friends{$username}{$_} = $new_friends->{$_};
         $added++;
     }
 
     # &debug($fh, "%G$username%n Scanning for removed friends...");
     foreach ( keys %{ $friends{$username} } ) {
-        next if exists $new_friends{$_};
+        next if exists $new_friends->{$_};
         delete $friends{$username}{$_};
         &debug($fh, "%G$username%n removing friend: $_");
         $removed++;
@@ -1480,36 +1474,133 @@ sub get_friends {
     return ( $added, $removed );
 }
 
+sub scan_cursor {
+    my $type_str  = shift;
+    my $u_twit    = shift;
+    my $username  = shift;
+    my $fh        = shift;
+    my $fn_info   = shift;
+
+    my $whole_set = {};
+    my $paging_broken = 0;
+    my $fn_args = { (defined $fn_info->{args} ? %{ $fn_info->{args} } : ()) };
+    my $fn_name = $fn_info->{fn};
+    eval {
+        for (my $cursor = -1, my $page = 1; $cursor and $page <= 10 and not $paging_broken; $page++) {
+            if (-1 != index($fn_info->{cp}, 'c')) {
+                $fn_args->{cursor} = $cursor;
+            }
+            if ($fn_info->{cp} =~ /p(\d*)/) {
+                my $max_page = $1;
+                $fn_args->{page} = $page;
+                last if length($max_page) > 0 and $page > $max_page;
+            }
+            &debug($fh, "%G$username%n Loading $type_str page $page...");
+            my $collection = $u_twit->$fn_name($fn_args);
+            last unless $collection;
+            if (-1 != index($fn_info->{cp}, 'c')) {
+                $cursor = $collection->{next_cursor};
+                $collection = $collection->{$fn_info->{set_key}};
+            }
+            foreach my $coll_item (@$collection) {
+                if (-1 != index($fn_info->{cp}, 'p')
+                       and defined $whole_set->{$coll_item->{$fn_info->{item_key}}}) {
+                    # fix broken paging, as we've seen this $coll_item before
+                    $paging_broken = 1;
+                    last;
+                }
+                $whole_set->{$coll_item->{$fn_info->{item_key}}} = (defined $fn_info->{item_val}
+								? $coll_item->{$fn_info->{item_val}} : time);
+            }
+        }
+    };
+foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "crsr: $item"); }
+
+    if ($@) {
+        &notice(['error', $username, $fh], "$username: Error updating $type_str.  Aborted.");
+        &debug($fh, "%G$username%n Error updating $type_str: $@");
+        return;
+    }
+
+   return $whole_set;
+}
+
+sub get_lists {
+    my $u_twit    = shift;
+    my $username  = shift;
+    my $fh        = shift;
+    my $is_update = shift;
+    my $userid    = shift;
+    my $list_name = shift;
+
+    my $list_account = $username;
+    if ($is_update and not defined $userid and $username =~ /(.+)\@/) {
+      $userid = $1;
+    } else {
+      $list_account = &normalize_username($userid, 1);
+    }
+
+    my %stats = (added => 0, deleted => 0);
+
+    # ensure $new_lists->{$list_name} = $id
+    my %more_args = ();
+    my $new_lists = &scan_cursor('lists', $u_twit, $username, $fh,
+				{ fn=>'get_lists', cp=>'c', set_key=>'lists',
+					args=>{ user=>$userid, %more_args }, item_key=>'name', item_val=>'id', });
+    return if not defined $new_lists;
+
+    # reduce $new_lists if $list_name specified (not $is_update)
+    if (defined $list_name) {
+        if (not defined $new_lists->{$list_name}) {
+            return {};  # not is_update, so return empty
+        }
+        $new_lists = { $list_name => $new_lists->{$list_name} };
+    }
+
+    foreach my $list (keys %$new_lists) {
+        $stats{added}++ if not exists $state{__lists}{$list_account}{$list};
+        $state{__lists}{$list_account}{$list} = { id=>$new_lists->{$list}, members=>[], };
+    }
+
+    if ($is_update) {
+        # remove any newly-missing lists
+        foreach my $old_list (keys %{ $state{__lists}{$list_account} }) {
+            if (not defined $new_lists->{$old_list}) {
+                delete $state{__lists}{$list_account}{$old_list};
+                &debug($fh, "%G$username%n removing list: $list_account / $old_list");
+                $stats{deleted}++;
+            }
+        }
+    }
+
+    foreach my $reget_list (keys %$new_lists) {
+        &debug($fh, "%G$username%n updating list: $list_account / $reget_list id=" .
+                        $state{__lists}{$list_account}{$reget_list}{id});
+        my $members = &scan_cursor('list member', $u_twit, $username, $fh,
+			{ fn=>'list_members', cp=>'c', set_key=>'users', item_key=>'screen_name', item_val=>'id',
+				args=>{ user=>$userid, list_id=>$state{__lists}{$list_account}{$reget_list}{id} }, });
+        return if not defined $members;
+        $state{__lists}{$list_account}{$reget_list}{members} = [ keys $members ];
+    }
+
+    return ($stats{added}, $stats{deleted});
+}
+
 sub get_blocks {
     my $u_twit    = shift;
     my $username  = shift;
     my $fh        = shift;
     my $is_update = shift;
 
-    my %new_blocks = ();
-    eval {
-        for my $page (1..10) {
-            &debug($fh, "%G$username%n Loading blocks page $page...");
-            my $blocks = $u_twit->blocking( { page => $page } );
-            last if not defined $blocks or @$blocks == 0
-                    or defined $new_blocks{ $blocks->[0]->{screen_name} };
-            &debug($fh, "%G$username%n Blocks page $page... " . scalar(@$blocks)
-                        . " first block: " . $blocks->[0]->{screen_name});
-            $new_blocks{ $_->{screen_name} } = time foreach @$blocks;
-        }
-    };
+    my $new_blocks = &scan_cursor('blocks', $u_twit, $username, $fh,
+				{ fn=>'blocking', cp=>'p', item_key=>'screen_name', });
+    return if not defined $new_blocks;
 
-    if ($@) {
-        &notice(['error', $username, $fh], "$username: Error updating blocks list.  Aborted.");
-        &debug($fh, "%G$username%n Error updating blocks list: $@");
-        return;
-    }
-
-    return \%new_blocks if not $is_update;
+    return $new_blocks if not $is_update;
 
     my ( $added, $removed ) = ( 0, 0 );
     # &debug($fh, "%G$username%n Scanning for new blocks...");
-    foreach ( keys %new_blocks ) {
+    foreach ( keys %$new_blocks ) {
         next if exists $blocks{$username}{$_};
         $blocks{$username}{$_} = time;
         $added++;
@@ -1517,7 +1608,7 @@ sub get_blocks {
 
     # &debug($fh, "%G$username%n Scanning for removed blocks...");
     foreach ( keys %{ $blocks{$username} } ) {
-        next if exists $new_blocks{$_};
+        next if exists $new_blocks->{$_};
         delete $blocks{$username}{$_};
         &debug($fh, "%G$username%n removing block: $_");
         $removed++;
@@ -1679,7 +1770,7 @@ sub background_setup {
 
     if ($child_pid) {                   # parent
         Irssi::timeout_add_once( $pause_monitor, 'monitor_child',
-            [ "$filename.done", $max_pauses, $pause_monitor, 1 ] );
+            [ "$filename.done", $max_pauses, $pause_monitor, $is_update ] );
         Irssi::pidwait_add($child_pid);
     } elsif ( defined $child_pid ) {    # child
         close STDIN;
@@ -1847,6 +1938,47 @@ sub get_updates_child {
         }
         next if $error > $errors_beforehand;
 
+        if ( (0 == keys(%$what_to_update)
+                  and time - $last_poll{$username}{lists} > $settings{lists_poll} )
+                or defined $what_to_update->{up_lists}) {
+            my $list_account = $username;
+            my $list_name_limit;
+            if ($is_regular) {
+                my $time_before = time;
+                my ( $added, $removed ) = &get_lists($twits{$username}, $username, $fh, 1);
+                print $fh "t:debug %G$username%n Lists list updated: ",
+                        "$added added, $removed removed\n" if $added or $removed;
+                print $fh "t:last_poll ac:$username poll_type:lists epoch:$time_before\n";
+            } else {
+                if (defined $what_to_update->{up_lists} and ref $what_to_update->{up_lists}
+                        and defined $what_to_update->{up_lists}->[0]) {
+                    $list_account = &normalize_username($what_to_update->{up_lists}->[0], 1);
+                    if (defined $what_to_update->{up_lists}->[1]) {
+                        $list_name_limit = $what_to_update->{up_lists}->[1];
+                    }
+                }
+                if (not defined &get_lists($twits{$username}, $username, $fh, 0, @{ $what_to_update->{up_lists} })) {
+                    &debug($fh, "%G$username%n Polling for lists failed.");
+                    $error++;
+                }
+            }
+            if (not defined $state{__lists}{$list_account}) {
+                &notice(['info', undef, $fh], "List owner $list_account does not exist or has no lists.")
+                    if not $is_regular;
+            } elsif (defined $list_name_limit and not defined $state{__lists}{$list_account}{$list_name_limit}) {
+                &notice(['info', undef, $fh], "List $list_account/$list_name_limit does not exist.")
+                    if not $is_regular;
+            } else {
+                foreach my $list_name (sort keys %{ $state{__lists}{$list_account} }) {
+                    next if defined $list_name_limit and $list_name ne $list_name_limit;
+                    my $list_id = $state{__lists}{$list_account}{$list_name}{id};
+                    foreach my $member ( @{ $state{__lists}{$list_account}{$list_name}{members} } ) {
+                        print $fh "t:list ac:$username list:$list_account/$list_name id:$list_id nick:$member\n";
+                    }
+                }
+            }
+        }
+        next if $error > $errors_beforehand;
     }
 
     if ($error) {
@@ -1921,11 +2053,6 @@ sub get_tweets {
                 "$username: API Error during home_timeline call. Aborted.");
         }
         return;
-    }
-
-    if (0000000 and $settings{debug} and open my $fh_tl, '>', "/tmp/tl-$username.txt" ) {
-        print $fh_tl Dumper $tweets;
-        close $fh_tl;
     }
 
     print $fh "t:debug %G$username%n got ", scalar(@$tweets), " tweets, first/last: ",
@@ -2294,6 +2421,7 @@ sub monitor_child {
     my %new_cache = ();
     my %types_per_user = ();
     my $got_errors = 0;
+    my %show_now = ();       # for non-update info
 
     my $fh;
     if ( -e $filename and open $fh, '<', $filename ) {
@@ -2311,9 +2439,10 @@ sub monitor_child {
         if (s/^t:debug\s+//) {
             &debug($_);
 
-        } elsif (s/^t:error\s+//) {
-            $got_errors++;
-            &notice(['error'], $_);
+        } elsif (s/^t:(error|info)\s+//) {
+            my $type = $1;
+            $got_errors++ if $type eq 'error';
+            &notice([$type], $_);
 
         } elsif (s/^t:(last_poll)\s+//) {
             my %meta = &cache_to_meta($_, $1, [ qw/ac poll_type epoch/ ]);
@@ -2379,21 +2508,30 @@ sub monitor_child {
                 delete $search_once{ $meta{username} }->{ $meta{topic} };
             }
 
-        } elsif (s/^t:(friend|block)\s+//) {
-            my $type = $1;
-            my %meta = &cache_to_meta($_, $type, [ qw/ac nick epoch/ ]);
-            if ($is_update and not defined $types_per_user{$meta{username}}{$type}) {
-                if ($type eq 'friend') {
+        } elsif (s/^t:(friend|block|list)\s+//) {
+            my %meta = &cache_to_meta($_, $1, [ qw/ac list id nick epoch/ ]);
+            if ($is_update and not defined $types_per_user{$meta{username}}{$meta{type}}) {
+                if ($meta{type} eq 'friend') {
                     $friends{$meta{username}} = ();
-                } elsif ($type eq 'block') {
+                } elsif ($meta{type} eq 'block') {
                     $blocks{$meta{username}} = ();
+                } elsif ($meta{type} eq 'list') {
+                    my ($list_account, $list_name) = split '/', $meta{list};
+                    $state{__lists}{$list_account} = {};
                 }
-                $types_per_user{$meta{username}}{$type} = 1;
+                $types_per_user{$meta{username}}{$meta{type}} = 1;
             }
-            if ($type eq 'friend') {
+            if ($meta{type} eq 'friend') {
                 $nicks{$meta{nick}} = $friends{$meta{username}}{$meta{nick}} = $meta{epoch};
-            } elsif ($type eq 'block') {
+            } elsif ($meta{type} eq 'block') {
                 $blocks{$meta{username}}{$meta{nick}} = $meta{epoch};
+            } elsif ($meta{type} eq 'list') {
+                my ($list_account, $list_name) = split '/', $meta{list};
+                if (not exists $state{__lists}{$list_account}{$list_name}) {
+                    $state{__lists}{$list_account}{$list_name} = { id=>$meta{id}, members=>[] };
+                }
+                $show_now{lists}{$list_account}{$list_name} = $meta{id} if not $is_update;
+                push @{ $state{__lists}{$list_account}{$list_name}{members} }, $meta{nick};
             }
 
         } else {
@@ -2416,6 +2554,21 @@ sub monitor_child {
         if ($first_call and not $settings{force_first}) {
             &debug("First call, not printing updates");
         } else {
+
+            if (exists $show_now{lists}) {
+                for my $list_account (keys %{ $show_now{lists} }) {
+                    my $list_ac = ($list_account eq "$user\@$defservice" ? '' : "$list_account/");
+                    for my $list_name (keys %{ $show_now{lists}{$list_account} }) {
+                        if (0 == @{ $state{__lists}{$list_account}{$list_name}{members} }) {
+                            &notice(['info'], "List $list_ac$list_name is empty.");
+                        } else {
+                            &notice("List $list_ac$list_name members: " .
+                                    join(', ', @{ $state{__lists}{$list_account}{$list_name}{members} }));
+                        }
+                    }
+                }
+            }
+
             &write_lines(\@lines, 1);
         }
 
@@ -2709,8 +2862,8 @@ sub notice {
                 $win = Irssi::window_find_name(&window( $type, $tag ));
             }
 
-            if ($type eq 'error') {
-                $win->printformat(MSGLEVEL_PUBLIC, 'twirssi_error', $msg);
+            if ($type =~ /^(error|info)$/) {
+                $win->printformat(MSGLEVEL_PUBLIC, 'twirssi_'.$type, $msg); # theme
             } else {
                 $win->print("${col}***%n $msg", $win_level );
             }
@@ -3117,20 +3270,40 @@ sub window {
     $type = "search" if $type eq 'search_once';
 
     my $win;
-    for my $type_iter ($type, 'default') {
-        next unless exists $state{__windows}{$type_iter};
-        $win =
-             $state{__windows}{$type_iter}{$uname}
-          || $state{__windows}{$type_iter}{$topic}
-          || $state{__windows}{$type_iter}{$user}
-          || $state{__windows}{$type_iter}{default};
-        last if defined $win or $type_iter eq 'default';
-    }
-    if ((not defined $win or $settings{window_priority} eq 'sender')
-            and defined $sname
-            and defined $state{__windows}{'sender'}
-            and defined $state{__windows}{'sender'}{$sname}) {
-        $win = $state{__windows}{'sender'}{$sname};
+    my @all_priorities = qw/ account sender list /;
+    my @win_priorities = split ',', $settings{window_priority};
+    my $done_rest = 0;
+    while (@win_priorities and not defined $win) {
+        my $win_priority = shift @win_priorities;
+        if ($win_priority eq 'account') {
+            for my $type_iter ($type, 'default') {
+                next unless exists $state{__windows}{$type_iter};
+                $win =
+                     $state{__windows}{$type_iter}{$uname}
+                  || $state{__windows}{$type_iter}{$topic}
+                  || $state{__windows}{$type_iter}{$user}
+                  || $state{__windows}{$type_iter}{default};
+                last if defined $win or $type_iter eq 'default';
+            }
+        } elsif ($win_priority eq 'sender') {
+            if (defined $sname
+                    and defined $state{__windows}{$win_priority}{$sname}) {
+                $win = $state{__windows}{$win_priority}{$sname};
+            }
+        } elsif ($win_priority eq 'list') {
+            if (defined $sname
+                    and defined $state{__windows}{$win_priority}{$sname}) {
+                $win = $state{__windows}{$win_priority}{$sname};
+            }
+        }
+        if (not defined $win and not @win_priorities and not $done_rest) {
+            $done_rest = 1;
+            for my $check_priority (@all_priorities) {
+                if (not grep { $check_priority eq $_ } split ',', $settings{window_priority}) {
+                    push @win_priorities, $check_priority;
+                }
+            }
+        }
     }
     $win = $settings{window} if not defined $win;
     if (not &ensure_window($win, '_tw_in_Win')) {
@@ -3184,6 +3357,7 @@ Irssi::theme_register(
         'twirssi_reply',       '[$0\--> %B@$1%n$2] $3',
         'twirssi_dm',          '[$0%r@$1%n (%WDM%n)] $2',
         'twirssi_error',       '%RERROR%n: $0',
+        'twirssi_info',        '%CINFO:%N $0',
         'twirssi_new_day',     'Day changed to $0',
     ]
 );
@@ -3207,6 +3381,7 @@ if ( Irssi::window_find_name(window()) ) {
     Irssi::command_bind( "twitter_login",              "cmd_login" );
     Irssi::command_bind( "twitter_logout",             "cmd_logout" );
     Irssi::command_bind( "twitter_search",             "cmd_search" );
+    Irssi::command_bind( "twitter_listinfo",           "cmd_listinfo" );
     Irssi::command_bind( "twitter_dms",                "cmd_dms" );
     Irssi::command_bind( "twitter_dms_as",             "cmd_dms_as" );
     Irssi::command_bind( "twitter_switch",             "cmd_switch" );
@@ -3241,6 +3416,7 @@ if ( Irssi::window_find_name(window()) ) {
             &debug( "searches: ", join(';  ', map { $state{__last_id}{$_}{__search} and "$_ : " . join(', ', keys %{ $state{__last_id}{$_}{__search} }) } keys %{ $state{__last_id} } ));
             &debug( "windows: ",  Dumper \%{ $state{__windows} } );
             &debug( "channels: ",  Dumper \%{ $state{__channels} } );
+            &debug( "lists: ", Dumper \%{ $state{__lists} } );
             &debug( "settings: ",  Dumper \%settings );
             &debug( "last poll: ", Dumper \%last_poll );
             if ( open my $fh, '>', "/tmp/$IRSSI{name}.cache.txt" ) {
@@ -3421,8 +3597,8 @@ if ( Irssi::window_find_name(window()) ) {
     my $file = $settings{replies_store};
     if ( $file and -r $file ) {
         if ( open( my $fh, '<', $file ) ) {
-            local $/;
-            my $json = <$fh>;
+            my $json;
+            do { local $/; $json = <$fh>; };
             close $fh;
             eval {
                 my $ref = JSON::Any->jsonToObj($json);
