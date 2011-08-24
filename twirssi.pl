@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta12$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta15$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -25,7 +25,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta12$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-08-24 18:54:31 +0000$',
+    changed => '$Date: 2011-08-24 21:05:30 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -2188,6 +2188,7 @@ sub do_subscriptions {
                 my $text = &get_text( $t, $obj );
                 $text = &remove_tags($text);
                 my $ign = &is_ignored($text, $t->{from_user});
+                &get_unshorten_urls($text, $fh);
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
                 printf $fh "t:search id:%s ac:%s %snick:%s topic:%s created_at:%s %s\n",
                   $t->{id}, $username, $ign, $t->{from_user}, $topic,
@@ -2238,6 +2239,7 @@ sub do_searches {
             foreach my $t ( reverse @results ) {
                 my $text = &get_text( $t, $obj );
                 $text = &remove_tags($text);
+                &get_unshorten_urls($text, $fh);
                 my $ign = &is_ignored($text, $t->{from_user});
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
                 printf $fh "t:search_once id:%s ac:%s %s%snick:%s topic:%s created_at:%s %s\n",
@@ -2451,11 +2453,10 @@ sub monitor_child {
 
         } elsif (s/^t:(url)\s+//) {
             my %meta = &cache_to_meta($_, $1, [ qw/epoch https site uri/ ]);
-            $expanded_url{$meta{site}}{$meta{uri}} = {
+            $expanded_url{$meta{site}}{$meta{https} ? 1 : 0}{$meta{uri}} = {
                 url => $meta{text},
                 epoch => $meta{epoch},
             };
-            $expanded_url{$meta{site}}{$meta{uri}}{https} = 1 if $meta{https};
 
         } elsif (s/^t:(last_poll)\s+//) {
             my %meta = &cache_to_meta($_, $1, [ qw/ac poll_type epoch/ ]);
@@ -3276,21 +3277,18 @@ sub get_unshorten_urls {
         while ($max_redir-- > 0
                 and @url_parts = &get_url_parts($new_url)
                 and grep { $url_parts[1] eq $_ } @{ $settings{url_unshorten} }
-                and (not defined $expanded_url{$url_parts[1]}{$url_parts[2]}
-                     or (defined $expanded_url{$url_parts[1]}{$url_parts[2]}{https} xor ($url_parts[0] eq 'http')))
-                and (&debug($fh, "unshortening $new_url") or 1)
+                and not defined $expanded_url{$url_parts[1]}{$url_parts[0] eq 'https' ? 1 : 0}{$url_parts[2]}
                 and $resp = $ua->head($new_url)
                 and defined $resp->header('Location')) {
+            &debug($fh, "deshort $new_url => " . $resp->header('Location'));
             @orig_url_parts = @url_parts if not @orig_url_parts;
             $new_url = $resp->header('Location');
         }
         if (@orig_url_parts) {
-            my $new_expand = {
+            $expanded_url{$orig_url_parts[1]}{$orig_url_parts[0] eq 'https' ? 1 : 0}{$orig_url_parts[2]} = {
                 url => $new_url,
                 epoch => time,
             };
-            $new_expand->{https} = 1 if $orig_url_parts[0] eq 'https';
-            $expanded_url{$orig_url_parts[1]}{$orig_url_parts[2]} = $new_expand;
         }
     }
 }
@@ -3300,11 +3298,13 @@ sub put_unshorten_urls {
     my $fh    = shift;
     my $epoch = shift;
     for my $site (keys %expanded_url) {
-        for my $uri (keys %{ $expanded_url{$site} }) {
-            next if $expanded_url{$site}{$uri}{epoch} < $epoch;
-            print $fh "t:url epoch:$expanded_url{$site}{$uri}{epoch} ",
-                      ($expanded_url{$site}{$uri}{https} ? 'https:1 ' : ''),
-                      "site:$site uri:$uri $expanded_url{$site}{$uri}{url}\n";
+        for my $https (keys %{ $expanded_url{$site} }) {
+            for my $uri (keys %{ $expanded_url{$site}{$https} }) {
+                next if $expanded_url{$site}{$https}{$uri}{epoch} < $epoch;
+                print $fh "t:url epoch:$expanded_url{$site}{$https}{$uri}{epoch} ",
+                      ($https ? 'https:1 ' : ''),
+                      "site:$site uri:$uri $expanded_url{$site}{$https}{$uri}{url}\n";
+            }
         }
     }
 }
@@ -3314,9 +3314,11 @@ sub unshorten {
     my $data = shift;
     return unless @{ $settings{url_unshorten} };
     for my $site (keys %expanded_url) {
-        for my $uri (keys %{ $expanded_url{$site} }) {
-            my $url = ($expanded_url{$site}{$uri}{https} ? 'https' : 'http') . '://' . $site . '/' . $uri;
-            $data =~ s/\Q$url\E/$url \cC$irssi_to_mirc_colors{'%b'}<$expanded_url{$site}{$uri}{url}>\cO/g;
+        for my $https (keys %{ $expanded_url{$site} }) {
+            for my $uri (keys %{ $expanded_url{$site}{$https} }) {
+                my $url = ($https ? 'https' : 'http') . '://' . $site . '/' . $uri;
+                $data =~ s/\Q$url\E/$url \cC$irssi_to_mirc_colors{'%b'}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
+            }
         }
     }
     return &make_utf8($data);
