@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta11$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta12$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -25,7 +25,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta11$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-08-24 13:59:04 +0000$',
+    changed => '$Date: 2011-08-24 18:54:31 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -66,6 +66,8 @@ my %settings;
 my %last_ymd;		# $last_ymd{$chan_or_win} = $last_shown_ymd
 my @datetime_parser;
 my %completion_types = ();
+my %expanded_url = ();
+my $ua;
 
 my $local_tz = DateTime::TimeZone->new( name => 'local' );
 
@@ -95,6 +97,7 @@ my @settings_defn = (
         [ 'usernames',         'twitter_usernames',         's', undef,			'list{,}' ],
         [ 'update_usernames',  'twitter_update_usernames',  's', undef,			'list{,}' ],
         [ 'url_provider',      'short_url_provider',        's', 'TinyURL' ],
+        [ 'url_unshorten',     'short_url_domains',         's', '',			'lc,list{ }' ],
         [ 'url_args',          'short_url_args',            's', undef ],
         [ 'window',            'twitter_window',            's', 'twitter' ],
         [ 'debug_win_name',    'twirssi_debug_win_name',    's', '' ],
@@ -1676,25 +1679,10 @@ sub cmd_wipe {
 sub cmd_user {
     my $target = shift;
     $target =~ s/(?::\d+)?\s*$//;
-    &debug("cmd_user $target starting");
-    return unless &logged_in($twit);
-    my $tweets;
-    eval { $tweets = $twit->user_timeline({ id => $target, }); };
-    if ($@) {
-        &notice([ 'error' ], "Error during user_timeline $target call: Aborted.");
-        &debug("cmd_user: $_\n") foreach split "\n", Dumper($@);
-        return;
-    }
-    my $lines_ref = [];
-    my $cache = {};
-    my $username = "$user\@$defservice";
-    foreach my $t ( reverse @$tweets ) {
-        my $t_or_reply = &tweet_or_reply($twit, $t, $username, $cache, undef);
-        push @$lines_ref, { &meta_to_line(&tweet_to_meta($twit, $t, $username, $t_or_reply)) };
-    }
-    &write_lines($lines_ref, 0, 1);
-
-    &debug("cmd_user ends");
+    &get_updates([ 0, [
+                            [ "$user\@$defservice", { up_user => $target } ],
+                      ],
+    ]);
 }
 
 sub tweet_to_meta {
@@ -1746,6 +1734,7 @@ sub tweet_or_reply {
                   $t_reply->{user}{screen_name},
                   &encode_for_file($t_reply->{created_at}),
                   $ctext;
+                &get_unshorten_urls($ctext, $fh);
             }
             $type = 'reply';
         }
@@ -1869,7 +1858,7 @@ sub get_updates_child {
                 my @frusers = sort keys %{ $state{__last_id}{$username}{__extras} };
 
                 $error++ unless &get_timeline( $fh, $frusers[ $fix_replies_index{$username} ],
-                                               $username, $twits{$username}, \%context_cache );
+                                               $username, $twits{$username}, \%context_cache, $is_regular );
 
                 $fix_replies_index{$username}++;
                 $fix_replies_index{$username} = 0
@@ -1877,6 +1866,13 @@ sub get_updates_child {
                 print $fh "t:fix_replies_index idx:$fix_replies_index{$username} ",
                       "ac:$username\n";
             }
+        }
+        next if $error > $errors_beforehand;
+
+        if (defined $what_to_update->{up_user}) {
+            $error++ unless &get_timeline( $fh, $what_to_update->{up_user},
+                                               $username, $twits{$username}, \%context_cache, $is_regular );
+
         }
         next if $error > $errors_beforehand;
 
@@ -1981,9 +1977,11 @@ sub get_updates_child {
         next if $error > $errors_beforehand;
     }
 
+    &put_unshorten_urls($fh, $time_before_update);
+
     if ($error) {
         &notice( [ 'error', undef, $fh ], "Update encountered errors.  Aborted");
-    } else {
+    } elsif ($is_regular) {
         print $fh "t:last_poll poll_type:__poll epoch:$time_before_update\n";
     }
 }
@@ -2073,6 +2071,7 @@ sub get_tweets {
         printf $fh "t:%s id:%s ac:%s %s%snick:%s created_at:%s %s\n",
             $reply, $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}{screen_name},
             &encode_for_file($t->{created_at}), $text;
+        &get_unshorten_urls($text, $fh);
 
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
@@ -2101,6 +2100,7 @@ sub get_tweets {
         my $text = &get_text( $t, $obj );
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
         $text = &remove_tags($text);
+        &get_unshorten_urls($text, $fh);
         my $ign = &is_ignored($text);
         $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
         printf $fh "t:tweet id:%s ac:%s %s%snick:%s created_at:%s %s\n",
@@ -2251,15 +2251,17 @@ sub do_searches {
 }
 
 sub get_timeline {
-    my ( $fh, $target, $username, $obj, $cache ) = @_;
+    my ( $fh, $target, $username, $obj, $cache, $is_update ) = @_;
     my $tweets;
-    my $last_id = $state{__last_id}{$username}{__extras}{$target};
+    my $last_id = $state{__last_id}{$username}{__extras}{$target} if $is_update;
 
-    print $fh "t:debug %G$username%n get_timeline("
-      . "$fix_replies_index{$username}=$target > $last_id)\n";
+    &debug($fh, "%G$username%n get_timeline $target"
+      . ($is_update ? "($fix_replies_index{$username} > $last_id)" : ''));
     my $arg_ref = { id => $target, };
-    $arg_ref->{since_id} = $last_id if $last_id;
-    $arg_ref->{include_rts} = 1 if $settings{retweet_show};
+    if ($is_update) {
+        $arg_ref->{since_id} = $last_id if $last_id;
+        $arg_ref->{include_rts} = 1 if $settings{retweet_show};
+    }
     eval {
         $tweets = $obj->user_timeline($arg_ref);
     };
@@ -2282,9 +2284,12 @@ sub get_timeline {
           $reply, $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name},
           &encode_for_file($t->{created_at}), $text;
         $last_id = $t->{id} if $last_id < $t->{id};
+        &get_unshorten_urls($text, $fh);
     }
-    printf $fh "t:last_id_fixreplies id:%s ac:%s id_type:%s\n",
-      $last_id, $username, $target;
+    if ($is_update) {
+        printf $fh "t:last_id_fixreplies id:%s ac:%s id_type:%s\n",
+          $last_id, $username, $target;
+    }
 
     return 1;
 }
@@ -2444,6 +2449,14 @@ sub monitor_child {
             $got_errors++ if $type eq 'error';
             &notice([$type], $_);
 
+        } elsif (s/^t:(url)\s+//) {
+            my %meta = &cache_to_meta($_, $1, [ qw/epoch https site uri/ ]);
+            $expanded_url{$meta{site}}{$meta{uri}} = {
+                url => $meta{text},
+                epoch => $meta{epoch},
+            };
+            $expanded_url{$meta{site}}{$meta{uri}}{https} = 1 if $meta{https};
+
         } elsif (s/^t:(last_poll)\s+//) {
             my %meta = &cache_to_meta($_, $1, [ qw/ac poll_type epoch/ ]);
 
@@ -2569,7 +2582,7 @@ sub monitor_child {
                 }
             }
 
-            &write_lines(\@lines, 1);
+            &write_lines(\@lines, $is_update);
         }
 
         unlink $filename or warn "Failed to remove $filename: $!" unless &debug();
@@ -2651,15 +2664,14 @@ sub monitor_child {
 
 sub write_lines {
     my $lines_ref       = shift;
-    my $want_extras     = shift;
-    my $want_ymd_suffix = shift;
+    my $is_update       = shift;
     my $ymd_color = $irssi_to_mirc_colors{ $settings{ymd_color} };
     my @date_now = localtime();
     my $ymd_now = sprintf('%04d-%02d-%02d', $date_now[5]+1900, $date_now[4]+1, $date_now[3]);
     my $old_tf;
     #	&debug("line: " . Dumper $lines_ref);
     foreach my $line (@$lines_ref) {
-        my $line_want_extras = $want_extras;
+        my $line_want_extras = $is_update;
         my $win_name = &window( $line->{type}, $line->{username}, $line->{nick}, $line->{topic} );
         my $ac_tag = '';
         if ( lc $line->{service} ne lc $settings{default_service} ) {
@@ -2693,7 +2705,7 @@ sub write_lines {
                 $line->{text} = "%g[$IRSSI{name}] %n " . $line->{text};
             }
             $line_want_extras = 0;
-        } elsif ($want_ymd_suffix) {
+        } elsif (not $is_update) {
             $ymd_suffix = " \cC$ymd_color$ymd\cO" if $ymd_now ne $ymd;
         } elsif (not defined $last_ymd{wins}{$win_name}
                   or $last_ymd{wins}{$win_name}->{ymd} ne $ymd) {
@@ -2705,6 +2717,7 @@ sub write_lines {
         if (not defined $old_tf) {
             $old_tf = Irssi::settings_get_str('timestamp_format');
         }
+        $line->{text} = &unshorten($line->{text});
         Irssi::command("^set timestamp_format $ts");
         Irssi::window_find_name($win_name)->printformat(
             @print_opts, &hilight( $line->{text} ) . $ymd_suffix
@@ -3085,6 +3098,11 @@ sub event_setup_changed {
     &debug('changed settings: ' . join(', ', @changed_stgs)) if @changed_stgs;
 
     &ensure_logfile($settings{window});
+
+    if ($do_add or grep 'url_unshorten', @changed_stgs) {
+        # want to load this in the parent to allow child to use it expediently
+        &load_ua();
+    }
     &debug("Settings changed ($do_add):" . Dumper \%settings);
 }
 
@@ -3213,6 +3231,97 @@ sub shorten {
 
     return &make_utf8($data);
 }
+
+
+sub load_ua {
+    return if defined $ua or not @{ $settings{url_unshorten} };
+    &notice("Loading LWP and ua...");
+    eval "use LWP;";
+    $ua = LWP::UserAgent->new(
+        env_proxy => 1,
+        timeout => 10,
+        agent => "$IRSSI{name}/$VERSION",
+        requests_redirectable => [],
+    );
+}
+
+
+sub is_url_from_shortener {
+    my $url = shift;
+    return unless @{ $settings{url_unshorten} }
+           and $url =~ s@^https?://([\w.]+)/.*@lc $1@e;
+    return grep { $url eq $_ } @{ $settings{url_unshorten} };
+}
+
+
+sub get_url_parts {
+    my $url = shift;
+    my @parts = ($url =~ m@^(https?)://([^/]+)/(.+)@i);
+    $parts[0] = lc $parts[0];
+    $parts[1] = lc $parts[1];
+    return @parts;
+}
+
+
+sub get_unshorten_urls {
+    my $text = shift;
+    my $fh   = shift;
+    return unless @{ $settings{url_unshorten} };
+    foreach my $url ( $text =~ m@\b(https?://\S+[\w/])@g ) {
+        my @orig_url_parts;
+        my @url_parts;
+        my $new_url = $url;
+        my $max_redir = 4;
+        my $resp;
+        while ($max_redir-- > 0
+                and @url_parts = &get_url_parts($new_url)
+                and grep { $url_parts[1] eq $_ } @{ $settings{url_unshorten} }
+                and (not defined $expanded_url{$url_parts[1]}{$url_parts[2]}
+                     or (defined $expanded_url{$url_parts[1]}{$url_parts[2]}{https} xor ($url_parts[0] eq 'http')))
+                and (&debug($fh, "unshortening $new_url") or 1)
+                and $resp = $ua->head($new_url)
+                and defined $resp->header('Location')) {
+            @orig_url_parts = @url_parts if not @orig_url_parts;
+            $new_url = $resp->header('Location');
+        }
+        if (@orig_url_parts) {
+            my $new_expand = {
+                url => $new_url,
+                epoch => time,
+            };
+            $new_expand->{https} = 1 if $orig_url_parts[0] eq 'https';
+            $expanded_url{$orig_url_parts[1]}{$orig_url_parts[2]} = $new_expand;
+        }
+    }
+}
+
+
+sub put_unshorten_urls {
+    my $fh    = shift;
+    my $epoch = shift;
+    for my $site (keys %expanded_url) {
+        for my $uri (keys %{ $expanded_url{$site} }) {
+            next if $expanded_url{$site}{$uri}{epoch} < $epoch;
+            print $fh "t:url epoch:$expanded_url{$site}{$uri}{epoch} ",
+                      ($expanded_url{$site}{$uri}{https} ? 'https:1 ' : ''),
+                      "site:$site uri:$uri $expanded_url{$site}{$uri}{url}\n";
+        }
+    }
+}
+
+
+sub unshorten {
+    my $data = shift;
+    return unless @{ $settings{url_unshorten} };
+    for my $site (keys %expanded_url) {
+        for my $uri (keys %{ $expanded_url{$site} }) {
+            my $url = ($expanded_url{$site}{$uri}{https} ? 'https' : 'http') . '://' . $site . '/' . $uri;
+            $data =~ s/\Q$url\E/$url \cC$irssi_to_mirc_colors{'%b'}<$expanded_url{$site}{$uri}{url}>\cO/g;
+        }
+    }
+    return &make_utf8($data);
+}
+
 
 sub normalize_username {
     my $user      = shift;
