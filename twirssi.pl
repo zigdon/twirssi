@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta15$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta18$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -25,7 +25,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta15$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-08-24 21:05:30 +0000$',
+    changed => '$Date: 2011-08-24 23:07:44 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -370,7 +370,8 @@ sub cmd_retweet_to_window {
     } else {
         $text =~ s/\${.*?\$}//;
     }
-    $text =~ s/\$t/$state{__tweets}{ lc $nick }[$id]/;
+    my $tweet = &unshorten($state{__tweets}{ lc $nick }[$id]);
+    $text =~ s/\$t/$tweet/;
 
     Irssi::command("msg $target $text");
 
@@ -2564,7 +2565,7 @@ sub monitor_child {
         waitpid( -1, WNOHANG );
 
         &debug("new last_poll    = $last_poll{__poll}",
-               "new last_poll_id = " . Dumper( $state{__last_id} ));
+               "new last_poll_id = " . Dumper( $state{__last_id} )) if $is_update;
         if ($first_call and not $settings{force_first}) {
             &debug("First call, not printing updates");
         } else {
@@ -3315,9 +3316,10 @@ sub unshorten {
     return unless @{ $settings{url_unshorten} };
     for my $site (keys %expanded_url) {
         for my $https (keys %{ $expanded_url{$site} }) {
+            my $url = ($https ? 'https' : 'http') . '://' . $site . '/';
+            next if -1 == index($data, $url);
             for my $uri (keys %{ $expanded_url{$site}{$https} }) {
-                my $url = ($https ? 'https' : 'http') . '://' . $site . '/' . $uri;
-                $data =~ s/\Q$url\E/$url \cC$irssi_to_mirc_colors{'%b'}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
+                $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{'%b'}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
             }
         }
     }
