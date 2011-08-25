@@ -3313,7 +3313,7 @@ sub put_unshorten_urls {
 
 sub unshorten {
     my $data = shift;
-    return unless @{ $settings{url_unshorten} };
+    return $data unless @{ $settings{url_unshorten} };
     for my $site (keys %expanded_url) {
         for my $https (keys %{ $expanded_url{$site} }) {
             my $url = ($https ? 'https' : 'http') . '://' . $site . '/';
