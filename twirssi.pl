@@ -149,6 +149,60 @@ my %irssi_to_mirc_colors = (
     '%W' => '00',
 );
 
+my @available_twirssi_commands = (
+	"bitlbee_away",
+	"dm",
+	"dm_as",
+	"retweet",
+	"retweet_as",
+	"retweet_to",
+	"tweet",
+	"tweet_as",
+	"twirssi",
+	"twirssi_list_channels",
+	"twirssi_list_windows",
+	"twirssi_oauth",
+	"twirssi_set_channel",
+	"twirssi_set_window",
+	"twirssi_upgrade",
+	"twirssi_wipe",
+	"twitter_add_follow_extra",
+	"twitter_broadcast",
+	"twitter_del_follow_extra",
+	"twitter_dms",
+	"twitter_dms_as",
+	"twitter_info",
+	"twitter_list_follow_extra",
+	"twitter_list_subscriptions",
+	"twitter_login",
+	"twitter_logout",
+	"twitter_reply",
+	"twitter_reply_as",
+	"twitter_search",
+	"twitter_subscribe",
+	"twitter_switch",
+	"twitter_unsubscribe",
+	"twitter_updates",
+	"twitter_user",	
+);
+
+sub cmd_twirssi {
+	my ( $data, $server, $win ) = @_;
+	
+	if($data) {
+		&notice("Twirssi commands matching /$data/:");
+	} else {
+		&notice("Twirssi commands (to filter, specify a regex):");
+	}
+	&notice("-----------------");
+	foreach my $cmd (@available_twirssi_commands) {
+		if($cmd =~ /$data/i) {
+			&notice($cmd);
+		}
+	}
+	&notice("-----------------");
+}
+
 sub cmd_direct {
     my ( $data, $server, $win ) = @_;
 
@@ -3192,6 +3246,7 @@ $last_poll{__poll} = time - &get_poll_time;
 
 &event_setup_changed(1);
 if ( Irssi::window_find_name(window()) ) {
+    Irssi::command_bind( "twirssi",                    "cmd_twirssi" );
     Irssi::command_bind( "dm",                         "cmd_direct" );
     Irssi::command_bind( "dm_as",                      "cmd_direct_as" );
     Irssi::command_bind( "tweet",                      "cmd_tweet" );
