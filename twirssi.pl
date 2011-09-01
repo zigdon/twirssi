@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta19$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta111$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -25,7 +25,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta19$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-08-25 13:21:13 +0000$',
+    changed => '$Date: 2011-08-25 15:58:16 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -488,6 +488,7 @@ sub cmd_info {
     my $tweet         = $state{__tweets}{$nick}[$id];
     my $reply_to_id   = $state{__reply_to_ids}{$nick}[$id];
     my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
+    my $exp_tweet     = &unshorten($tweet) if $tweet;
 
     my $url = '';
     if ( defined $username ) {
@@ -506,6 +507,7 @@ sub cmd_info {
                              : '<unknown>') );
     &notice( [ "info" ], "| account: " . ($username ? $username : '<unknown>' ) );
     &notice( [ "info" ], "| text:    " . ($tweet ? $tweet : '<unknown>' ) );
+    &notice( [ "info" ], "|    +url: " . $exp_tweet ) if $exp_tweet ne $tweet;
 
     if ($reply_to_id and $reply_to_user) {
        &notice( [ "info" ], "| ReplyTo: $reply_to_user:$reply_to_id" );
@@ -3280,7 +3282,9 @@ sub get_unshorten_urls {
                 and grep { $url_parts[1] eq $_ } @{ $settings{url_unshorten} }
                 and not defined $expanded_url{$url_parts[1]}{$url_parts[0] eq 'https' ? 1 : 0}{$url_parts[2]}
                 and $resp = $ua->head($new_url)
-                and defined $resp->header('Location')) {
+                and (defined $resp->header('Location')
+                     or (&debug($fh, "cut_short $new_url => " . $resp->header('Host')) and 0)
+                    )) {
             &debug($fh, "deshort $new_url => " . $resp->header('Location'));
             @orig_url_parts = @url_parts if not @orig_url_parts;
             $new_url = $resp->header('Location');
