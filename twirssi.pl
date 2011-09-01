@@ -16,7 +16,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta111$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta115$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -1729,6 +1729,7 @@ sub tweet_or_reply {
                   $obj->show_status( $t->{in_reply_to_status_id} );
             };
         }
+&debug($fh, "REPLY $username rep2 $@ " . Dumper($cache->{ $t->{in_reply_to_status_id} }));
         if (my $t_reply = $cache->{ $t->{in_reply_to_status_id} }) {
             if (defined $fh) {
                 my $ctext = &get_text( $t_reply, $obj );
@@ -2503,13 +2504,13 @@ sub monitor_child {
             my %meta = &cache_to_meta($_, $1, [ qw/id ac ign reply_to_user reply_to_id nick topic created_at/ ]);
 
             if (exists $new_cache{ $meta{id} }) {
-                # &debug("Skipping newly-cached $meta{id}");
+                &debug("SKIP newly-cached $meta{id}");
                 next;
             }
             $new_cache{ $meta{id} } = time;
             if (exists $tweet_cache{ $meta{id} }) {
                        # and (not $retweeted_id{$username} or not $retweeted_id{$username}{ $meta{id} });
-                # &debug("Skipping cached $meta{id}");
+                &debug("SKIP cached $meta{id}");
                 next;
             }
 
@@ -2687,7 +2688,7 @@ sub write_lines {
 
         my @print_opts = (
             $line->{level},
-            "twirssi_" . $line->{type},
+            "twirssi_" . $line->{type},   # theme
             $ac_tag,
         );
         push @print_opts, (lc $line->{topic} ne lc $win_name ? $line->{topic} . ':' : '')
@@ -2990,7 +2991,7 @@ sub sig_complete {
     } elsif ($linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ \s+ -(\S+) \s+ -channel $}x) {
         my $lc_tag = lc $1;
         @$complist = map { $_->{name} }
-                         grep { $_->{name} =~ /^\Q$word/i and lc $_->{server}->{tag} eq $lc_tag }
+                         grep { $_->{name} =~ /^\Q$word\E/i and lc $_->{server}->{tag} eq $lc_tag }
                              Irssi::channels();
         return;
     }
@@ -3466,7 +3467,7 @@ sub window_to_account {
 Irssi::signal_add( "send text",     "event_send_text" );
 Irssi::signal_add( "setup changed", "event_setup_changed" );
 
-Irssi::theme_register(
+Irssi::theme_register( # theme
     [
         'twirssi_tweet',       '[$0%B@$1%n$2] $3',
         'twirssi_search',      '[$0%r$1%n%B@$2%n$3] $4',
