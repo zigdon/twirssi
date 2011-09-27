@@ -14,8 +14,7 @@ In a terminal:
     * Remove any old version of the script: rm twirssi.pl
     * Download the latest version: wget http://twirssi.com/twirssi.pl
     * If you want it to automatically load with irssi, create an autorun dir: mkdir autorun
-    * Change to that directory: cd autorun
-    * And create a symlink in it: ln -s ../twirssi.pl autorun
+    * And create a symlink in it: ln -s ./twirssi.pl autorun
 
 In irssi:
 
