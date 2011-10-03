@@ -10,13 +10,14 @@ use Encode;
 use FileHandle;
 use POSIX qw/:sys_wait_h strftime/;
 use Net::Twitter qw/3.11009/;
+use JSON::Any;
 use DateTime;
 use DateTime::Format::Strptime;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta115$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta117$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -25,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta115$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-08-25 15:58:16 +0000$',
+    changed => '$Date: 2011-10-03 08:36:16 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -2569,7 +2570,7 @@ sub monitor_child {
 
         &debug("new last_poll    = $last_poll{__poll}",
                "new last_poll_id = " . Dumper( $state{__last_id} )) if $is_update;
-        if ($first_call and not $settings{force_first}) {
+        if ($is_update and $first_call and not $settings{force_first}) {
             &debug("First call, not printing updates");
         } else {
 
