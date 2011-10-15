@@ -113,12 +113,15 @@
   <li><code>/twirssi_version</code> - Report the current version number.</li>
   <li><code>/twirssi_upgrade</code> - Check for a new version of twirssi, and
       download it if it's there.</li>
+  <li><code>/twirssi_reload</code> - Reload the script (if the script has changed).</li>
   <li><code>/twirssi_dump</code> - Report the current state of the data.</li>
   <li><code>/twitter_delete &lt;nick:id&gt;</code> - Remove a tweet from cache.</li>
   <li><code>/twirssi_wipe [-f | -A]</code> - With no argument, removes tweet info for non-friends.
       With the <code>-f</code> argument, removes all tweet info (i.e. also wipe friends).
       (<strong>Caution!</strong>  With the <code>-A</code> argument, will remove
       <strong>all</strong> tweet/channel/window info and settings.)</li>
+  <li><code>/twitter_listinfo [ &lt;nick&gt; [ &lt;list_name&gt; ] ]</code> -
+      Show the named list (or all lists) for the given nick (or current user).</li>
 </ul>
 
 <h3>Settings Info</h3>
@@ -190,6 +193,8 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
   <li><code>short_url_provider</code> - What service to use to shorten urls - pick from
   <a href="http://search.cpan.org/search?query=www%3A%3Ashorten&mode=module"
       >WWW::Shorten</a></li>
+  <li><code>short_url_domains</code> - List of domains for expanding URLs,
+      space-separated (e.g. <code>"t.co bit.ly"</code>).</li>
   <li><code>short_url_args</code> - Some of the WWW::Shorten modules require
       additional arguments, such as a username or API key.  Enter those here if
       needed, comma-separated.</li>
@@ -219,6 +224,9 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       next time twirssi is loaded.</li>
   <li><code>twirssi_oauth_store</code> - Path where OAUTH credentials are stored.</li>
   <li><code>twirssi_replies_store</code> - Location where the /reply map is to be stored.</li>
+  <li><code>twirssi_poll_store</code> - Location where last checkpoints are stored.
+       This is only useful if <code>twirssi_force_first</code> is set.</li>
+  <li><code>twirssi_id_store</code> - File path for the tweet cache.</li>
   <li><code>twirssi_logging</code> - If On, twirssi windows are logged to files
       determined by the <code>autolog_path</code> (system/log) setting -
       wherein "$tag" is "twirssi".  (default is Off)</li>
@@ -227,7 +235,7 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
       tweets will show a <code>:num</code> appended to them.  This is required
       for /reply and /twitter_reply functionality.</li>
   <li><code>twirssi_force_first</code> - Default: off.  If On, show tweets timed
-      before load/reload of script.</li>
+      before load/reload of script.  See also <code>twirssi_reload</code>.</li>
 </ul>
 <h3>Account Settings</h3>
 <ul>

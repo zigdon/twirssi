@@ -10,13 +10,14 @@ use Encode;
 use FileHandle;
 use POSIX qw/:sys_wait_h strftime/;
 use Net::Twitter qw/3.11009/;
+use JSON::Any;
 use DateTime;
 use DateTime::Format::Strptime;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta3$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta136$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -25,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta3$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-07-27 22:20:01 +0000$',
+    changed => '$Date: 2011-10-15 21:56:48 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -34,7 +35,7 @@ my %oauth;
 my $user;	# current $account
 my $defservice; # current $service
 my $poll_event;		# timeout_add event object (regular update)
-my %last_poll;		# $last_poll{$username}{tweets|friends|blocks}	= time of last update
+my %last_poll;		# $last_poll{$username}{tweets|friends|blocks|lists}	= time of last update
 			#	    {__interval|__poll}			= time
 my %nicks;              # $nicks{$screen_name} = last seen/mentioned time (for sorting completions)
 my %friends;		# $friends{$username}{$nick} = $epoch_when_refreshed (rhs value used??)
@@ -52,6 +53,7 @@ my %state;
 		#				   {__sent}		= $id_of_last_tweet_from_act
 		#				   {__extras}{$lc_nick}	= $id_of_last_tweet (fix_replies)
 		#				   {__search}{$topic}	= $id_of_last_tweet
+		# $state{__lists}	{$username}{$list_name}		= { id => $list_id, members=>[$nick,...] }
 		# $state{__channels}	{$type}{$tag}{$net_tag}		= [ channel,... ]
 		# $state{__windows}	{$type}{$tag}			=  $window_name
 my $failstatus = 0;		# last update status:  0=ok, 1=warned, 2=failwhaled
@@ -65,6 +67,12 @@ my %settings;
 my %last_ymd;		# $last_ymd{$chan_or_win} = $last_shown_ymd
 my @datetime_parser;
 my %completion_types = ();
+my %expanded_url = ();
+my $ua;
+my %valid_types = (
+	'window'	=> [ qw/ tweet search dm reply sender error default /],	# twirssi_set_window
+	'channel'	=> [ qw/ tweet search dm reply sender error * / ],	# twirssi_set_channel
+);
 
 my $local_tz = DateTime::TimeZone->new( name => 'local' );
 
@@ -81,6 +89,8 @@ my @settings_defn = (
         [ 'oauth_store',       'twirssi_oauth_store',       's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.oauth" ],
         [ 'replies_store',     'twirssi_replies_store',     's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.json" ],
         [ 'dump_store',        'twirssi_dump_store',        's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.dump" ],
+        [ 'poll_store',        'twirssi_poll_store',        's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.polls" ],
+        [ 'id_store',          'twirssi_id_store',          's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.ids" ],
         [ 'retweet_format',    'twirssi_retweet_format',    's', 'RT $n: "$t" ${-- $c$}' ],
         [ 'stripped_tags',     'twirssi_stripped_tags',     's', '',			'list{,}' ],
         [ 'topic_color',       'twirssi_topic_color',       's', '%r', ],
@@ -94,6 +104,7 @@ my @settings_defn = (
         [ 'usernames',         'twitter_usernames',         's', undef,			'list{,}' ],
         [ 'update_usernames',  'twitter_update_usernames',  's', undef,			'list{,}' ],
         [ 'url_provider',      'short_url_provider',        's', 'TinyURL' ],
+        [ 'url_unshorten',     'short_url_domains',         's', '',			'lc,list{ }' ],
         [ 'url_args',          'short_url_args',            's', undef ],
         [ 'window',            'twitter_window',            's', 'twitter' ],
         [ 'debug_win_name',    'twirssi_debug_win_name',    's', '' ],
@@ -116,6 +127,7 @@ my @settings_defn = (
 
         [ 'friends_poll',      'twitter_friends_poll',      'i', 600 ],
         [ 'blocks_poll',       'twitter_blocks_poll',       'i', 900 ],
+        [ 'lists_poll',        'twitter_lists_poll',        'i', 900 ],
         [ 'poll_interval',     'twitter_poll_interval',     'i', 300 ],
         [ 'poll_schedule',     'twitter_poll_schedule',     's', '',			'list{,}' ],
         [ 'search_results',    'twitter_search_results',    'i', 5 ],
@@ -366,15 +378,23 @@ sub cmd_retweet_to_window {
     } else {
         $text =~ s/\${.*?\$}//;
     }
-    $text =~ s/\$t/$state{__tweets}{ lc $nick }[$id]/;
+    my $tweet = &unshorten($state{__tweets}{ lc $nick }[$id]);
+    $text =~ s/\$t/$tweet/;
 
-    $server->command("msg $target $text");
+    Irssi::command("msg $target $text");
 
     foreach ( $text =~ /@([-\w]+)/g ) {
         $nicks{$_} = time;
     }
 
     &debug("Retweet of $nick:$id sent to $target");
+}
+
+sub cmd_reload {
+    if ($settings{force_first} and $settings{poll_store}) {
+        &save_polls();
+    }
+    Irssi::command("script load $IRSSI{name}");
 }
 
 sub cmd_tweet {
@@ -496,6 +516,7 @@ sub cmd_info {
     my $tweet         = $state{__tweets}{$nick}[$id];
     my $reply_to_id   = $state{__reply_to_ids}{$nick}[$id];
     my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
+    my $exp_tweet     = &unshorten($tweet) if $tweet;
 
     my $url = '';
     if ( defined $username ) {
@@ -514,6 +535,7 @@ sub cmd_info {
                              : '<unknown>') );
     &notice( [ "info" ], "| account: " . ($username ? $username : '<unknown>' ) );
     &notice( [ "info" ], "| text:    " . ($tweet ? $tweet : '<unknown>' ) );
+    &notice( [ "info" ], "|    +url: " . $exp_tweet ) if $exp_tweet ne $tweet;
 
     if ($reply_to_id and $reply_to_user) {
        &notice( [ "info" ], "| ReplyTo: $reply_to_user:$reply_to_id" );
@@ -642,6 +664,29 @@ sub gen_cmd {
 
         &$post_ref($data) if $post_ref;
       }
+}
+
+sub cmd_listinfo {
+    my ( $data, $server, $win ) = @_;
+
+    $data =~ s/^\s+|\s+$//g;
+    if ( length $data > 0 ) {
+        my ($list_user, $list_name) = split(' ', lc $data, 2);
+        my $list_account = &normalize_username($list_user, 1);
+        my $list_ac = ($list_account eq "$user\@$defservice" ? '' : "$list_account/");
+        if (defined $list_name) {
+            &notice("Getting list: '$list_ac$list_name'");
+        } else {
+            &notice("Getting all lists for '$list_account'");
+        }
+        &get_updates([ 0, [
+                                [ "$user\@$defservice", { up_lists => [ $list_user, $list_name ] } ],
+                        ],
+        ]);
+
+    } else {
+        &notice( ['error'], 'Usage: /twitter_listinfo [ <user> [<list name>] ]' );
+    }
 }
 
 sub cmd_search {
@@ -797,6 +842,7 @@ sub cmd_login {
     $username = &normalize_username($username, 1);
     ( $user, $defservice ) = split('@', $username, 2);
 
+    $state{__lists}{$username} = {};
     $blocks{$username} = {};
     $friends{$username} = {};
 
@@ -813,7 +859,7 @@ sub cmd_login {
             } else {
                 $twit = Net::Twitter->new(
                     traits =>
-                      [ 'API::REST', 'OAuth', 'API::Search', 'RetryOnError' ],
+                      [ 'API::REST', 'OAuth', 'API::Search', 'API::Lists', 'RetryOnError' ],
                     (
                         grep tr/a-zA-Z/n-za-mN-ZA-M/, map $_,
                         pbafhzre_xrl => 'OMINiOzn4TkqvEjKVioaj',
@@ -1004,17 +1050,6 @@ sub verify_twitter_object {
 
     # &get_updates([ 1, [ "$user\@$service", {} ], ]);
     &ensure_updates();
-
-if (0) { # XXX
-    &notice( [ "tweet", "$user\@$service" ],
-        "Logged in as $user\@$service, loading friends list and blocks..." );
-    &get_friends($twit, "$user\@$service", undef, 1);
-    &notice( [ "tweet", "$user\@$service" ],
-        "loaded friends: " . scalar keys %{ $friends{"$user\@$service"} } );
-    &get_blocks($twit, "$user\@$service", undef, 1);
-    &notice( [ "tweet", "$user\@$service" ],
-        "loaded blocks: " . scalar keys %{ $blocks{"$user\@$service"} } );
-}
 
     foreach my $scr_name (keys %{ $friends{"$user\@$service"} }) {
         $nicks{$scr_name} = $friends{"$user\@$service"}{$scr_name};
@@ -1263,7 +1298,7 @@ sub cmd_upgrade {
     }
 
     &notice( ["notice"],
-        "Download complete.  Reload twirssi with /script load $file" );
+        "Download complete.  Reload twirssi with /twirssi_reload" );
 }
 
 sub cmd_list_channels {
@@ -1299,11 +1334,9 @@ sub cmd_set_channel {
     my ($type, $tag, $net_tag, $channame) = @words;
     my $delete = 1 if $type =~ s/^-//;
 
-    my @valid_types = qw/ tweet search dm reply sender error * /;
-
-    unless ( grep { $type eq $_ } @valid_types ) {
+    unless ( grep { $type eq $_ } @{ $valid_types{'channel'} } ) {
         &notice(['error'], "Invalid message type '$type'.");
-        &notice(['error'], 'Valid types: ' . join(', ', @valid_types));
+        &notice(['error'], 'Valid types: ' . join(', ', @{ $valid_types{'channel'} }));
         return;
     }
 
@@ -1375,8 +1408,6 @@ sub cmd_set_window {
     my $winname = pop @words;       # the last argument is the window name
     my $delete = $winname eq '-';
 
-    my @valid_types = qw/ tweet search dm reply sender error default /;
-
     if ( @words == 0 ) {            # just a window name
         $winname = 'twitter' if $delete;
         &notice("Changing the default twirssi window to $winname");
@@ -1386,15 +1417,15 @@ sub cmd_set_window {
         &notice(
                 "Too many arguments to /twirssi_set_window. '@words'",
                 "Usage: /twirssi_set_window [type] [account|search_term] [window].",
-                'Valid types: ' . join(', ', @valid_types)
+                'Valid types: ' . join(', ', @{ $valid_types{'window'} })
         );
         return;
     } elsif ( @words >= 1 ) {
         my $type = lc $words[0];
-        unless ( grep { $_ eq $type } @valid_types ) {
+        unless ( grep { $_ eq $type } @{ $valid_types{'window'} } ) {
             &notice(['error'],
                 "Invalid message type '$type'.",
-                'Valid types: ' . join(', ', @valid_types)
+                'Valid types: ' . join(', ', @{ $valid_types{'window'} })
             );
             return;
         }
@@ -1447,45 +1478,24 @@ sub get_friends {
     my $fh        = shift;
     my $is_update = shift;
 
-    my $cursor      = -1;
-    my %new_friends = ();
-    eval {
-        for my $page (1..10) {
-            &debug($fh, "%G$username%n Loading friends page $page...");
-            my $friends;
-            if ( $username =~ /\@Twitter/ ) {
-                $friends = $u_twit->friends( { cursor => $cursor } );
-                last unless $friends;
-                $cursor  = $friends->{next_cursor};
-                $friends = $friends->{users};
-            } else {
-                $friends = $u_twit->friends( { page => $page } );
-                last unless $friends;
-            }
-            $new_friends{ $_->{screen_name} } = time foreach @$friends;
-            last if $cursor eq '0';
-        }
-    };
+    my $new_friends = &scan_cursor('friends', $u_twit, $username, $fh,
+				{ fn=>'friends', cp=>(index($username, '@Twitter') != -1 ? 'c' : 'p'),
+					set_key=>'users', item_key=>'screen_name', });
+    return if not defined $new_friends;
 
-    if ($@) {
-        &notice(['error', $username, $fh], "$username: Error updating friends list.  Aborted.");
-        &debug($fh, "%G$username%n Error updating friends list: $@");
-        return;
-    }
-
-    return \%new_friends if not $is_update;
+    return $new_friends if not $is_update;
 
     my ( $added, $removed ) = ( 0, 0 );
     # &debug($fh, "%G$username%n Scanning for new friends...");
-    foreach ( keys %new_friends ) {
+    foreach ( keys %$new_friends ) {
         next if exists $friends{$username}{$_};
-        $friends{$username}{$_} = $new_friends{$_};
+        $friends{$username}{$_} = $new_friends->{$_};
         $added++;
     }
 
     # &debug($fh, "%G$username%n Scanning for removed friends...");
     foreach ( keys %{ $friends{$username} } ) {
-        next if exists $new_friends{$_};
+        next if exists $new_friends->{$_};
         delete $friends{$username}{$_};
         &debug($fh, "%G$username%n removing friend: $_");
         $removed++;
@@ -1494,36 +1504,133 @@ sub get_friends {
     return ( $added, $removed );
 }
 
+sub scan_cursor {
+    my $type_str  = shift;
+    my $u_twit    = shift;
+    my $username  = shift;
+    my $fh        = shift;
+    my $fn_info   = shift;
+
+    my $whole_set = {};
+    my $paging_broken = 0;
+    my $fn_args = { (defined $fn_info->{args} ? %{ $fn_info->{args} } : ()) };
+    my $fn_name = $fn_info->{fn};
+    eval {
+        for (my $cursor = -1, my $page = 1; $cursor and $page <= 10 and not $paging_broken; $page++) {
+            if (-1 != index($fn_info->{cp}, 'c')) {
+                $fn_args->{cursor} = $cursor;
+            }
+            if ($fn_info->{cp} =~ /p(\d*)/) {
+                my $max_page = $1;
+                $fn_args->{page} = $page;
+                last if length($max_page) > 0 and $page > $max_page;
+            }
+            &debug($fh, "%G$username%n Loading $type_str page $page...");
+            my $collection = $u_twit->$fn_name($fn_args);
+            last unless $collection;
+            if (-1 != index($fn_info->{cp}, 'c')) {
+                $cursor = $collection->{next_cursor};
+                $collection = $collection->{$fn_info->{set_key}};
+            }
+            foreach my $coll_item (@$collection) {
+                if (-1 != index($fn_info->{cp}, 'p')
+                       and defined $whole_set->{$coll_item->{$fn_info->{item_key}}}) {
+                    # fix broken paging, as we've seen this $coll_item before
+                    $paging_broken = 1;
+                    last;
+                }
+                $whole_set->{$coll_item->{$fn_info->{item_key}}} = (defined $fn_info->{item_val}
+								? $coll_item->{$fn_info->{item_val}} : time);
+            }
+        }
+    };
+foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "crsr: $item"); }
+
+    if ($@) {
+        &notice(['error', $username, $fh], "$username: Error updating $type_str.  Aborted.");
+        &debug($fh, "%G$username%n Error updating $type_str: $@");
+        return;
+    }
+
+   return $whole_set;
+}
+
+sub get_lists {
+    my $u_twit    = shift;
+    my $username  = shift;
+    my $fh        = shift;
+    my $is_update = shift;
+    my $userid    = shift;
+    my $list_name = shift;
+
+    my $list_account = $username;
+    if ($is_update and not defined $userid and $username =~ /(.+)\@/) {
+      $userid = $1;
+    } else {
+      $list_account = &normalize_username($userid, 1);
+    }
+
+    my %stats = (added => 0, deleted => 0);
+
+    # ensure $new_lists->{$list_name} = $id
+    my %more_args = ();
+    my $new_lists = &scan_cursor('lists', $u_twit, $username, $fh,
+				{ fn=>'get_lists', cp=>'c', set_key=>'lists',
+					args=>{ user=>$userid, %more_args }, item_key=>'name', item_val=>'id', });
+    return if not defined $new_lists;
+
+    # reduce $new_lists if $list_name specified (not $is_update)
+    if (defined $list_name) {
+        if (not defined $new_lists->{$list_name}) {
+            return {};  # not is_update, so return empty
+        }
+        $new_lists = { $list_name => $new_lists->{$list_name} };
+    }
+
+    foreach my $list (keys %$new_lists) {
+        $stats{added}++ if not exists $state{__lists}{$list_account}{$list};
+        $state{__lists}{$list_account}{$list} = { id=>$new_lists->{$list}, members=>[], };
+    }
+
+    if ($is_update) {
+        # remove any newly-missing lists
+        foreach my $old_list (keys %{ $state{__lists}{$list_account} }) {
+            if (not defined $new_lists->{$old_list}) {
+                delete $state{__lists}{$list_account}{$old_list};
+                &debug($fh, "%G$username%n removing list: $list_account / $old_list");
+                $stats{deleted}++;
+            }
+        }
+    }
+
+    foreach my $reget_list (keys %$new_lists) {
+        &debug($fh, "%G$username%n updating list: $list_account / $reget_list id=" .
+                        $state{__lists}{$list_account}{$reget_list}{id});
+        my $members = &scan_cursor('list member', $u_twit, $username, $fh,
+			{ fn=>'list_members', cp=>'c', set_key=>'users', item_key=>'screen_name', item_val=>'id',
+				args=>{ user=>$userid, list_id=>$state{__lists}{$list_account}{$reget_list}{id} }, });
+        return if not defined $members;
+        $state{__lists}{$list_account}{$reget_list}{members} = [ keys %$members ];
+    }
+
+    return ($stats{added}, $stats{deleted});
+}
+
 sub get_blocks {
     my $u_twit    = shift;
     my $username  = shift;
     my $fh        = shift;
     my $is_update = shift;
 
-    my %new_blocks = ();
-    eval {
-        for my $page (1..10) {
-            &debug($fh, "%G$username%n Loading blocks page $page...");
-            my $blocks = $u_twit->blocking( { page => $page } );
-            last if not defined $blocks or @$blocks == 0
-                    or defined $new_blocks{ $blocks->[0]->{screen_name} };
-            &debug($fh, "%G$username%n Blocks page $page... " . scalar(@$blocks)
-                        . " first block: " . $blocks->[0]->{screen_name});
-            $new_blocks{ $_->{screen_name} } = time foreach @$blocks;
-        }
-    };
+    my $new_blocks = &scan_cursor('blocks', $u_twit, $username, $fh,
+				{ fn=>'blocking', cp=>'p', item_key=>'screen_name', });
+    return if not defined $new_blocks;
 
-    if ($@) {
-        &notice(['error', $username, $fh], "$username: Error updating blocks list.  Aborted.");
-        &debug($fh, "%G$username%n Error updating blocks list: $@");
-        return;
-    }
-
-    return \%new_blocks if not $is_update;
+    return $new_blocks if not $is_update;
 
     my ( $added, $removed ) = ( 0, 0 );
     # &debug($fh, "%G$username%n Scanning for new blocks...");
-    foreach ( keys %new_blocks ) {
+    foreach ( keys %$new_blocks ) {
         next if exists $blocks{$username}{$_};
         $blocks{$username}{$_} = time;
         $added++;
@@ -1531,7 +1638,7 @@ sub get_blocks {
 
     # &debug($fh, "%G$username%n Scanning for removed blocks...");
     foreach ( keys %{ $blocks{$username} } ) {
-        next if exists $new_blocks{$_};
+        next if exists $new_blocks->{$_};
         delete $blocks{$username}{$_};
         &debug($fh, "%G$username%n removing block: $_");
         $removed++;
@@ -1599,25 +1706,10 @@ sub cmd_wipe {
 sub cmd_user {
     my $target = shift;
     $target =~ s/(?::\d+)?\s*$//;
-    &debug("cmd_user $target starting");
-    return unless &logged_in($twit);
-    my $tweets;
-    eval { $tweets = $twit->user_timeline({ id => $target, }); };
-    if ($@) {
-        &notice([ 'error' ], "Error during user_timeline $target call: Aborted.");
-        &debug("cmd_user: $_\n") foreach split "\n", Dumper($@);
-        return;
-    }
-    my $lines_ref = [];
-    my $cache = {};
-    my $username = "$user\@$defservice";
-    foreach my $t ( reverse @$tweets ) {
-        my $t_or_reply = &tweet_or_reply($twit, $t, $username, $cache, undef);
-        push @$lines_ref, { &meta_to_line(&tweet_to_meta($twit, $t, $username, $t_or_reply)) };
-    }
-    &write_lines($lines_ref, 0, 1);
-
-    &debug("cmd_user ends");
+    &get_updates([ 0, [
+                            [ "$user\@$defservice", { up_user => $target } ],
+                      ],
+    ]);
 }
 
 sub tweet_to_meta {
@@ -1661,6 +1753,7 @@ sub tweet_or_reply {
                   $obj->show_status( $t->{in_reply_to_status_id} );
             };
         }
+&debug($fh, "REPLY $username rep2 $@ " . Dumper($cache->{ $t->{in_reply_to_status_id} }));
         if (my $t_reply = $cache->{ $t->{in_reply_to_status_id} }) {
             if (defined $fh) {
                 my $ctext = &get_text( $t_reply, $obj );
@@ -1669,6 +1762,7 @@ sub tweet_or_reply {
                   $t_reply->{user}{screen_name},
                   &encode_for_file($t_reply->{created_at}),
                   $ctext;
+                &get_unshorten_urls($ctext, $fh);
             }
             $type = 'reply';
         }
@@ -1687,15 +1781,17 @@ sub background_setup {
 
     return unless &logged_in($twit);
 
-    my ( $fh, $filename ) = File::Temp::tempfile();
+    my ( $fh, $filename ) = File::Temp::tempfile('tw_'.$$.'_XXXX', TMPDIR => 1);
     binmode( $fh, ":" . &get_charset() );
     $child_pid = fork();
 
     if ($child_pid) {                   # parent
         Irssi::timeout_add_once( $pause_monitor, 'monitor_child',
-            [ "$filename.done", $max_pauses, $pause_monitor, 1 ] );
+            [ "$filename.done", $max_pauses, $pause_monitor, $is_update ] );
         Irssi::pidwait_add($child_pid);
     } elsif ( defined $child_pid ) {    # child
+        my $pid_filename = $filename . '.' . $$;
+        rename $filename, $pid_filename;
         close STDIN;
         close STDOUT;
         close STDERR;
@@ -1706,7 +1802,7 @@ sub background_setup {
         }
 
         close $fh;
-        rename $filename, "$filename.done";
+        rename $pid_filename, "$filename.done";
         exit;
     } else {
         &notice([ 'error' ], "Failed to fork for background call: $!");
@@ -1792,7 +1888,7 @@ sub get_updates_child {
                 my @frusers = sort keys %{ $state{__last_id}{$username}{__extras} };
 
                 $error++ unless &get_timeline( $fh, $frusers[ $fix_replies_index{$username} ],
-                                               $username, $twits{$username}, \%context_cache );
+                                               $username, $twits{$username}, \%context_cache, $is_regular );
 
                 $fix_replies_index{$username}++;
                 $fix_replies_index{$username} = 0
@@ -1800,6 +1896,13 @@ sub get_updates_child {
                 print $fh "t:fix_replies_index idx:$fix_replies_index{$username} ",
                       "ac:$username\n";
             }
+        }
+        next if $error > $errors_beforehand;
+
+        if (defined $what_to_update->{up_user}) {
+            $error++ unless &get_timeline( $fh, $what_to_update->{up_user},
+                                               $username, $twits{$username}, \%context_cache, $is_regular );
+
         }
         next if $error > $errors_beforehand;
 
@@ -1861,11 +1964,54 @@ sub get_updates_child {
         }
         next if $error > $errors_beforehand;
 
+        if ( (0 == keys(%$what_to_update)
+                  and time - $last_poll{$username}{lists} > $settings{lists_poll} )
+                or defined $what_to_update->{up_lists}) {
+            my $list_account = $username;
+            my $list_name_limit;
+            if ($is_regular) {
+                my $time_before = time;
+                my ( $added, $removed ) = &get_lists($twits{$username}, $username, $fh, 1);
+                print $fh "t:debug %G$username%n Lists list updated: ",
+                        "$added added, $removed removed\n" if $added or $removed;
+                print $fh "t:last_poll ac:$username poll_type:lists epoch:$time_before\n";
+            } else {
+                if (defined $what_to_update->{up_lists} and ref $what_to_update->{up_lists}
+                        and defined $what_to_update->{up_lists}->[0]) {
+                    $list_account = &normalize_username($what_to_update->{up_lists}->[0], 1);
+                    if (defined $what_to_update->{up_lists}->[1]) {
+                        $list_name_limit = $what_to_update->{up_lists}->[1];
+                    }
+                }
+                if (not defined &get_lists($twits{$username}, $username, $fh, 0, @{ $what_to_update->{up_lists} })) {
+                    &debug($fh, "%G$username%n Polling for lists failed.");
+                    $error++;
+                }
+            }
+            if (not defined $state{__lists}{$list_account}) {
+                &notice(['info', undef, $fh], "List owner $list_account does not exist or has no lists.")
+                    if not $is_regular;
+            } elsif (defined $list_name_limit and not defined $state{__lists}{$list_account}{$list_name_limit}) {
+                &notice(['info', undef, $fh], "List $list_account/$list_name_limit does not exist.")
+                    if not $is_regular;
+            } else {
+                foreach my $list_name (sort keys %{ $state{__lists}{$list_account} }) {
+                    next if defined $list_name_limit and $list_name ne $list_name_limit;
+                    my $list_id = $state{__lists}{$list_account}{$list_name}{id};
+                    foreach my $member ( @{ $state{__lists}{$list_account}{$list_name}{members} } ) {
+                        print $fh "t:list ac:$username list:$list_account/$list_name id:$list_id nick:$member\n";
+                    }
+                }
+            }
+        }
+        next if $error > $errors_beforehand;
     }
+
+    &put_unshorten_urls($fh, $time_before_update);
 
     if ($error) {
         &notice( [ 'error', undef, $fh ], "Update encountered errors.  Aborted");
-    } else {
+    } elsif ($is_regular) {
         print $fh "t:last_poll poll_type:__poll epoch:$time_before_update\n";
     }
 }
@@ -1937,11 +2083,6 @@ sub get_tweets {
         return;
     }
 
-    if (0000000 and $settings{debug} and open my $fh_tl, '>', "/tmp/tl-$username.txt" ) {
-        print $fh_tl Dumper $tweets;
-        close $fh_tl;
-    }
-
     print $fh "t:debug %G$username%n got ", scalar(@$tweets), " tweets, first/last: ",
                         (sort {$a->{id} <=> $b->{id}} @$tweets)[0]->{id}, "/",
                         (sort {$a->{id} <=> $b->{id}} @$tweets)[$#{$tweets}]->{id}, "\n";
@@ -1960,6 +2101,7 @@ sub get_tweets {
         printf $fh "t:%s id:%s ac:%s %s%snick:%s created_at:%s %s\n",
             $reply, $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}{screen_name},
             &encode_for_file($t->{created_at}), $text;
+        &get_unshorten_urls($text, $fh);
 
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
@@ -1988,6 +2130,7 @@ sub get_tweets {
         my $text = &get_text( $t, $obj );
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
         $text = &remove_tags($text);
+        &get_unshorten_urls($text, $fh);
         my $ign = &is_ignored($text);
         $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
         printf $fh "t:tweet id:%s ac:%s %s%snick:%s created_at:%s %s\n",
@@ -2075,6 +2218,7 @@ sub do_subscriptions {
                 my $text = &get_text( $t, $obj );
                 $text = &remove_tags($text);
                 my $ign = &is_ignored($text, $t->{from_user});
+                &get_unshorten_urls($text, $fh);
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
                 printf $fh "t:search id:%s ac:%s %snick:%s topic:%s created_at:%s %s\n",
                   $t->{id}, $username, $ign, $t->{from_user}, $topic,
@@ -2125,6 +2269,7 @@ sub do_searches {
             foreach my $t ( reverse @results ) {
                 my $text = &get_text( $t, $obj );
                 $text = &remove_tags($text);
+                &get_unshorten_urls($text, $fh);
                 my $ign = &is_ignored($text, $t->{from_user});
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
                 printf $fh "t:search_once id:%s ac:%s %s%snick:%s topic:%s created_at:%s %s\n",
@@ -2138,15 +2283,17 @@ sub do_searches {
 }
 
 sub get_timeline {
-    my ( $fh, $target, $username, $obj, $cache ) = @_;
+    my ( $fh, $target, $username, $obj, $cache, $is_update ) = @_;
     my $tweets;
-    my $last_id = $state{__last_id}{$username}{__extras}{$target};
+    my $last_id = $state{__last_id}{$username}{__extras}{$target} if $is_update;
 
-    print $fh "t:debug %G$username%n get_timeline("
-      . "$fix_replies_index{$username}=$target > $last_id)\n";
+    &debug($fh, "%G$username%n get_timeline $target"
+      . ($is_update ? "($fix_replies_index{$username} > $last_id)" : ''));
     my $arg_ref = { id => $target, };
-    $arg_ref->{since_id} = $last_id if $last_id;
-    $arg_ref->{include_rts} = 1 if $settings{retweet_show};
+    if ($is_update) {
+        $arg_ref->{since_id} = $last_id if $last_id;
+        $arg_ref->{include_rts} = 1 if $settings{retweet_show};
+    }
     eval {
         $tweets = $obj->user_timeline($arg_ref);
     };
@@ -2169,9 +2316,12 @@ sub get_timeline {
           $reply, $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name},
           &encode_for_file($t->{created_at}), $text;
         $last_id = $t->{id} if $last_id < $t->{id};
+        &get_unshorten_urls($text, $fh);
     }
-    printf $fh "t:last_id_fixreplies id:%s ac:%s id_type:%s\n",
-      $last_id, $username, $target;
+    if ($is_update) {
+        printf $fh "t:last_id_fixreplies id:%s ac:%s id_type:%s\n",
+          $last_id, $username, $target;
+    }
 
     return 1;
 }
@@ -2308,6 +2458,7 @@ sub monitor_child {
     my %new_cache = ();
     my %types_per_user = ();
     my $got_errors = 0;
+    my %show_now = ();       # for non-update info
 
     my $fh;
     if ( -e $filename and open $fh, '<', $filename ) {
@@ -2325,9 +2476,17 @@ sub monitor_child {
         if (s/^t:debug\s+//) {
             &debug($_);
 
-        } elsif (s/^t:error\s+//) {
-            $got_errors++;
-            &notice(['error'], $_);
+        } elsif (s/^t:(error|info)\s+//) {
+            my $type = $1;
+            $got_errors++ if $type eq 'error';
+            &notice([$type], $_);
+
+        } elsif (s/^t:(url)\s+//) {
+            my %meta = &cache_to_meta($_, $1, [ qw/epoch https site uri/ ]);
+            $expanded_url{$meta{site}}{$meta{https} ? 1 : 0}{$meta{uri}} = {
+                url => $meta{text},
+                epoch => $meta{epoch},
+            };
 
         } elsif (s/^t:(last_poll)\s+//) {
             my %meta = &cache_to_meta($_, $1, [ qw/ac poll_type epoch/ ]);
@@ -2371,13 +2530,13 @@ sub monitor_child {
             my %meta = &cache_to_meta($_, $1, [ qw/id ac ign reply_to_user reply_to_id nick topic created_at/ ]);
 
             if (exists $new_cache{ $meta{id} }) {
-                # &debug("Skipping newly-cached $meta{id}");
+                &debug("SKIP newly-cached $meta{id}");
                 next;
             }
             $new_cache{ $meta{id} } = time;
             if (exists $tweet_cache{ $meta{id} }) {
                        # and (not $retweeted_id{$username} or not $retweeted_id{$username}{ $meta{id} });
-                # &debug("Skipping cached $meta{id}");
+                &debug("SKIP cached $meta{id}");
                 next;
             }
 
@@ -2393,21 +2552,30 @@ sub monitor_child {
                 delete $search_once{ $meta{username} }->{ $meta{topic} };
             }
 
-        } elsif (s/^t:(friend|block)\s+//) {
-            my $type = $1;
-            my %meta = &cache_to_meta($_, $type, [ qw/ac nick epoch/ ]);
-            if ($is_update and not defined $types_per_user{$meta{username}}{$type}) {
-                if ($type eq 'friend') {
+        } elsif (s/^t:(friend|block|list)\s+//) {
+            my %meta = &cache_to_meta($_, $1, [ qw/ac list id nick epoch/ ]);
+            if ($is_update and not defined $types_per_user{$meta{username}}{$meta{type}}) {
+                if ($meta{type} eq 'friend') {
                     $friends{$meta{username}} = ();
-                } elsif ($type eq 'block') {
+                } elsif ($meta{type} eq 'block') {
                     $blocks{$meta{username}} = ();
+                } elsif ($meta{type} eq 'list') {
+                    my ($list_account, $list_name) = split '/', $meta{list};
+                    $state{__lists}{$list_account} = {};
                 }
-                $types_per_user{$meta{username}}{$type} = 1;
+                $types_per_user{$meta{username}}{$meta{type}} = 1;
             }
-            if ($type eq 'friend') {
+            if ($meta{type} eq 'friend') {
                 $nicks{$meta{nick}} = $friends{$meta{username}}{$meta{nick}} = $meta{epoch};
-            } elsif ($type eq 'block') {
+            } elsif ($meta{type} eq 'block') {
                 $blocks{$meta{username}}{$meta{nick}} = $meta{epoch};
+            } elsif ($meta{type} eq 'list') {
+                my ($list_account, $list_name) = split '/', $meta{list};
+                if (not exists $state{__lists}{$list_account}{$list_name}) {
+                    $state{__lists}{$list_account}{$list_name} = { id=>$meta{id}, members=>[] };
+                }
+                $show_now{lists}{$list_account}{$list_name} = $meta{id} if not $is_update;
+                push @{ $state{__lists}{$list_account}{$list_name}{members} }, $meta{nick};
             }
 
         } else {
@@ -2426,11 +2594,26 @@ sub monitor_child {
         waitpid( -1, WNOHANG );
 
         &debug("new last_poll    = $last_poll{__poll}",
-               "new last_poll_id = " . Dumper( $state{__last_id} ));
-        if ($first_call and not $settings{force_first}) {
+               "new last_poll_id = " . Dumper( $state{__last_id} )) if $is_update;
+        if ($is_update and $first_call and not $settings{force_first}) {
             &debug("First call, not printing updates");
         } else {
-            &write_lines(\@lines, 1);
+
+            if (exists $show_now{lists}) {
+                for my $list_account (keys %{ $show_now{lists} }) {
+                    my $list_ac = ($list_account eq "$user\@$defservice" ? '' : "$list_account/");
+                    for my $list_name (keys %{ $show_now{lists}{$list_account} }) {
+                        if (0 == @{ $state{__lists}{$list_account}{$list_name}{members} }) {
+                            &notice(['info'], "List $list_ac$list_name is empty.");
+                        } else {
+                            &notice("List $list_ac$list_name members: " .
+                                    join(', ', @{ $state{__lists}{$list_account}{$list_name}{members} }));
+                        }
+                    }
+                }
+            }
+
+            &write_lines(\@lines, $is_update);
         }
 
         unlink $filename or warn "Failed to remove $filename: $!" unless &debug();
@@ -2448,11 +2631,14 @@ sub monitor_child {
         }
 
         if (not $got_errors) {
-            $failstatus        = 0;
             &save_state();
         }
 
         if ($is_update) {
+            if ($failstatus and not $got_errors) {
+                &notice([ 'error' ], "Update succeeded.");
+                $failstatus    = 0;
+            }
             $first_call        = 0;
             $update_is_running = 0;
         }
@@ -2512,15 +2698,14 @@ sub monitor_child {
 
 sub write_lines {
     my $lines_ref       = shift;
-    my $want_extras     = shift;
-    my $want_ymd_suffix = shift;
+    my $is_update       = shift;
     my $ymd_color = $irssi_to_mirc_colors{ $settings{ymd_color} };
     my @date_now = localtime();
     my $ymd_now = sprintf('%04d-%02d-%02d', $date_now[5]+1900, $date_now[4]+1, $date_now[3]);
     my $old_tf;
     #	&debug("line: " . Dumper $lines_ref);
     foreach my $line (@$lines_ref) {
-        my $line_want_extras = $want_extras;
+        my $line_want_extras = $is_update;
         my $win_name = &window( $line->{type}, $line->{username}, $line->{nick}, $line->{topic} );
         my $ac_tag = '';
         if ( lc $line->{service} ne lc $settings{default_service} ) {
@@ -2532,7 +2717,7 @@ sub write_lines {
 
         my @print_opts = (
             $line->{level},
-            "twirssi_" . $line->{type},
+            "twirssi_" . $line->{type},   # theme
             $ac_tag,
         );
         push @print_opts, (lc $line->{topic} ne lc $win_name ? $line->{topic} . ':' : '')
@@ -2554,7 +2739,7 @@ sub write_lines {
                 $line->{text} = "%g[$IRSSI{name}] %n " . $line->{text};
             }
             $line_want_extras = 0;
-        } elsif ($want_ymd_suffix) {
+        } elsif (not $is_update) {
             $ymd_suffix = " \cC$ymd_color$ymd\cO" if $ymd_now ne $ymd;
         } elsif (not defined $last_ymd{wins}{$win_name}
                   or $last_ymd{wins}{$win_name}->{ymd} ne $ymd) {
@@ -2566,6 +2751,7 @@ sub write_lines {
         if (not defined $old_tf) {
             $old_tf = Irssi::settings_get_str('timestamp_format');
         }
+        $line->{text} = &unshorten($line->{text});
         Irssi::command("^set timestamp_format $ts");
         Irssi::window_find_name($win_name)->printformat(
             @print_opts, &hilight( $line->{text} ) . $ymd_suffix
@@ -2662,7 +2848,6 @@ sub remove_colors {
 }
 
 sub save_state {
-
     # save state hash
     if ( keys %state and my $file = $settings{replies_store} ) {
         if ( open my $fh, '>', $file ) {
@@ -2670,6 +2855,27 @@ sub save_state {
             close $fh;
         } else {
             &notice([ 'error' ],"Failed to write state to $file: $!");
+        }
+    }
+    # save id hash
+    if ( my $file = $settings{id_store} ) {
+        if ( open my $fh, '>', $file ) {
+            print $fh JSON::Any->objToJson( \%tweet_cache );
+            close $fh;
+        } else {
+            &notice([ 'error' ],"Failed to write IDs to $file: $!");
+        }
+    }
+}
+
+sub save_polls {
+    # save last_poll hash
+    if ( keys %last_poll and my $file = $settings{poll_store} ) {
+        if ( open my $fh, '>', $file ) {
+            print $fh JSON::Any->objToJson( \%last_poll );
+            close $fh;
+        } else {
+            &notice([ 'error' ], "Failed to write polls to $file: $!");
         }
     }
 }
@@ -2723,8 +2929,8 @@ sub notice {
                 $win = Irssi::window_find_name(&window( $type, $tag ));
             }
 
-            if ($type eq 'error') {
-                $win->printformat(MSGLEVEL_PUBLIC, 'twirssi_error', $msg);
+            if ($type =~ /^(error|info)$/) {
+                $win->printformat(MSGLEVEL_PUBLIC, 'twirssi_'.$type, $msg); # theme
             } else {
                 $win->print("${col}***%n $msg", $win_level );
             }
@@ -2801,53 +3007,102 @@ sub sig_complete {
     my ( $complist, $window, $word, $linestart, $want_space ) = @_;
 
     my $cmdchars = quotemeta Irssi::settings_get_str('cmdchars');
+    my $comp_type = '';
+    my $keep_at = 0;
+    my $lc_stag = '';
 
-    if ($linestart =~ s@^ ( [$cmdchars] (?:twitter|twirssi|tweet|dm|retweet) \w* ) _as $@$1$2@x
-            or grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'account'} }) {
-        # '*_as' expects account
-        $word =~ s/^@//;
-        @$complist = grep /^\Q$word/i, map { s/\@.*// and $_ } keys %twits;
-        return;
+    my $cmd = '';
+    my @args = ();
+    my $want_account = 0;
+    if ($linestart =~ m@^ [$cmdchars] (\S+?)(_as)? ((?: \s+ \S+ )*) \s* $@xi) {
+        $cmd = lc $1;
+        my $cmd_as = $2;
+        my $args = $3;
+        $args =~ s/^\s+//;
+        @args = split(/\s+/, $args);
+        if ($cmd_as) {
+            if (@args) {
+                # act as if "_as ac" is not there
+                shift @args;
+            } elsif ($cmd =~ /^(?:twitter|twirssi|tweet|dm|retweet)/) {
+                $want_account = 1;
+            }
+        }
     }
 
-    if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'tweet'} }) {
-        # 'tweet' expects nick:num (we offer last num for each nick)
-        $word =~ s/^@//;
-        @$complist = map { "$_:$state{__indexes}{lc $_}" }
-          sort { $nicks{$b} <=> $nicks{$a} }
-            grep /^\Q$word/i, keys %{ $state{__indexes} };
+    if (not @args) {
+        if ($want_account or grep { $cmd eq $_ } @{ $completion_types{'account'} }) {
+            # '*_as' and 'account' types expect account as first arg
+            $word =~ s/^@//;
+            @$complist = grep /^\Q$word/i, map { s/\@.*// and $_ } keys %twits;
+            return;
+        }
+        if (grep { $cmd eq $_ } @{ $completion_types{'tweet'} }) {
+            # 'tweet' expects nick:num (we offer last num for each nick)
+            $word =~ s/^@//;
+            @$complist = map { "$_:$state{__indexes}{lc $_}" }
+              sort { $nicks{$b} <=> $nicks{$a} }
+                grep /^\Q$word/i, keys %{ $state{__indexes} };
+            return;
+        }
+        if (grep { $cmd eq $_ } @{ $completion_types{'nick'} }) {
+            # 'nick' expects a nick
+            $comp_type = 'nick';
+        }
     }
 
-    if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'nick'} }) {
-        # 'nick' expects a nick
-        $word =~ s/^@//;
-        push @$complist, grep /^\Q$word/i,
-          sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
+    # retweet_to non-first args
+    if ($cmd eq 'retweet_to') {
+        if (@args == 1) {
+            @$complist = grep /^\Q$word/i, map { "-$_->{tag}" } Irssi::servers();
+            return;
+        } elsif (@args == 2) {
+            @$complist = grep /^\Q$word/i, qw/ -channel -nick /;
+            return;
+        } elsif (@args == 3 and $args[2] =~ m{^ -(channel|nick) $}x) {
+            $lc_stag = lc $args[1];
+            $lc_stag = substr($lc_stag, 1) if substr($lc_stag, 0, 1) eq '-';
+            $comp_type = $1;
+        }
     }
 
-    if (     $linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ $}x) {
-        @$complist = grep /^\Q$word/i, map { "-$_->{tag}" } Irssi::servers();
-        return;
-    } elsif ($linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ \s+ -\S+ $}x) {
-        @$complist = grep /^\Q$word/i, qw/ -channel -nick /;
-        return;
-    } elsif ($linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ \s+ -(\S+) \s+ -channel $}x) {
-        my $lc_tag = lc $1;
-        @$complist = map { $_->{name} }
-                         grep { $_->{name} =~ /^\Q$word/i and lc $_->{server}->{tag} eq $lc_tag }
-                             Irssi::channels();
-        return;
+    # twirssi_set_window twirssi_set_channel
+    if ($cmd eq 'twirssi_set_window' or $cmd eq 'twirssi_set_channel') {
+        my $set_type = substr($cmd, 12);
+        if (@args == 0) {
+            @$complist = grep /^\Q$word/i, @{ $valid_types{$set_type} };
+            return;
+        } elsif (@args == 1) {
+            $comp_type = 'nick';
+        } elsif (@args == 2) {
+            if ($set_type eq 'window') {
+                @$complist = map { $_->{name} || $_->{active}->{name} }
+                             grep { my $n = $_->{name} || $_->{active}->{name}; $n =~ /^\Q$word\E/i } Irssi::windows();
+                return;
+            } elsif ($set_type eq 'channel') {
+                $comp_type = $set_type;
+            }
+        }
     }
 
     # anywhere in line...
-    if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? }x } @{ $completion_types{'re_nick'} }) {
+    if (not $comp_type and grep { $cmd eq $_ } @{ $completion_types{'re_nick'} }) {
         # 're_nick' can have @nick anywhere
-        my $prefix = $word =~ s/^@//;
-        push @$complist, grep /^\Q$word/i,
-          sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
-        @$complist = map { "\@$_" } @$complist if $prefix;
+        $comp_type = 'nick';
+        $keep_at = 1;
     }
 
+    if ($comp_type eq 'channel') {
+        @$complist = map { $_->{name} }
+                       grep { $_->{name} =~ /^\Q$word\E/i and ($lc_stag eq '' or lc($_->{server}->{tag}) eq $lc_stag) }
+                         Irssi::channels();
+        return;
+    } elsif ($comp_type eq 'nick') {
+        my $prefix = $1 if $word =~ s/^(@)//;
+        @$complist = map { ($prefix and $keep_at) ? "$prefix$_" : $_ }
+                       grep /^\Q$word/i, sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
+        return;
+    }
 }
 
 sub event_send_text {
@@ -2946,6 +3201,11 @@ sub event_setup_changed {
     &debug('changed settings: ' . join(', ', @changed_stgs)) if @changed_stgs;
 
     &ensure_logfile($settings{window});
+
+    if ($do_add or grep 'url_unshorten', @changed_stgs) {
+        # want to load this in the parent to allow child to use it expediently
+        &load_ua();
+    }
     &debug("Settings changed ($do_add):" . Dumper \%settings);
 }
 
@@ -3075,6 +3335,101 @@ sub shorten {
     return &make_utf8($data);
 }
 
+
+sub load_ua {
+    return if defined $ua or not @{ $settings{url_unshorten} };
+    &notice("Loading LWP and ua...");
+    eval "use LWP;";
+    $ua = LWP::UserAgent->new(
+        env_proxy => 1,
+        timeout => 10,
+        agent => "$IRSSI{name}/$VERSION",
+        requests_redirectable => [],
+    );
+}
+
+
+sub is_url_from_shortener {
+    my $url = shift;
+    return unless @{ $settings{url_unshorten} }
+           and $url =~ s@^https?://([\w.]+)/.*@lc $1@e;
+    return grep { $url eq $_ } @{ $settings{url_unshorten} };
+}
+
+
+sub get_url_parts {
+    my $url = shift;
+    my @parts = ($url =~ m@^(https?)://([^/]+)/(.+)@i);
+    $parts[0] = lc $parts[0];
+    $parts[1] = lc $parts[1];
+    return @parts;
+}
+
+
+sub get_unshorten_urls {
+    my $text = shift;
+    my $fh   = shift;
+    return unless @{ $settings{url_unshorten} };
+    foreach my $url ( $text =~ m@\b(https?://\S+[\w/])@g ) {
+        my @orig_url_parts;
+        my @url_parts;
+        my $new_url = $url;
+        my $max_redir = 4;
+        my $resp;
+        while ($max_redir-- > 0
+                and @url_parts = &get_url_parts($new_url)
+                and grep { $url_parts[1] eq $_ } @{ $settings{url_unshorten} }
+                and not defined $expanded_url{$url_parts[1]}{$url_parts[0] eq 'https' ? 1 : 0}{$url_parts[2]}
+                and $resp = $ua->head($new_url)
+                and (defined $resp->header('Location')
+                     or (&debug($fh, "cut_short $new_url => " . $resp->header('Host')) and 0)
+                    )) {
+            &debug($fh, "deshort $new_url => " . $resp->header('Location'));
+            @orig_url_parts = @url_parts if not @orig_url_parts;
+            $new_url = $resp->header('Location');
+        }
+        if (@orig_url_parts) {
+            $expanded_url{$orig_url_parts[1]}{$orig_url_parts[0] eq 'https' ? 1 : 0}{$orig_url_parts[2]} = {
+                url => $new_url,
+                epoch => time,
+            };
+        }
+    }
+}
+
+
+sub put_unshorten_urls {
+    my $fh    = shift;
+    my $epoch = shift;
+    for my $site (keys %expanded_url) {
+        for my $https (keys %{ $expanded_url{$site} }) {
+            for my $uri (keys %{ $expanded_url{$site}{$https} }) {
+                next if $expanded_url{$site}{$https}{$uri}{epoch} < $epoch;
+                print $fh "t:url epoch:$expanded_url{$site}{$https}{$uri}{epoch} ",
+                      ($https ? 'https:1 ' : ''),
+                      "site:$site uri:$uri $expanded_url{$site}{$https}{$uri}{url}\n";
+            }
+        }
+    }
+}
+
+
+sub unshorten {
+    my $data = shift;
+    return $data unless @{ $settings{url_unshorten} };
+    for my $site (keys %expanded_url) {
+        for my $https (keys %{ $expanded_url{$site} }) {
+            my $url = ($https ? 'https' : 'http') . '://' . $site . '/';
+            next if -1 == index($data, $url);
+            for my $uri (keys %{ $expanded_url{$site}{$https} }) {
+                $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{'%b'}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
+            }
+        }
+    }
+    return &make_utf8($data);
+}
+
+
 sub normalize_username {
     my $user      = shift;
     my $non_login = shift;
@@ -3131,20 +3486,40 @@ sub window {
     $type = "search" if $type eq 'search_once';
 
     my $win;
-    for my $type_iter ($type, 'default') {
-        next unless exists $state{__windows}{$type_iter};
-        $win =
-             $state{__windows}{$type_iter}{$uname}
-          || $state{__windows}{$type_iter}{$topic}
-          || $state{__windows}{$type_iter}{$user}
-          || $state{__windows}{$type_iter}{default};
-        last if defined $win or $type_iter eq 'default';
-    }
-    if ((not defined $win or $settings{window_priority} eq 'sender')
-            and defined $sname
-            and defined $state{__windows}{'sender'}
-            and defined $state{__windows}{'sender'}{$sname}) {
-        $win = $state{__windows}{'sender'}{$sname};
+    my @all_priorities = qw/ account sender list /;
+    my @win_priorities = split ',', $settings{window_priority};
+    my $done_rest = 0;
+    while (@win_priorities and not defined $win) {
+        my $win_priority = shift @win_priorities;
+        if ($win_priority eq 'account') {
+            for my $type_iter ($type, 'default') {
+                next unless exists $state{__windows}{$type_iter};
+                $win =
+                     $state{__windows}{$type_iter}{$uname}
+                  || $state{__windows}{$type_iter}{$topic}
+                  || $state{__windows}{$type_iter}{$user}
+                  || $state{__windows}{$type_iter}{default};
+                last if defined $win or $type_iter eq 'default';
+            }
+        } elsif ($win_priority eq 'sender') {
+            if (defined $sname
+                    and defined $state{__windows}{$win_priority}{$sname}) {
+                $win = $state{__windows}{$win_priority}{$sname};
+            }
+        } elsif ($win_priority eq 'list') {
+            if (defined $sname
+                    and defined $state{__windows}{$win_priority}{$sname}) {
+                $win = $state{__windows}{$win_priority}{$sname};
+            }
+        }
+        if (not defined $win and not @win_priorities and not $done_rest) {
+            $done_rest = 1;
+            for my $check_priority (@all_priorities) {
+                if (not grep { $check_priority eq $_ } split ',', $settings{window_priority}) {
+                    push @win_priorities, $check_priority;
+                }
+            }
+        }
     }
     $win = $settings{window} if not defined $win;
     if (not &ensure_window($win, '_tw_in_Win')) {
@@ -3187,10 +3562,29 @@ sub window_to_account {
     return;
 }
 
+sub read_json {
+    my $file = shift;
+    my $store = shift;
+    my $desc = shift;
+    if ( $file and -r $file ) {
+        if ( open( my $fh, '<', $file ) ) {
+            my $json;
+            do { local $/; $json = <$fh>; };
+            close $fh;
+            eval {
+                my $ref = JSON::Any->jsonToObj($json);
+                %$store = %$ref;
+            };
+        } else {
+            &notice( ["error"], "Failed to load $desc from $file: $!" );
+        }
+    }
+}
+
 Irssi::signal_add( "send text",     "event_send_text" );
 Irssi::signal_add( "setup changed", "event_setup_changed" );
 
-Irssi::theme_register(
+Irssi::theme_register( # theme
     [
         'twirssi_tweet',       '[$0%B@$1%n$2] $3',
         'twirssi_search',      '[$0%r$1%n%B@$2%n$3] $4',
@@ -3198,7 +3592,8 @@ Irssi::theme_register(
         'twirssi_reply',       '[$0\--> %B@$1%n$2] $3',
         'twirssi_dm',          '[$0%r@$1%n (%WDM%n)] $2',
         'twirssi_error',       '%RERROR%n: $0',
-        'twirssi_new_day',     'Day changed to $0',
+        'twirssi_info',        '%CINFO:%N $0',
+        'twirssi_new_day',     '%CDay changed to $0%N',
     ]
 );
 
@@ -3221,6 +3616,7 @@ if ( Irssi::window_find_name(window()) ) {
     Irssi::command_bind( "twitter_login",              "cmd_login" );
     Irssi::command_bind( "twitter_logout",             "cmd_logout" );
     Irssi::command_bind( "twitter_search",             "cmd_search" );
+    Irssi::command_bind( "twitter_listinfo",           "cmd_listinfo" );
     Irssi::command_bind( "twitter_dms",                "cmd_dms" );
     Irssi::command_bind( "twitter_dms_as",             "cmd_dms_as" );
     Irssi::command_bind( "twitter_switch",             "cmd_switch" );
@@ -3228,6 +3624,7 @@ if ( Irssi::window_find_name(window()) ) {
     Irssi::command_bind( "twitter_unsubscribe",        "cmd_del_search" );
     Irssi::command_bind( "twitter_list_subscriptions", "cmd_list_search" );
     Irssi::command_bind( "twirssi_upgrade",            "cmd_upgrade" );
+    Irssi::command_bind( "twirssi_reload",             "cmd_reload" );
     Irssi::command_bind( "twirssi_oauth",              "cmd_oauth" );
     Irssi::command_bind( "twitter_updates",            "get_updates" );
     Irssi::command_bind( "twitter_add_follow_extra",   "cmd_add_follow" );
@@ -3255,6 +3652,7 @@ if ( Irssi::window_find_name(window()) ) {
             &debug( "searches: ", join(';  ', map { $state{__last_id}{$_}{__search} and "$_ : " . join(', ', keys %{ $state{__last_id}{$_}{__search} }) } keys %{ $state{__last_id} } ));
             &debug( "windows: ",  Dumper \%{ $state{__windows} } );
             &debug( "channels: ",  Dumper \%{ $state{__channels} } );
+            &debug( "lists: ", Dumper \%{ $state{__lists} } );
             &debug( "settings: ",  Dumper \%settings );
             &debug( "last poll: ", Dumper \%last_poll );
             if ( open my $fh, '>', "/tmp/$IRSSI{name}.cache.txt" ) {
@@ -3435,8 +3833,8 @@ if ( Irssi::window_find_name(window()) ) {
     my $file = $settings{replies_store};
     if ( $file and -r $file ) {
         if ( open( my $fh, '<', $file ) ) {
-            local $/;
-            my $json = <$fh>;
+            my $json;
+            do { local $/; $json = <$fh>; };
             close $fh;
             eval {
                 my $ref = JSON::Any->jsonToObj($json);
@@ -3466,6 +3864,9 @@ if ( Irssi::window_find_name(window()) ) {
             &notice( ["error"], "Failed to load old replies from $file: $!" );
         }
     }
+
+    &read_json($settings{poll_store}, \%last_poll, "prev. poll times");
+    &read_json($settings{id_store}, \%tweet_cache, "cached IDs");
 
     if ( my $provider = $settings{url_provider} ) {
         &notice("Loading WWW::Shorten::$provider...");
