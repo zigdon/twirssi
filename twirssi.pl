@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta117$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta135$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta117$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-10-03 08:36:16 +0000$',
+    changed => '$Date: 2011-10-15 19:22:12 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -69,6 +69,10 @@ my @datetime_parser;
 my %completion_types = ();
 my %expanded_url = ();
 my $ua;
+my %valid_types = (
+	'window'	=> [ qw/ tweet search dm reply sender error default /],	# twirssi_set_window
+	'channel'	=> [ qw/ tweet search dm reply sender error * / ],	# twirssi_set_channel
+);
 
 my $local_tz = DateTime::TimeZone->new( name => 'local' );
 
@@ -85,6 +89,8 @@ my @settings_defn = (
         [ 'oauth_store',       'twirssi_oauth_store',       's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.oauth" ],
         [ 'replies_store',     'twirssi_replies_store',     's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.json" ],
         [ 'dump_store',        'twirssi_dump_store',        's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.dump" ],
+        [ 'poll_store',        'twirssi_poll_store',        's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.polls" ],
+        [ 'id_store',          'twirssi_id_store',          's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.ids" ],
         [ 'retweet_format',    'twirssi_retweet_format',    's', 'RT $n: "$t" ${-- $c$}' ],
         [ 'stripped_tags',     'twirssi_stripped_tags',     's', '',			'list{,}' ],
         [ 'topic_color',       'twirssi_topic_color',       's', '%r', ],
@@ -381,6 +387,13 @@ sub cmd_retweet_to_window {
     }
 
     &debug("Retweet of $nick:$id sent to $target");
+}
+
+sub cmd_reload {
+    if ($settings{force_first} and $settings{poll_store}) {
+        &save_polls();
+    }
+    Irssi::command("script load $IRSSI{name}");
 }
 
 sub cmd_tweet {
@@ -1271,7 +1284,7 @@ sub cmd_upgrade {
     }
 
     &notice( ["notice"],
-        "Download complete.  Reload twirssi with /script load $file" );
+        "Download complete.  Reload twirssi with /twirssi_reload" );
 }
 
 sub cmd_list_channels {
@@ -1307,11 +1320,9 @@ sub cmd_set_channel {
     my ($type, $tag, $net_tag, $channame) = @words;
     my $delete = 1 if $type =~ s/^-//;
 
-    my @valid_types = qw/ tweet search dm reply sender error * /;
-
-    unless ( grep { $type eq $_ } @valid_types ) {
+    unless ( grep { $type eq $_ } @{ $valid_types{'channel'} } ) {
         &notice(['error'], "Invalid message type '$type'.");
-        &notice(['error'], 'Valid types: ' . join(', ', @valid_types));
+        &notice(['error'], 'Valid types: ' . join(', ', @{ $valid_types{'channel'} }));
         return;
     }
 
@@ -1383,8 +1394,6 @@ sub cmd_set_window {
     my $winname = pop @words;       # the last argument is the window name
     my $delete = $winname eq '-';
 
-    my @valid_types = qw/ tweet search dm reply sender error default /;
-
     if ( @words == 0 ) {            # just a window name
         $winname = 'twitter' if $delete;
         &notice("Changing the default twirssi window to $winname");
@@ -1394,15 +1403,15 @@ sub cmd_set_window {
         &notice(
                 "Too many arguments to /twirssi_set_window. '@words'",
                 "Usage: /twirssi_set_window [type] [account|search_term] [window].",
-                'Valid types: ' . join(', ', @valid_types)
+                'Valid types: ' . join(', ', @{ $valid_types{'window'} })
         );
         return;
     } elsif ( @words >= 1 ) {
         my $type = lc $words[0];
-        unless ( grep { $_ eq $type } @valid_types ) {
+        unless ( grep { $_ eq $type } @{ $valid_types{'window'} } ) {
             &notice(['error'],
                 "Invalid message type '$type'.",
-                'Valid types: ' . join(', ', @valid_types)
+                'Valid types: ' . join(', ', @{ $valid_types{'window'} })
             );
             return;
         }
@@ -1758,7 +1767,7 @@ sub background_setup {
 
     return unless &logged_in($twit);
 
-    my ( $fh, $filename ) = File::Temp::tempfile();
+    my ( $fh, $filename ) = File::Temp::tempfile('tw_'.$$.'_XXXX', TMPDIR => 1);
     binmode( $fh, ":" . &get_charset() );
     $child_pid = fork();
 
@@ -1767,6 +1776,8 @@ sub background_setup {
             [ "$filename.done", $max_pauses, $pause_monitor, $is_update ] );
         Irssi::pidwait_add($child_pid);
     } elsif ( defined $child_pid ) {    # child
+        my $pid_filename = $filename . '.' . $$;
+        rename $filename, $pid_filename;
         close STDIN;
         close STDOUT;
         close STDERR;
@@ -1777,7 +1788,7 @@ sub background_setup {
         }
 
         close $fh;
-        rename $filename, "$filename.done";
+        rename $pid_filename, "$filename.done";
         exit;
     } else {
         &notice([ 'error' ], "Failed to fork for background call: $!");
@@ -2606,11 +2617,14 @@ sub monitor_child {
         }
 
         if (not $got_errors) {
-            $failstatus        = 0;
             &save_state();
         }
 
         if ($is_update) {
+            if ($failstatus and not $got_errors) {
+                &notice([ 'error' ], "Update succeeded.");
+                $failstatus    = 0;
+            }
             $first_call        = 0;
             $update_is_running = 0;
         }
@@ -2820,7 +2834,6 @@ sub remove_colors {
 }
 
 sub save_state {
-
     # save state hash
     if ( keys %state and my $file = $settings{replies_store} ) {
         if ( open my $fh, '>', $file ) {
@@ -2828,6 +2841,27 @@ sub save_state {
             close $fh;
         } else {
             &notice([ 'error' ],"Failed to write state to $file: $!");
+        }
+    }
+    # save id hash
+    if ( my $file = $settings{id_store} ) {
+        if ( open my $fh, '>', $file ) {
+            print $fh JSON::Any->objToJson( \%tweet_cache );
+            close $fh;
+        } else {
+            &notice([ 'error' ],"Failed to write IDs to $file: $!");
+        }
+    }
+}
+
+sub save_polls {
+    # save last_poll hash
+    if ( keys %last_poll and my $file = $settings{poll_store} ) {
+        if ( open my $fh, '>', $file ) {
+            print $fh JSON::Any->objToJson( \%last_poll );
+            close $fh;
+        } else {
+            &notice([ 'error' ], "Failed to write polls to $file: $!");
         }
     }
 }
@@ -2959,53 +2993,102 @@ sub sig_complete {
     my ( $complist, $window, $word, $linestart, $want_space ) = @_;
 
     my $cmdchars = quotemeta Irssi::settings_get_str('cmdchars');
+    my $comp_type = '';
+    my $keep_at = 0;
+    my $lc_stag = '';
 
-    if ($linestart =~ s@^ ( [$cmdchars] (?:twitter|twirssi|tweet|dm|retweet) \w* ) _as $@$1$2@x
-            or grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'account'} }) {
-        # '*_as' expects account
-        $word =~ s/^@//;
-        @$complist = grep /^\Q$word/i, map { s/\@.*// and $_ } keys %twits;
-        return;
+    my $cmd = '';
+    my @args = ();
+    my $want_account = 0;
+    if ($linestart =~ m@^ [$cmdchars] (\S+?)(_as)? ((?: \s+ \S+ )*) \s* $@xi) {
+        $cmd = lc $1;
+        my $cmd_as = $2;
+        my $args = $3;
+        $args =~ s/^\s+//;
+        @args = split(/\s+/, $args);
+        if ($cmd_as) {
+            if (@args) {
+                # act as if "_as ac" is not there
+                shift @args;
+            } elsif ($cmd =~ /^(?:twitter|twirssi|tweet|dm|retweet)/) {
+                $want_account = 1;
+            }
+        }
     }
 
-    if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'tweet'} }) {
-        # 'tweet' expects nick:num (we offer last num for each nick)
-        $word =~ s/^@//;
-        @$complist = map { "$_:$state{__indexes}{lc $_}" }
-          sort { $nicks{$b} <=> $nicks{$a} }
-            grep /^\Q$word/i, keys %{ $state{__indexes} };
+    if (not @args) {
+        if ($want_account or grep { $cmd eq $_ } @{ $completion_types{'account'} }) {
+            # '*_as' and 'account' types expect account as first arg
+            $word =~ s/^@//;
+            @$complist = grep /^\Q$word/i, map { s/\@.*// and $_ } keys %twits;
+            return;
+        }
+        if (grep { $cmd eq $_ } @{ $completion_types{'tweet'} }) {
+            # 'tweet' expects nick:num (we offer last num for each nick)
+            $word =~ s/^@//;
+            @$complist = map { "$_:$state{__indexes}{lc $_}" }
+              sort { $nicks{$b} <=> $nicks{$a} }
+                grep /^\Q$word/i, keys %{ $state{__indexes} };
+            return;
+        }
+        if (grep { $cmd eq $_ } @{ $completion_types{'nick'} }) {
+            # 'nick' expects a nick
+            $comp_type = 'nick';
+        }
     }
 
-    if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? $}x } @{ $completion_types{'nick'} }) {
-        # 'nick' expects a nick
-        $word =~ s/^@//;
-        push @$complist, grep /^\Q$word/i,
-          sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
+    # retweet_to non-first args
+    if ($cmd eq 'retweet_to') {
+        if (@args == 1) {
+            @$complist = grep /^\Q$word/i, map { "-$_->{tag}" } Irssi::servers();
+            return;
+        } elsif (@args == 2) {
+            @$complist = grep /^\Q$word/i, qw/ -channel -nick /;
+            return;
+        } elsif (@args == 3 and $args[2] =~ m{^ -(channel|nick) $}x) {
+            $lc_stag = lc $args[1];
+            $lc_stag = substr($lc_stag, 1) if substr($lc_stag, 0, 1) eq '-';
+            $comp_type = $1;
+        }
     }
 
-    if (     $linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ $}x) {
-        @$complist = grep /^\Q$word/i, map { "-$_->{tag}" } Irssi::servers();
-        return;
-    } elsif ($linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ \s+ -\S+ $}x) {
-        @$complist = grep /^\Q$word/i, qw/ -channel -nick /;
-        return;
-    } elsif ($linestart =~ m{^ [$cmdchars] retweet_to (?:_as\s+\S+)? \s+ \S+ \s+ -(\S+) \s+ -channel $}x) {
-        my $lc_tag = lc $1;
-        @$complist = map { $_->{name} }
-                         grep { $_->{name} =~ /^\Q$word\E/i and lc $_->{server}->{tag} eq $lc_tag }
-                             Irssi::channels();
-        return;
+    # twirssi_set_window twirssi_set_channel
+    if ($cmd eq 'twirssi_set_window' or $cmd eq 'twirssi_set_channel') {
+        my $set_type = substr($cmd, 12);
+        if (@args == 0) {
+            @$complist = grep /^\Q$word/i, @{ $valid_types{$set_type} };
+            return;
+        } elsif (@args == 1) {
+            $comp_type = 'nick';
+        } elsif (@args == 2) {
+            if ($set_type eq 'window') {
+                @$complist = map { $_->{name} || $_->{active}->{name} }
+                             grep { my $n = $_->{name} || $_->{active}->{name}; $n =~ /^\Q$word\E/i } Irssi::windows();
+                return;
+            } elsif ($set_type eq 'channel') {
+                $comp_type = $set_type;
+            }
+        }
     }
 
     # anywhere in line...
-    if (grep { $linestart =~ m{^ [$cmdchars] $_ (?:_as\s+\S+)? }x } @{ $completion_types{'re_nick'} }) {
+    if (not $comp_type and grep { $cmd eq $_ } @{ $completion_types{'re_nick'} }) {
         # 're_nick' can have @nick anywhere
-        my $prefix = $word =~ s/^@//;
-        push @$complist, grep /^\Q$word/i,
-          sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
-        @$complist = map { "\@$_" } @$complist if $prefix;
+        $comp_type = 'nick';
+        $keep_at = 1;
     }
 
+    if ($comp_type eq 'channel') {
+        @$complist = map { $_->{name} }
+                       grep { $_->{name} =~ /^\Q$word\E/i and ($lc_stag eq '' or lc($_->{server}->{tag}) eq $lc_stag) }
+                         Irssi::channels();
+        return;
+    } elsif ($comp_type eq 'nick') {
+        my $prefix = $1 if $word =~ s/^(@)//;
+        @$complist = map { ($prefix and $keep_at) ? "$prefix$_" : $_ }
+                       grep /^\Q$word/i, sort { $nicks{$b} <=> $nicks{$a} } keys %nicks;
+        return;
+    }
 }
 
 sub event_send_text {
@@ -3465,6 +3548,25 @@ sub window_to_account {
     return;
 }
 
+sub read_json {
+    my $file = shift;
+    my $store = shift;
+    my $desc = shift;
+    if ( $file and -r $file ) {
+        if ( open( my $fh, '<', $file ) ) {
+            my $json;
+            do { local $/; $json = <$fh>; };
+            close $fh;
+            eval {
+                my $ref = JSON::Any->jsonToObj($json);
+                %$store = %$ref;
+            };
+        } else {
+            &notice( ["error"], "Failed to load $desc from $file: $!" );
+        }
+    }
+}
+
 Irssi::signal_add( "send text",     "event_send_text" );
 Irssi::signal_add( "setup changed", "event_setup_changed" );
 
@@ -3477,7 +3579,7 @@ Irssi::theme_register( # theme
         'twirssi_dm',          '[$0%r@$1%n (%WDM%n)] $2',
         'twirssi_error',       '%RERROR%n: $0',
         'twirssi_info',        '%CINFO:%N $0',
-        'twirssi_new_day',     'Day changed to $0',
+        'twirssi_new_day',     '%CDay changed to $0%N',
     ]
 );
 
@@ -3508,6 +3610,7 @@ if ( Irssi::window_find_name(window()) ) {
     Irssi::command_bind( "twitter_unsubscribe",        "cmd_del_search" );
     Irssi::command_bind( "twitter_list_subscriptions", "cmd_list_search" );
     Irssi::command_bind( "twirssi_upgrade",            "cmd_upgrade" );
+    Irssi::command_bind( "twirssi_reload",             "cmd_reload" );
     Irssi::command_bind( "twirssi_oauth",              "cmd_oauth" );
     Irssi::command_bind( "twitter_updates",            "get_updates" );
     Irssi::command_bind( "twitter_add_follow_extra",   "cmd_add_follow" );
@@ -3747,6 +3850,9 @@ if ( Irssi::window_find_name(window()) ) {
             &notice( ["error"], "Failed to load old replies from $file: $!" );
         }
     }
+
+    &read_json($settings{poll_store}, \%last_poll, "prev. poll times");
+    &read_json($settings{id_store}, \%tweet_cache, "cached IDs");
 
     if ( my $provider = $settings{url_provider} ) {
         &notice("Loading WWW::Shorten::$provider...");
