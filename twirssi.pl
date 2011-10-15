@@ -131,6 +131,7 @@ my @settings_defn = (
         [ 'poll_interval',     'twitter_poll_interval',     'i', 300 ],
         [ 'poll_schedule',     'twitter_poll_schedule',     's', '',			'list{,}' ],
         [ 'search_results',    'twitter_search_results',    'i', 5 ],
+        [ 'autosearch_results','twitter_autosearch_results','i', 0 ],
         [ 'timeout',           'twitter_timeout',           'i', 30 ],
         [ 'track_replies',     'twirssi_track_replies',     'i', 100 ],
 );
@@ -446,6 +447,19 @@ sub cmd_tweet_as {
 
     foreach ( $data =~ /@([-\w]+)/g ) {
         $nicks{$_} = time;
+    }
+
+    # TODO: What's the official definition of a Hashtag? Let's use #[-\w]+ like above for now.
+    if ( $settings{autosearch_results} > 0 and $data =~ /#[-\w]+/ ) {
+	my @topics;
+	while ( $data =~ /(#[-\w]+)/g ) {
+	    push @topics, $1;
+	    $search_once{$username}->{$1} = $settings{autosearch_results};
+	}
+	&get_updates([ 0, [
+			   [ $username, { up_searches => [ @topics ] } ],
+		       ],
+		     ]);
     }
 
     $state{__last_id}{$username}{__sent} = $res->{id};
