@@ -8,6 +8,7 @@
 
 	code {
 		font-size: medium;
+                background-color: lightgray;
 	}
 	
 	body {
