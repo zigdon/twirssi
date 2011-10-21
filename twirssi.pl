@@ -100,6 +100,7 @@ my @settings_defn = (
         [ 'upgrade_dev',       'twirssi_upgrade_dev',       's', 'zigdon', ],
         [ 'bitlbee_server',    'bitlbee_server',            's', 'bitlbee' ],
         [ 'hilight_color',     'twirssi_hilight_color',     's', '%M' ],
+        [ 'unshorten_color',   'twirssi_unshorten_color',   's', '%b' ],
         [ 'passwords',         'twitter_passwords',         's', undef,			'list{,}' ],
         [ 'usernames',         'twitter_usernames',         's', undef,			'list{,}' ],
         [ 'update_usernames',  'twitter_update_usernames',  's', undef,			'list{,}' ],
@@ -3422,7 +3423,7 @@ sub unshorten {
             my $url = ($https ? 'https' : 'http') . '://' . $site . '/';
             next if -1 == index($data, $url);
             for my $uri (keys %{ $expanded_url{$site}{$https} }) {
-                $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{'%b'}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
+                $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{$settings{unshorten_color}}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
             }
         }
     }
