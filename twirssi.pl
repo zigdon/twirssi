@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1beta136$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.1beta145$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta136$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-10-15 21:56:48 +0000$',
+    changed => '$Date: 2011-10-21 22:34:25 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -1014,7 +1014,7 @@ sub verify_twitter_object {
     if ( my $timeout = $settings{timeout} and $twit->can('ua') ) {
         $twit->ua->timeout($timeout);
         &notice( ["tweet", "$user\@$service"],
-                 "Twitter timeout set to $timeout" );
+                 "Twitter timeout for $user\@$service set to $timeout" );
     }
 
     unless ( $twit->verify_credentials() ) {
