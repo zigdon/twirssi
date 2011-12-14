@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta136$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-10-15 21:56:48 +0000$',
+    changed => '$Date: 2011-10-21 13:55:11 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -100,6 +100,7 @@ my @settings_defn = (
         [ 'upgrade_dev',       'twirssi_upgrade_dev',       's', 'zigdon', ],
         [ 'bitlbee_server',    'bitlbee_server',            's', 'bitlbee' ],
         [ 'hilight_color',     'twirssi_hilight_color',     's', '%M' ],
+        [ 'unshorten_color',   'twirssi_unshorten_color',   's', '%b' ],
         [ 'passwords',         'twitter_passwords',         's', undef,			'list{,}' ],
         [ 'usernames',         'twitter_usernames',         's', undef,			'list{,}' ],
         [ 'update_usernames',  'twitter_update_usernames',  's', undef,			'list{,}' ],
@@ -3423,7 +3424,7 @@ sub unshorten {
             my $url = ($https ? 'https' : 'http') . '://' . $site . '/';
             next if -1 == index($data, $url);
             for my $uri (keys %{ $expanded_url{$site}{$https} }) {
-                $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{'%b'}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
+                $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{$settings{unshorten_color}}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
             }
         }
     }
