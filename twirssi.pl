@@ -1783,12 +1783,14 @@ sub background_setup {
     return unless &logged_in($twit);
 
     my ( $fh, $filename ) = File::Temp::tempfile('tw_'.$$.'_XXXX', TMPDIR => 1);
+    my $done_filename = "$filename.done";
+    unlink($done_filename) if -f $done_filename;
     binmode( $fh, ":" . &get_charset() );
     $child_pid = fork();
 
     if ($child_pid) {                   # parent
         Irssi::timeout_add_once( $pause_monitor, 'monitor_child',
-            [ "$filename.done", $max_pauses, $pause_monitor, $is_update ] );
+            [ $done_filename, $max_pauses, $pause_monitor, $is_update ] );
         Irssi::pidwait_add($child_pid);
     } elsif ( defined $child_pid ) {    # child
         my $pid_filename = $filename . '.' . $$;
@@ -1803,7 +1805,7 @@ sub background_setup {
         }
 
         close $fh;
-        rename $pid_filename, "$filename.done";
+        rename $pid_filename, $done_filename;
         exit;
     } else {
         &notice([ 'error' ], "Failed to fork for background call: $!");
