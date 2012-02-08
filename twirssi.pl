@@ -540,6 +540,7 @@ sub cmd_info {
 
     if ($reply_to_id and $reply_to_user) {
        &notice( [ "info" ], "| ReplyTo: $reply_to_user:$reply_to_id" );
+       &notice( [ "info" ], "| thread:  http://twitter.theinfo.org/$statusid");
     }
     &notice( [ "info" ], "`---------" );
 }
