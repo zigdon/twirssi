@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1beta140$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2011-02-07 22:34:25 +0000$',
+    changed => '$Date: 2012-02-07 22:34:25 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
