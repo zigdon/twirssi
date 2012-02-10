@@ -2388,6 +2388,10 @@ sub meta_to_line {
         $line_attribs{level}  |= MSGLEVEL_HILIGHT;
         $line_attribs{hi_nick} = "\cC$hilight_color$meta->{nick}\cO";
     }
+    elsif ($settings{nick_color} eq 'rotate') {
+        my $c = get_nick_color($meta->{nick});
+        $line_attribs{hi_nick} = "\cC$c$meta->{nick}\cO";
+    }
 
     if (defined $meta->{ign}) {
         $line_attribs{ignoring} = 1;
@@ -3287,13 +3291,50 @@ sub get_charset {
     return $charset;
 }
 
+my @available_nick_colors =( 
+    0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+    '0,2', '0,3', '0,5', '0,6', '0,10',
+    '1,0', '1,3', '1,5', '1,6', '1,7', '1,10', '1,15',
+    '2,3', '2,7', '2,10', '2,15',
+    '3,2', '3,5', '3,7', '3,10', '3,15',
+    '4,2', '4,3', '4,6', '4,7', '4,10', '4,15',
+    '5,2', '5,3', '5,6', '5,7', '5,10', '5,15',
+    '6,2', '6,3', '6,5', '6,7', '6,10', '6,15',
+    '8,2', '8,3', '8,5', '8,6', '8,10', '8,15',
+    '9,2', '9,5', '9,6', '9,7', '9,10', '9,15',
+    '10,2', '10,3', '10,5', '10,6', '10,7', '10,15',
+    '11,2', '11,3', '11,5', '11,6', '11,7', '11,15',
+    '12,2', '12,3', '12,5', '12,6', '12,7', '12,15',
+    '13,2', '13,3', '13,5', '13,7', '13,10', '13,15',
+    '14,2', '14,3', '14,5', '14,6', '14,7', '14,10',
+    '15,2', '15,3', '15,5', '15,6', '15,10'
+);
+my %nick_colors;
+my $nick_color_pointer = 0;
+
+sub get_nick_color {
+    my $nick = shift;
+
+    if (!defined $nick_colors{$nick}) {
+        $nick_colors{$nick} = $available_nick_colors[++$nick_color_pointer % @available_nick_colors];
+    }
+    return $nick_colors{$nick};
+}
+
 sub hilight {
     my $text = shift;
 
     if ( $settings{nick_color} ) {
-        my $c = $settings{nick_color};
-        $c = $irssi_to_mirc_colors{$c};
-        $text =~ s/(^|\W)\@(\w+)/$1\cC$c\@$2\cO/g if $c;
+        if ($settings{nick_color} eq 'rotate') {
+            $text =~ s[(^|\W)\@(\w+)] {
+                my $c = get_nick_color($2);
+                qq[$1\cC$c\@$2\cO];
+            }eg;
+        } else {
+            my $c = $settings{nick_color};
+            $c = $irssi_to_mirc_colors{$c};
+            $text =~ s/(^|\W)\@(\w+)/$1\cC$c\@$2\cO/g if $c;
+        }
     }
     if ( $settings{topic_color} ) {
         my $c = $settings{topic_color};
