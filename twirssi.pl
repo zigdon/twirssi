@@ -2388,6 +2388,10 @@ sub meta_to_line {
         $line_attribs{level}  |= MSGLEVEL_HILIGHT;
         $line_attribs{hi_nick} = "\cC$hilight_color$meta->{nick}\cO";
     }
+    elsif ($settings{nick_color} eq 'rotate') {
+        my $c = get_nick_color($meta->{nick});
+        $line_attribs{hi_nick} = "\cC$c$meta->{nick}\cO";
+    }
 
     if (defined $meta->{ign}) {
         $line_attribs{ignoring} = 1;
@@ -3287,13 +3291,52 @@ sub get_charset {
     return $charset;
 }
 
+my @available_nick_colors =( 
+    0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+    '0,2', '0,3', '0,5', '0,6',
+    '1,0', '1,3', '1,5', '1,6', '1,7', '1,10', '1,15',
+    '2,3', '2,7', '2,10', '2,15',
+    '3,2', '3,5', '3,10',
+    '4,2', '4,7',
+    '5,2', '5,3', '5,7', '5,10', '5,15',
+    '6,2', '6,7', '6,10', '6,15',
+    '8,2', '8,5', '8,6',
+    '9,2', '9,5', '9,6',
+    '10,2', '10,5', '10,6',
+    '11,2', '11,5', '11,6',
+    '12,2', '12,5',
+    '13,2', '13,15',
+    '14,2', '14,5', '14,6',
+    '15,2', '15,5', '15,6'
+);
+my %nick_colors;
+
+sub get_nick_color {
+    if ($settings{nick_color} eq 'rotate') {
+        my $nick = shift;
+
+        if (!defined $nick_colors{$nick}) {
+            my @chars = split //, lc $nick;
+            my $value = 0;
+            foreach my $char (@chars) {
+                $value += ord $char;
+            }
+            $nick_colors{$nick} = $available_nick_colors[$value % @available_nick_colors];
+        }
+        return $nick_colors{$nick};
+    } else {
+        return $irssi_to_mirc_colors{$settings{nick_color}};
+    }
+}
+
 sub hilight {
     my $text = shift;
 
     if ( $settings{nick_color} ) {
-        my $c = $settings{nick_color};
-        $c = $irssi_to_mirc_colors{$c};
-        $text =~ s/(^|\W)\@(\w+)/$1\cC$c\@$2\cO/g if $c;
+        $text =~ s[(^|\W)\@(\w+)] {
+            my $c = get_nick_color($2);
+            qq[$1\cC$c\@$2\cO];
+        }eg;
     }
     if ( $settings{topic_color} ) {
         my $c = $settings{topic_color};
