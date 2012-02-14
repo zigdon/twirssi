@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.1$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.2beta2$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.1$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2012-02-07 22:34:25 +0000$',
+    changed => '$Date: 2012-02-14 10:41:21 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -109,6 +109,7 @@ my @settings_defn = (
         [ 'url_args',          'short_url_args',            's', undef ],
         [ 'window',            'twitter_window',            's', 'twitter' ],
         [ 'debug_win_name',    'twirssi_debug_win_name',    's', '' ],
+        [ 'limit_user_tweets', 'twitter_user_results',      's', '200' ],
 
         [ 'always_shorten',    'twirssi_always_shorten',    'b', 0 ],
         [ 'avoid_ssl',         'twirssi_avoid_ssl',         'b', 0 ],
@@ -393,6 +394,7 @@ sub cmd_retweet_to_window {
 
 sub cmd_reload {
     if ($settings{force_first} and $settings{poll_store}) {
+        &save_state();
         &save_polls();
     }
     Irssi::command("script load $IRSSI{name}");
@@ -664,7 +666,7 @@ sub gen_cmd {
             return;
         }
 
-        &$post_ref($data) if $post_ref;
+        &$post_ref($data, $server, $win) if $post_ref;
       }
 }
 
@@ -1707,7 +1709,11 @@ sub cmd_wipe {
 
 sub cmd_user {
     my $target = shift;
+    my $server = shift;
+    my $win = shift;
     $target =~ s/(?::\d+)?\s*$//;
+    &cmd_set_window("sender $target $target", $server, $win)
+                        if $target =~ s/^\s*-w\s+// and $target ne '';
     &get_updates([ 0, [
                             [ "$user\@$defservice", { up_user => $target } ],
                       ],
@@ -2050,15 +2056,14 @@ sub get_tweets {
     return if &rate_limited($obj, $username, $fh);
 
     &debug($fh, "%G$username%n Polling for tweets");
-    my $tweets;
-    my $new_poll_id = 0;
+    my $tweets = [];
     eval {
         my %call_attribs = ( page => 1 );
         $call_attribs{count} = $settings{track_replies} if $settings{track_replies};
-        # $call_attribs{since_id} = $state{__last_id}{$username}{timeline}
-                           # if defined $state{__last_id}{$username}{timeline};
+        $call_attribs{since_id} = $state{__last_id}{$username}{timeline}
+                           if defined $state{__last_id}{$username}{timeline};
         for ( ; $call_attribs{page} < 2 ; $call_attribs{page}++) {
-            &debug($fh, "%G$username%n timeline pg=" . $call_attribs{page});
+            &debug($fh, "%G$username%n timeline " . join(' ', map { $_ . '=' . $call_attribs{$_} } sort keys %call_attribs));
             my $page_tweets = $obj->home_timeline( \%call_attribs );
             last if not defined $page_tweets or @$page_tweets == 0;
             unshift @$tweets, @$page_tweets;
@@ -2071,6 +2076,9 @@ sub get_tweets {
         return;
     }
 
+
+=pod
+
     unless ( ref $tweets ) {
         if ( $obj->can("get_error") ) {
             my $error = "Unknown error";
@@ -2082,15 +2090,22 @@ sub get_tweets {
 
         } else {
             &notice([ 'error', $username, $fh],
-                "$username: API Error during home_timeline call. Aborted.");
+                "$username: API Error in home_timeline call. Aborted.");
         }
         return;
     }
 
-    print $fh "t:debug %G$username%n got ", scalar(@$tweets), " tweets, first/last: ",
-                        (sort {$a->{id} <=> $b->{id}} @$tweets)[0]->{id}, "/",
-                        (sort {$a->{id} <=> $b->{id}} @$tweets)[$#{$tweets}]->{id}, "\n";
+=cut
 
+    print $fh "t:debug %G$username%n got ", scalar(@$tweets), ' tweets',
+		(@$tweets	? ', first/last: ' . join('/',
+						(sort {$a->{id} <=> $b->{id}} @$tweets)[0]->{id},
+						(sort {$a->{id} <=> $b->{id}} @$tweets)[$#{$tweets}]->{id}
+					)
+				: ''),
+		"\n";
+
+    my $new_poll_id = 0;
     my @own_ids = ();
     foreach my $t ( reverse @$tweets ) {
         my $text = &get_text( $t, $obj );
@@ -2110,10 +2125,9 @@ sub get_tweets {
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
     &debug($fh, "%G$username%n skip own " . join(', ', @own_ids) . "\n") if @own_ids;
-    printf $fh "t:last_id id:%s ac:%s id_type:timeline\n", $new_poll_id, $username;
+    printf $fh "t:last_id id:%s ac:%s id_type:timeline\n", $new_poll_id, $username if $new_poll_id;
 
     &debug($fh, "%G$username%n Polling for replies since " . $state{__last_id}{$username}{reply});
-    $new_poll_id = 0;
     eval {
         if ( $state{__last_id}{$username}{reply} ) {
             $tweets = $obj->replies( { since_id => $state{__last_id}{$username}{reply} } )
@@ -2128,6 +2142,7 @@ sub get_tweets {
         return;
     }
 
+    $new_poll_id = 0;
     foreach my $t ( reverse @$tweets ) {
         next if exists $friends{$username}{ $t->{user}{screen_name} };
 
@@ -2141,7 +2156,7 @@ sub get_tweets {
           $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}{screen_name},
           &encode_for_file($t->{created_at}), $text;
     }
-    printf $fh "t:last_id id:%s ac:%s id_type:reply\n", $new_poll_id, $username;
+    printf $fh "t:last_id id:%s ac:%s id_type:reply\n", $new_poll_id, $username if $new_poll_id;
     return 1;
 }
 
@@ -2178,7 +2193,7 @@ sub do_dms {
           &encode_for_file($t->{created_at}), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
-    printf $fh "t:last_id id:%s ac:%s id_type:dm\n", $new_poll_id, $username;
+    printf $fh "t:last_id id:%s ac:%s id_type:dm\n", $new_poll_id, $username if $new_poll_id;
     return 1;
 }
 
@@ -2297,6 +2312,8 @@ sub get_timeline {
     if ($is_update) {
         $arg_ref->{since_id} = $last_id if $last_id;
         $arg_ref->{include_rts} = 1 if $settings{retweet_show};
+    } elsif ($settings{limit_user_tweets} and $settings{limit_user_tweets} =~ /\b(\d+)\b/) {
+        $arg_ref->{count} = $1;
     }
     eval {
         $tweets = $obj->user_timeline($arg_ref);
@@ -2313,7 +2330,9 @@ sub get_timeline {
         return 1;
     }
 
+    my $not_before = time - $1*86400 if not $is_update and $settings{limit_user_tweets} and $settings{limit_user_tweets} =~ /\b(\d+)d\b/;
     foreach my $t ( reverse @$tweets ) {
+        next if defined $not_before and &date_to_epoch($t->{created_at}) < $not_before;
         my $text = &get_text( $t, $obj );
         my $reply = &tweet_or_reply($obj, $t, $username, $cache, $fh);
         printf $fh "t:%s id:%s ac:%s %snick:%s created_at:%s %s\n",
@@ -3784,6 +3803,7 @@ if ( Irssi::window_find_name(window()) ) {
                 &notice( ["tweet", "$user\@$defservice"],
                          "Following $_[0]" );
                 $nicks{ $_[0] } = time;
+                &cmd_user(@_);
             },
             sub {
                 &cmd_set_window("sender $_[0] $_[0]", $_[1], $_[2])
