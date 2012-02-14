@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.2beta2$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.2beta4$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.2beta2$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2012-02-14 10:41:21 +0000$',
+    changed => '$Date: 2012-02-14 14:32:59 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -109,7 +109,7 @@ my @settings_defn = (
         [ 'url_args',          'short_url_args',            's', undef ],
         [ 'window',            'twitter_window',            's', 'twitter' ],
         [ 'debug_win_name',    'twirssi_debug_win_name',    's', '' ],
-        [ 'limit_user_tweets', 'twitter_user_results',      's', '200' ],
+        [ 'limit_user_tweets', 'twitter_user_results',      's', '20' ],
 
         [ 'always_shorten',    'twirssi_always_shorten',    'b', 0 ],
         [ 'avoid_ssl',         'twirssi_avoid_ssl',         'b', 0 ],
