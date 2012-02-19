@@ -82,8 +82,9 @@
       all the posts by username</li>
   <li><code>/twitter_info &lt;username&gt;:&lt;num&gt;</code> - Show details about
       a remembered tweet.  See twirssi_track_replies variable.</li>
-  <li><code>/twitter_user &lt;username&gt;</code> - Get the recent timeline for
-      the username.  Also used to obtain tweets so as to retweet them directly.</li>
+  <li><code>/twitter_user [<code>-w</code>] &lt;username&gt;</code> - Get the recent timeline
+      for the username (with <code>-w</code>, send their tweets to a window of the same name).
+      Also used to obtain tweets so as to retweet them directly.</li>
   <li><code>/twitter_dms</code> - Get recent direct messages for the current user.</li>
   <li><code>/twitter_dms_as &lt;account&gt;</code> - Use <code>/twitter_dms</code>
       for &lt;account&gt;.</li>
@@ -188,6 +189,10 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
        your own (non-classic) retweets in your timeline.</li>
   <li><code>retweet_classic</code> - Default: Off.  When set to On, a retweet
        is a full tweet including the text of the original.</li>
+  <li><code>twitter_user_results</code> - Default: 20.  Limit tweets shown
+       by <code>/twitter_user</code> or <code>/twitter_follow</code>.
+       Can be a number (of tweets, e.g. <code>20</code>; or of days, e.g. <code>21d</code>),
+       or both (e.g. <code>20 21d</code>, most restrictive wins).</li>
 </ul>
 <h3>Network and File Settings</h3>
 <ul>
