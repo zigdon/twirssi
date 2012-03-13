@@ -1150,7 +1150,11 @@ sub cmd_add_search {
 
     $state{__last_id}{"$user\@$defservice"}{__search}{$data} = 1;
     &notice( [ "search", $data ], "Added subscription for '$data'" );
-    &cmd_set_window("search $data $data", $server, $win) if $want_win;
+    if ($want_win) {
+        my $win_name = $data;
+        $win_name =~ tr/ /+/;
+        &cmd_set_window("search $data $win_name", $server, $win);
+    }
 }
 
 sub cmd_del_search {
@@ -1184,11 +1188,11 @@ sub cmd_list_search {
 
     my $found = 0;
     foreach my $suser ( sort keys %{ $state{__last_id} } ) {
-        my $topics;
+        my $topics = '';
         foreach my $topic ( sort keys %{ $state{__last_id}{$suser}{__search} } ) {
-            $topics = $topics ? "$topics, $topic" : $topic;
+            $topics .= ($topics ne '' ? ', ' : '') . "'$topic'";
         }
-        if ($topics) {
+        if ($topics ne '') {
             $found = 1;
             &notice( ["search"], "Search subscriptions for $suser: $topics" );
         }
@@ -1417,7 +1421,7 @@ sub cmd_set_window {
         &notice("Changing the default twirssi window to $winname");
         Irssi::settings_set_str( "twitter_window", $winname );
         &ensure_logfile($settings{window} = $winname);
-     } elsif ( @words > 2 ) {
+     } elsif ( @words > 2 and $words[0] ne 'search' ) {
         &notice(
                 "Too many arguments to /twirssi_set_window. '@words'",
                 "Usage: /twirssi_set_window [type] [account|search_term] [window].",
@@ -1435,7 +1439,7 @@ sub cmd_set_window {
         }
 
         my $tag = "default";
-        if ( @words == 2 ) {
+        if ( @words >= 2 ) {
            $tag = lc $words[1];
            if ($type eq 'sender') {
               $tag =~ s/^\@//;
@@ -1444,6 +1448,8 @@ sub cmd_set_window {
                    and ($type ne 'default' or index($tag, '@') >= 0)
                    and $tag ne 'default') {
               $tag = &normalize_username($tag);
+           } elsif ($type eq 'search' and @words > 2) {
+              $tag = lc join(' ', @words[1..$#words]);
            }
            if (substr($tag, -1, 1) eq '@') {
               &notice(['error'], "Invalid tag '$tag'.");
@@ -2224,7 +2230,7 @@ sub do_subscriptions {
 
             unless ( $search->{max_id} ) {
                 print $fh "t:debug %G$username%n Invalid search results when searching",
-                  " for $topic. Aborted.\n";
+                  " for '$topic'. Aborted.\n";
                 return;
             }
 
@@ -2240,7 +2246,7 @@ sub do_subscriptions {
                 &get_unshorten_urls($text, $fh);
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
                 printf $fh "t:search id:%s ac:%s %snick:%s topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $ign, $t->{from_user}, $topic,
+                  $t->{id}, $username, $ign, $t->{from_user}, &encode_for_file($topic),
                   &encode_for_file($t->{created_at}), $text;
             }
         }
