@@ -3534,14 +3534,12 @@ sub get_text {
     my $tweet  = shift;
     my $object = shift;
     my $text   = decode_entities( $tweet->{text} );
-    if ( $tweet->{truncated} ) {
-        if ( exists $tweet->{retweeted_status} ) {
-            $text = "RT \@$tweet->{retweeted_status}{user}{screen_name}: "
-              . "$tweet->{retweeted_status}{text}";
-        } elsif ( $object->isa('Net::Twitter') ) {
-            $text .= " -- http://twitter.com/$tweet->{user}{screen_name}"
-              . "/status/$tweet->{id}";
-        }
+    if ( exists $tweet->{retweeted_status} ) {
+        $text = "RT \@$tweet->{retweeted_status}{user}{screen_name}: "
+          . "$tweet->{retweeted_status}{text}";
+    } elsif ( $tweet->{truncated} and $object->isa('Net::Twitter') ) {
+        $text .= " -- http://twitter.com/$tweet->{user}{screen_name}"
+          . "/status/$tweet->{id}";
     }
 
     $text =~ s/[\n\r]/ /g;
