@@ -255,7 +255,7 @@ sub cmd_retweet_as {
         return;
     }
 
-    $id = $state{__indexes}{lc $nick} unless $id;
+    $id = $state{__indexes}{lc $nick} unless defined $id;
     unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "tweet", $username ],
             "Can't find a tweet numbered $id from $nick to retweet!" );
@@ -338,7 +338,7 @@ sub cmd_retweet_to_window {
         return;
     }
 
-    $id = $state{__indexes}{lc $nick} unless $id;
+    $id = $state{__indexes}{lc $nick} unless defined $id;
     unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "tweet" ],
             "Can't find a tweet numbered $id from $nick to retweet!" );
@@ -590,7 +590,7 @@ sub cmd_reply_as {
         return;
     }
 
-    $id = $state{__indexes}{lc $nick} unless $id;
+    $id = $state{__indexes}{lc $nick} unless defined $id;
     unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "reply", $username ],
             "Can't find a tweet numbered $id from $nick to reply to!" );
@@ -811,14 +811,6 @@ sub cmd_login {
 
     } elsif ( @{ $settings{usernames} } and @{ $settings{passwords} } ) {
         &debug("autouser login");
-
-        # if a password ends with a '\', it was meant to escape the comma, and
-        # it should be concatinated with the next one
-        for (my $i = 0;  $i+1 < @{ $settings{passwords} };  $i++) {
-            while ( $settings{passwords}->[$i] =~ /\\$/ ) {
-                $settings{passwords}->[$i] .= "," . delete $settings{passwords}->[$i+1];
-            }
-        }
 
         if ( @{ $settings{usernames} } != @{ $settings{passwords} } ) {
             &notice( ["error"],
@@ -3197,6 +3189,14 @@ sub event_setup_changed {
                         $settings{$setting->[0]} = [ ];
                     } else {
                         $settings{$setting->[0]} = [ split($re, $settings{$setting->[0]}) ];
+                        if (grep { $_ eq $setting->[0] }, ('passwords')) {
+                            # ends '\', unescape separator:  concatenate with next
+                            for (my $i = 0;  $i+1 < @{ $settings{$setting->[0]} };  $i++) {
+                                while ( $settings{$setting->[0]}->[$i] =~ /\\$/ ) {
+                                    $settings{$setting->[0]}->[$i] .= "," . delete $settings{$setting->[0]}->[$i+1];
+                                }
+                            }
+                        }
                     }
                     $is_list = 1;
                 } elsif ($pre_proc =~ s/^norm_user(?:,|$)//) {
