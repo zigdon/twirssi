@@ -3189,7 +3189,7 @@ sub event_setup_changed {
                         $settings{$setting->[0]} = [ ];
                     } else {
                         $settings{$setting->[0]} = [ split($re, $settings{$setting->[0]}) ];
-                        if (grep { $_ eq $setting->[0] }, ('passwords')) {
+                        if (grep { $_ eq $setting->[0] } ('passwords')) {
                             # ends '\', unescape separator:  concatenate with next
                             for (my $i = 0;  $i+1 < @{ $settings{$setting->[0]} };  $i++) {
                                 while ( $settings{$setting->[0]}->[$i] =~ /\\$/ ) {
@@ -3210,7 +3210,7 @@ sub event_setup_changed {
                     my @normed = ();
                     for my $to_norm ($is_list ? @{ $settings{$setting->[0]} } : $settings{$setting->[0]} ) {
                         next if $to_norm eq '';
-&debug($setting->[0] . ' to_norm {' . $to_norm . '}');
+                        &debug($setting->[0] . ' to_norm {' . $to_norm . '}');
                         push @normed, &normalize_username($to_norm, 1);
                     }
                     $is_list = 1;
