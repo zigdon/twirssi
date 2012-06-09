@@ -1880,6 +1880,7 @@ sub get_updates_child {
     my $time_before_update = time;
 
     my $error = 0;
+    my @error_types = ();
     my %context_cache;
 
     foreach my $update_tuple ( @$to_be_updated ) {
@@ -1889,14 +1890,20 @@ sub get_updates_child {
 
         if (0 == keys(%$what_to_update)
                 or defined $what_to_update->{up_tweets}) {
-            $error++ unless &get_tweets( $fh, $username, $twits{$username}, \%context_cache );
+            unless (&get_tweets( $fh, $username, $twits{$username}, \%context_cache )) {
+                $error++;
+                push @error_types, 'tweets';
+            }
 
             if ( exists $state{__last_id}{$username}{__extras}
                     and keys %{ $state{__last_id}{$username}{__extras} } ) {
                 my @frusers = sort keys %{ $state{__last_id}{$username}{__extras} };
 
-                $error++ unless &get_timeline( $fh, $frusers[ $fix_replies_index{$username} ],
-                                               $username, $twits{$username}, \%context_cache, $is_regular );
+                unless (&get_timeline( $fh, $frusers[ $fix_replies_index{$username} ],
+                                               $username, $twits{$username}, \%context_cache, $is_regular )) {
+                    $error++;
+                    push @error_types, 'replies';
+                }
 
                 $fix_replies_index{$username}++;
                 $fix_replies_index{$username} = 0
@@ -1908,27 +1915,39 @@ sub get_updates_child {
         next if $error > $errors_beforehand;
 
         if (defined $what_to_update->{up_user}) {
-            $error++ unless &get_timeline( $fh, $what_to_update->{up_user},
-                                               $username, $twits{$username}, \%context_cache, $is_regular );
+            unless (&get_timeline( $fh, $what_to_update->{up_user},
+                                               $username, $twits{$username}, \%context_cache, $is_regular )) {
+                $error++;
+                push @error_types, 'tweets';
+            }
 
         }
         next if $error > $errors_beforehand;
 
         if (0 == keys(%$what_to_update)
                     or defined $what_to_update->{up_dms}) {
-            $error++ unless &do_dms( $fh, $username, $twits{$username}, $is_regular );
+            unless (&do_dms( $fh, $username, $twits{$username}, $is_regular )) {
+                $error++;
+                push @error_types, 'dms';
+            }
         }
         next if $error > $errors_beforehand;
 
         if (0 == keys(%$what_to_update)
                     or defined $what_to_update->{up_subs}) {
-            $error++ unless &do_subscriptions( $fh, $username, $twits{$username}, $what_to_update->{up_subs} );
+            unless (&do_subscriptions( $fh, $username, $twits{$username}, $what_to_update->{up_subs} )) {
+                $error++;
+                push @error_types, 'subs';
+            }
         }
         next if $error > $errors_beforehand;
 
         if (0 == keys(%$what_to_update)
                     or defined $what_to_update->{up_searches}) {
-            $error++ unless &do_searches( $fh, $username, $twits{$username}, $what_to_update->{up_searches} );
+            unless (&do_searches( $fh, $username, $twits{$username}, $what_to_update->{up_searches} )) {
+                $error++;
+                push @error_types, 'searches';
+            }
         }
         next if $error > $errors_beforehand;
 
@@ -1994,6 +2013,7 @@ sub get_updates_child {
                 if (not defined &get_lists($twits{$username}, $username, $fh, 0, @{ $what_to_update->{up_lists} })) {
                     &debug($fh, "%G$username%n Polling for lists failed.");
                     $error++;
+                    push @error_types, 'lists';
                 }
             }
             if (not defined $state{__lists}{$list_account}) {
@@ -2018,7 +2038,7 @@ sub get_updates_child {
     &put_unshorten_urls($fh, $time_before_update);
 
     if ($error) {
-        &notice( [ 'error', undef, $fh ], "Update encountered errors.  Aborted");
+        &notice( [ 'error', undef, $fh ], "Update encountered errors (@error_types).  Aborted");
     } elsif ($is_regular) {
         print $fh "t:last_poll poll_type:__poll epoch:$time_before_update\n";
     }
@@ -2395,7 +2415,7 @@ sub meta_to_line {
             level    => MSGLEVEL_PUBLIC,
     );
 
-    if ($meta->{type} eq 'dm' or $meta->{type} eq 'error') {
+    if ($meta->{type} eq 'dm' or $meta->{type} eq 'error' or $meta->{type} eq 'deerror') {
         $line_attribs{level} = MSGLEVEL_MSGS;
     }
 
@@ -2501,7 +2521,7 @@ sub monitor_child {
         if (s/^t:debug\s+//) {
             &debug($_);
 
-        } elsif (s/^t:(error|info)\s+//) {
+        } elsif (s/^t:(error|info|deerror)\s+//) {
             my $type = $1;
             $got_errors++ if $type eq 'error';
             &notice([$type], $_);
@@ -2661,7 +2681,7 @@ sub monitor_child {
 
         if ($is_update) {
             if ($failstatus and not $got_errors) {
-                &notice([ 'error' ], "Update succeeded.");
+                &notice([ 'deerror' ], "Update succeeded.");
                 $failstatus    = 0;
             }
             $first_call        = 0;
@@ -2747,7 +2767,7 @@ sub write_lines {
         );
         push @print_opts, (lc $line->{topic} ne lc $win_name ? $line->{topic} . ':' : '')
           if $line->{type} =~ /search/;
-        push @print_opts, $line->{hi_nick} if $line->{type} ne 'error';
+        push @print_opts, $line->{hi_nick} if $line->{type} ne 'error' and $line->{type} ne 'deerror';
         push @print_opts, $line->{marker} if defined $line->{marker};
 
         # set timestamp
@@ -2931,9 +2951,10 @@ sub debug {
 }
 
 sub notice {
-    my ( $type, $tag, $fh );
+    my ( $type, $tag, $fh, $theme );
     if ( ref $_[0] ) {
         ( $type, $tag, $fh ) = @{ shift @_ };
+        $theme = 'twirssi_' . $type;
     }
     foreach my $msg (@_) {
         if (defined $fh) {
@@ -2954,8 +2975,8 @@ sub notice {
                 $win = Irssi::window_find_name(&window( $type, $tag ));
             }
 
-            if ($type =~ /^(error|info)$/) {
-                $win->printformat(MSGLEVEL_PUBLIC, 'twirssi_'.$type, $msg); # theme
+            if ($type =~ /^(error|info|deerror)$/) {
+                $win->printformat(MSGLEVEL_PUBLIC, $theme, $msg); # theme
             } else {
                 $win->print("${col}***%n $msg", $win_level );
             }
@@ -3554,6 +3575,7 @@ sub window {
     my $topic = lc(shift || '');
 
     $type = "search" if $type eq 'search_once';
+    $type = "error" if $type eq 'deerror';
 
     my $win;
     my @all_priorities = qw/ account sender list /;
@@ -3662,6 +3684,7 @@ Irssi::theme_register( # theme
         'twirssi_reply',       '[$0\--> %B@$1%n$2] $3',
         'twirssi_dm',          '[$0%r@$1%n (%WDM%n)] $2',
         'twirssi_error',       '%RERROR%n: $0',
+        'twirssi_deerror',     '%RUPDATE%n: $0',
         'twirssi_info',        '%CINFO:%N $0',
         'twirssi_new_day',     '%CDay changed to $0%N',
     ]
