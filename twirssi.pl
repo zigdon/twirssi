@@ -2497,32 +2497,92 @@ sub monitor_child {
     if ( -e $filename and open $fh, '<', $filename ) {
         binmode $fh, ":" . &get_charset();
     } else {
-        undef $fh;
+        # file not ready yet
+
+        if ( $attempts_to_go > 0 ) {
+            Irssi::timeout_add_once( $wait_time, 'monitor_child',
+                [ $filename, $attempts_to_go - 1, $wait_time, $is_update ] );
+        } else {
+            &debug("Giving up on polling $filename");
+            Irssi::pidwait_remove($child_pid);
+            waitpid( -1, WNOHANG );
+            unlink $filename unless &debug();
+
+            if (not $is_update) {
+                &notice([ 'error' ], "Failed to get response.  Giving up.");
+                return;
+            }
+
+            $update_is_running = 0 if $is_update;
+
+            return unless $settings{notify_timeouts};
+
+            my $since;
+            if ( time - $last_poll{__poll} < 24 * 60 * 60 ) {
+                my @time = localtime($last_poll{__poll});
+                $since = sprintf( "%d:%02d", @time[ 2, 1 ] );
+            } else {
+                $since = scalar localtime($last_poll{__poll});
+            }
+
+            if ( $failstatus < 2 and time - $last_poll{__poll} > 60 * 60 ) {
+                &notice([ 'error' ],
+                  $settings{mini_whale}
+                  ? 'FAIL WHALE'
+                  : q{     v  v        v},
+                    q{     |  |  v     |  v},
+                    q{     | .-, |     |  |},
+                    q{  .--./ /  |  _.---.| },
+                    q{   '-. (__..-"       \\},
+                    q{      \\          a    |},
+                    q{       ',.__.   ,__.-'/},
+                    q{         '--/_.'----'`}
+                );
+                $failstatus = 2;
+            }
+
+            if ( $failstatus == 0 and time - $last_poll{__poll} < 600 ) {
+                &notice([ 'error' ],"Haven't been able to get updated tweets since $since");
+                $failstatus = 1;
+            }
+        }
+
+        return;
     }
-    while (defined $fh and defined ($_ = <$fh>)) {
+
+    # make sure we're not in slurp mode
+    local $/ = "\n";
+    while (<$fh>) {
         unless (/\n$/) {    # skip partial lines
             &debug($fh, "Skipping partial line: $_");
             next;
         }
         chomp;
 
-        if (s/^t:debug\s+//) {
+        my $type;
+        if (s/^t:(\w+)\s+//) {
+            $type = $1;
+        } else {
+            &notice(['error'], "invalid: $_");
+            next;
+        }
+
+        if ($type eq 'debug') {
             &debug($_);
 
-        } elsif (s/^t:(error|info)\s+//) {
-            my $type = $1;
+        } elsif ($type eq 'error' or $type eq 'info') {
             $got_errors++ if $type eq 'error';
             &notice([$type], $_);
 
-        } elsif (s/^t:(url)\s+//) {
-            my %meta = &cache_to_meta($_, $1, [ qw/epoch https site uri/ ]);
+        } elsif ($type eq 'url') {
+            my %meta = &cache_to_meta($_, $type, [ qw/epoch https site uri/ ]);
             $expanded_url{$meta{site}}{$meta{https} ? 1 : 0}{$meta{uri}} = {
                 url => $meta{text},
                 epoch => $meta{epoch},
             };
 
-        } elsif (s/^t:(last_poll)\s+//) {
-            my %meta = &cache_to_meta($_, $1, [ qw/ac poll_type epoch/ ]);
+        } elsif ($type eq 'last_poll') {
+            my %meta = &cache_to_meta($_, $type, [ qw/ac poll_type epoch/ ]);
 
             if ( not defined $meta{ac} and $meta{poll_type} eq '__poll' ) {
                 $last_poll{$meta{poll_type}} = $meta{epoch};
@@ -2535,13 +2595,13 @@ sub monitor_child {
                $got_errors++;
             }
 
-        } elsif (s/^t:(fix_replies_index)\s+//) {
-            my %meta = &cache_to_meta($_, $1, [ qw/idx ac topic id_type/ ]);
+        } elsif ($type eq 'fix_replies_index') {
+            my %meta = &cache_to_meta($_, $type, [ qw/idx ac topic id_type/ ]);
             $fix_replies_index{ $meta{username} } = $meta{idx};
             &debug("%G$meta{username}%n fix_replies_index set to $meta{idx}");
 
-        } elsif (s/^t:(searchid|last_id|last_id_fixreplies)\s+//) {
-            my %meta = &cache_to_meta($_, $1, [ qw/id ac topic id_type/ ]);
+        } elsif ($type eq 'searchid' or $type eq 'last_id_fixreplies' or $type eq 'last_id') {
+            my %meta = &cache_to_meta($_, $type, [ qw/id ac topic id_type/ ]);
             if ( $meta{type} eq 'searchid' ) {
                 &debug("%G$meta{username}%n Search '$meta{topic}' got id $meta{id}");
                 if (not exists $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} }
@@ -2559,8 +2619,8 @@ sub monitor_child {
                   if $state{__last_id}{ $meta{username} }{__extras}{ $meta{id_type} } < $meta{id};
             }
 
-        } elsif (s/^t:(tweet|dm|reply|search|search_once)\s+//x) {	# cf theme_register
-            my %meta = &cache_to_meta($_, $1, [ qw/id ac ign reply_to_user reply_to_id nick topic created_at/ ]);
+        } elsif ($type eq 'tweet' or $type eq 'dm' or $type eq 'reply' or $type eq 'search' or $type eq 'search_once') {	# cf theme_register
+            my %meta = &cache_to_meta($_, $type, [ qw/id ac ign reply_to_user reply_to_id nick topic created_at/ ]);
 
             if (exists $new_cache{ $meta{id} }) {
                 &debug("SKIP newly-cached $meta{id}");
@@ -2585,8 +2645,8 @@ sub monitor_child {
                 delete $search_once{ $meta{username} }->{ $meta{topic} };
             }
 
-        } elsif (s/^t:(friend|block|list)\s+//) {
-            my %meta = &cache_to_meta($_, $1, [ qw/ac list id nick epoch/ ]);
+        } elsif ($type eq 'friend' or $type eq 'block' or $type eq 'list') {
+            my %meta = &cache_to_meta($_, $type, [ qw/ac list id nick epoch/ ]);
             if ($is_update and not defined $types_per_user{$meta{username}}{$meta{type}}) {
                 if ($meta{type} eq 'friend') {
                     $friends{$meta{username}} = ();
@@ -2612,120 +2672,67 @@ sub monitor_child {
             }
 
         } else {
-            &notice(['error'], "invalid: $_");
+            &notice(['error'], "invalid type ($type): $_");
         }
     }
 
-    if (defined $fh) {
-        # file was opened, so we tried to parse...
-        close $fh;
+    # file was opened, so we tried to parse...
+    close $fh;
 
-        # make sure the pid is removed from the waitpid list
-        Irssi::pidwait_remove($child_pid);
+    # make sure the pid is removed from the waitpid list
+    Irssi::pidwait_remove($child_pid);
 
-        # and that we don't leave any zombies behind, somehow
-        waitpid( -1, WNOHANG );
+    # and that we don't leave any zombies behind, somehow
+    waitpid( -1, WNOHANG );
 
-        &debug("new last_poll    = $last_poll{__poll}",
-               "new last_poll_id = " . Dumper( $state{__last_id} )) if $is_update;
-        if ($is_update and $first_call and not $settings{force_first}) {
-            &debug("First call, not printing updates");
-        } else {
+    &debug("new last_poll    = $last_poll{__poll}",
+           "new last_poll_id = " . Dumper( $state{__last_id} )) if $is_update;
+    if ($is_update and $first_call and not $settings{force_first}) {
+        &debug("First call, not printing updates");
+    } else {
 
-            if (exists $show_now{lists}) {
-                for my $list_account (keys %{ $show_now{lists} }) {
-                    my $list_ac = ($list_account eq "$user\@$defservice" ? '' : "$list_account/");
-                    for my $list_name (keys %{ $show_now{lists}{$list_account} }) {
-                        if (0 == @{ $state{__lists}{$list_account}{$list_name}{members} }) {
-                            &notice(['info'], "List $list_ac$list_name is empty.");
-                        } else {
-                            &notice("List $list_ac$list_name members: " .
-                                    join(', ', @{ $state{__lists}{$list_account}{$list_name}{members} }));
-                        }
+        if (exists $show_now{lists}) {
+            for my $list_account (keys %{ $show_now{lists} }) {
+                my $list_ac = ($list_account eq "$user\@$defservice" ? '' : "$list_account/");
+                for my $list_name (keys %{ $show_now{lists}{$list_account} }) {
+                    if (0 == @{ $state{__lists}{$list_account}{$list_name}{members} }) {
+                        &notice(['info'], "List $list_ac$list_name is empty.");
+                    } else {
+                        &notice("List $list_ac$list_name members: " .
+                                join(', ', @{ $state{__lists}{$list_account}{$list_name}{members} }));
                     }
                 }
             }
-
-            &write_lines(\@lines, $is_update);
         }
 
-        unlink $filename or warn "Failed to remove $filename: $!" unless &debug();
-
-        # commit the pending cache lines to the actual cache, now that
-        # we've printed our output
-        for my $updated_id (keys %new_cache) {
-            $tweet_cache{$updated_id} = $new_cache{$updated_id};
-        }
-
-        # keep enough cached tweets, to make sure we don't show duplicates
-        for my $loop_id ( keys %tweet_cache ) {
-            next if $tweet_cache{$loop_id} >= $last_poll{__poll} - 3600;
-            delete $tweet_cache{$loop_id};
-        }
-
-        if (not $got_errors) {
-            &save_state();
-        }
-
-        if ($is_update) {
-            if ($failstatus and not $got_errors) {
-                &notice([ 'error' ], "Update succeeded.");
-                $failstatus    = 0;
-            }
-            $first_call        = 0;
-            $update_is_running = 0;
-        }
-        return;
+        &write_lines(\@lines, $is_update);
     }
 
-    # get here only if failed
+    unlink $filename or warn "Failed to remove $filename: $!" unless &debug();
 
-    if ( $attempts_to_go > 0 ) {
-        Irssi::timeout_add_once( $wait_time, 'monitor_child',
-            [ $filename, $attempts_to_go - 1, $wait_time, $is_update ] );
-    } else {
-        &debug("Giving up on polling $filename");
-        Irssi::pidwait_remove($child_pid);
-        waitpid( -1, WNOHANG );
-        unlink $filename unless &debug();
+    # commit the pending cache lines to the actual cache, now that
+    # we've printed our output
+    for my $updated_id (keys %new_cache) {
+        $tweet_cache{$updated_id} = $new_cache{$updated_id};
+    }
 
-        if (not $is_update) {
-            &notice([ 'error' ], "Failed to get response.  Giving up.");
-            return;
+    # keep enough cached tweets, to make sure we don't show duplicates
+    for my $loop_id ( keys %tweet_cache ) {
+        next if $tweet_cache{$loop_id} >= $last_poll{__poll} - 3600;
+        delete $tweet_cache{$loop_id};
+    }
+
+    if (not $got_errors) {
+        &save_state();
+    }
+
+    if ($is_update) {
+        if ($failstatus and not $got_errors) {
+            &notice([ 'error' ], "Update succeeded.");
+            $failstatus    = 0;
         }
-
-        $update_is_running = 0 if $is_update;
-
-        return unless $settings{notify_timeouts};
-
-        my $since;
-        if ( time - $last_poll{__poll} < 24 * 60 * 60 ) {
-            my @time = localtime($last_poll{__poll});
-            $since = sprintf( "%d:%02d", @time[ 2, 1 ] );
-        } else {
-            $since = scalar localtime($last_poll{__poll});
-        }
-
-        if ( $failstatus < 2 and time - $last_poll{__poll} > 60 * 60 ) {
-            &notice([ 'error' ],
-              $settings{mini_whale}
-              ? 'FAIL WHALE'
-              : q{     v  v        v},
-                q{     |  |  v     |  v},
-                q{     | .-, |     |  |},
-                q{  .--./ /  |  _.---.| },
-                q{   '-. (__..-"       \\},
-                q{      \\          a    |},
-                q{       ',.__.   ,__.-'/},
-                q{         '--/_.'----'`}
-            );
-            $failstatus = 2;
-        }
-
-        if ( $failstatus == 0 and time - $last_poll{__poll} < 600 ) {
-            &notice([ 'error' ],"Haven't been able to get updated tweets since $since");
-            $failstatus = 1;
-        }
+        $first_call        = 0;
+        $update_is_running = 0;
     }
 }
 
