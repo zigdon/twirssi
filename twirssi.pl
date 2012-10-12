@@ -949,7 +949,7 @@ sub cmd_oauth {
     };
 
     if ($@) {
-        &notice( ["error"], "Invalid pin, try again." );
+        &notice( ["error"], "Invalid pin, try again: $@" );
         return;
     }
 
@@ -2157,6 +2157,7 @@ sub get_tweets {
 
     if ($@) {
         print $fh "t:debug %G$username%n Error during replies call.  Aborted.\n";
+        &debug($fh, "%G$username%n Error: " . $@);
         return;
     }
 
@@ -2199,6 +2200,7 @@ sub do_dms {
     };
     if ($@) {
         &debug($fh, "%G$username%n Error during direct_messages call.  Aborted.");
+        &debug($fh, "%G$username%n Error: " . $@);
         return;
     }
     &debug($fh, "%G$username%n got DMs: " . (0+@$tweets));
@@ -2237,6 +2239,7 @@ sub do_subscriptions {
             if ($@) {
                 print $fh
                   "t:debug %G$username%n Error during search($topic) call.  Aborted.\n";
+                &debug($fh, "%G$username%n Error: " . $@);
                 return;
             }
 
@@ -2282,6 +2285,7 @@ sub do_searches {
 
             if ($@) {
                 print $fh "t:debug %G$username%n Error during search_once($topic) call.  Aborted.\n";
+                &debug($fh, "%G$username%n Error: " . $@);
                 return;
             }
 
