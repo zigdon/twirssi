@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.2beta6$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.5.2beta7$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.2beta6$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2012-06-08 06:44:49 +0000$',
+    changed => '$Date: 2012-10-15 10:36:06 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -92,6 +92,7 @@ my @settings_defn = (
         [ 'poll_store',        'twirssi_poll_store',        's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.polls" ],
         [ 'id_store',          'twirssi_id_store',          's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.ids" ],
         [ 'retweet_format',    'twirssi_retweet_format',    's', 'RT $n: "$t" ${-- $c$}' ],
+        [ 'retweeted_format',  'twirssi_retweeted_format',  's', 'RT $n: $t' ],
         [ 'stripped_tags',     'twirssi_stripped_tags',     's', '',			'list{,}' ],
         [ 'topic_color',       'twirssi_topic_color',       's', '%r', ],
         [ 'timestamp_format',  'twirssi_timestamp_format',  's', '%H:%M:%S', ],
@@ -112,6 +113,7 @@ my @settings_defn = (
         [ 'limit_user_tweets', 'twitter_user_results',      's', '20' ],
 
         [ 'always_shorten',    'twirssi_always_shorten',    'b', 0 ],
+        [ 'rt_to_expand',      'twirssi_retweet_to_expand', 'b', 1 ],
         [ 'avoid_ssl',         'twirssi_avoid_ssl',         'b', 0 ],
         [ 'debug',             'twirssi_debug',             'b', 0 ],
         [ 'notify_timeouts',   'twirssi_notify_timeouts',   'b', 1 ],
@@ -268,16 +270,8 @@ sub cmd_retweet_as {
         return;
     }
 
-# Irssi::settings_add_str( $IRSSI{name}, "twirssi_retweet_format", 'RT $n: $t ${-- $c$}' );
-    my $text = $settings{retweet_format};
-    $text =~ s/\$n/\@$nick/g;
-    if ($data) {
-        $text =~ s/\${|\$}//g;
-        $text =~ s/\$c/$data/;
-    } else {
-        $text =~ s/\${.*?\$}//;
-    }
-    $text =~ s/\$t/$state{__tweets}{ lc $nick }[$id]/;
+    my $text = &format_expand(fmt => $settings{retweet_format}, nick => $nick, data => $data,
+                 tweet => $state{__tweets}{ lc $nick }[$id]);
 
     my $modified = $data;
     $data = &shorten($text);
@@ -321,6 +315,20 @@ sub cmd_retweet_as {
     }
 
     &notice( [ "tweet", $username ], "Retweet of $nick:$id sent" . $extra_info );
+}
+
+
+sub format_expand {
+    my %args = @_;
+    $args{fmt} =~ s/\$n/\@$args{nick}/g;
+    if (defined $args{data} and $args{data} ne '') {
+        $args{fmt} =~ s/\${|\$}//g;
+        $args{fmt} =~ s/\$c/$args{data}/g;
+    } else {
+        $args{fmt} =~ s/\${.*?\$}//g;
+    }
+    $args{fmt} =~ s/\$t/$args{tweet}/g;
+    return $args{fmt};
 }
 
 
@@ -372,16 +380,8 @@ sub cmd_retweet_to_window {
         return;
     }
 
-    my $text = $settings{retweet_format};
-    $text =~ s/\$n/\@$nick/g;
-    if ($data) {
-        $text =~ s/\${|\$}//g;
-        $text =~ s/\$c/$data/;
-    } else {
-        $text =~ s/\${.*?\$}//;
-    }
-    my $tweet = &unshorten($state{__tweets}{ lc $nick }[$id]);
-    $text =~ s/\$t/$tweet/;
+    my $text = &format_expand(fmt => $settings{retweet_format}, nick => $nick, data => $data,
+                 tweet => &post_process_tweet($state{__tweets}{ lc $nick }[$id], not $settings{rt_to_expand}));
 
     Irssi::command("msg $target $text");
 
@@ -519,7 +519,11 @@ sub cmd_info {
     my $tweet         = $state{__tweets}{$nick}[$id];
     my $reply_to_id   = $state{__reply_to_ids}{$nick}[$id];
     my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
-    my $exp_tweet     = &unshorten($tweet) if $tweet;
+    my $exp_tweet     = $tweet;
+    if ($tweet) {
+        $tweet        = &post_process_tweet($tweet, 1);
+        $exp_tweet    = &post_process_tweet($exp_tweet);
+    }
 
     my $url = '';
     if ( defined $username ) {
@@ -2807,7 +2811,7 @@ sub write_lines {
         if (not defined $old_tf) {
             $old_tf = Irssi::settings_get_str('timestamp_format');
         }
-        $line->{text} = &unshorten($line->{text});
+        $line->{text} = &post_process_tweet($line->{text});
         Irssi::command("^set timestamp_format $ts");
         Irssi::window_find_name($win_name)->printformat(
             @print_opts, &hilight( $line->{text} ) . $ymd_suffix
@@ -3518,15 +3522,17 @@ sub put_unshorten_urls {
 }
 
 
-sub unshorten {
+sub post_process_tweet {
     my $data = shift;
-    return $data unless @{ $settings{url_unshorten} };
-    for my $site (keys %expanded_url) {
-        for my $https (keys %{ $expanded_url{$site} }) {
-            my $url = ($https ? 'https' : 'http') . '://' . $site . '/';
-            next if -1 == index($data, $url);
-            for my $uri (keys %{ $expanded_url{$site}{$https} }) {
-                $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{$settings{unshorten_color}}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
+    my $skip_unshorten = shift;
+    if (@{ $settings{url_unshorten} } and not $skip_unshorten) {
+        for my $site (keys %expanded_url) {
+            for my $https (keys %{ $expanded_url{$site} }) {
+                my $url = ($https ? 'https' : 'http') . '://' . $site . '/';
+                next if -1 == index($data, $url);
+                for my $uri (keys %{ $expanded_url{$site}{$https} }) {
+                    $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{$settings{unshorten_color}}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
+                }
             }
         }
     }
@@ -3567,8 +3573,9 @@ sub get_text {
     my $object = shift;
     my $text   = decode_entities( $tweet->{text} );
     if ( exists $tweet->{retweeted_status} ) {
-        $text = "RT \@$tweet->{retweeted_status}{user}{screen_name}: "
-          . "$tweet->{retweeted_status}{text}";
+        $text = &format_expand(fmt => $settings{retweeted_format} || $settings{retweet_format},
+                  nick => $tweet->{retweeted_status}{user}{screen_name}, data => '',
+                  tweet => decode_entities( $tweet->{retweeted_status}{text} ));
     } elsif ( $tweet->{truncated} and $object->isa('Net::Twitter') ) {
         $text .= " -- http://twitter.com/$tweet->{user}{screen_name}"
           . "/status/$tweet->{id}";

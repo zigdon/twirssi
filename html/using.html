@@ -140,8 +140,13 @@ current value, <code>/set bitlbee_server bitlbee_tag</code> will set it to
   <li><code>twirssi_retweet_format</code> - The format to use when retweeting.
       Default value is "RT $n: "$t" ${-- $c$}".  $n is the nick that's being
       retweeted; $t is the text of the original tweet;  $c is the text of the
-      optional comment attached;  ${ and $} mark the seciton that should be
+      optional comment attached;  ${ and $} mark the section that should be
       omitted if no comment was provided.
+  <li><code>twirssi_retweeted_format</code> - The format to use when displaying
+      retweets. Default: "RT $n: $t" (if "", <code>twirssi_retweet_format</code>
+      is used). See <code>twirssi_retweet_format</code> for formatting.</li>
+  <li><code>twirssi_retweet_to_expand</code> - Whether to expand URLs when using
+      <code>retweet_to</code>.  Default is On.
   <li><code>twirssi_hilights</code> - Should messages containing your @nick be
       considered IRC hilights.  (default on)</li>
   <li><code>twirssi_nick_color</code> - If set, @nicks will be shown in the
