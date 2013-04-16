@@ -1799,7 +1799,7 @@ sub background_setup {
 
     if ($child_pid) {                   # parent
         Irssi::timeout_add_once( $pause_monitor, 'monitor_child',
-            [ $done_filename, $max_pauses, $pause_monitor, $is_update ] );
+            [ $done_filename, $max_pauses, $pause_monitor, $is_update, $filename . '.' . $child_pid, 0 ] );
         Irssi::pidwait_add($child_pid);
     } elsif ( defined $child_pid ) {    # child
         my $pid_filename = $filename . '.' . $$;
@@ -2043,6 +2043,7 @@ sub get_updates_child {
 
     if ($error) {
         &notice( [ 'error', undef, $fh ], "Update encountered errors (@error_types).  Aborted");
+        &notice( [ 'error', undef, $fh ], "For recurring DMs errors, please re-auth (delete $settings{oauth_store})") if grep { $_ eq 'dms' } @error_types;
     } elsif ($is_regular) {
         print $fh "t:last_poll poll_type:__poll epoch:$time_before_update\n";
     }
@@ -2498,8 +2499,16 @@ sub monitor_child {
     my $attempts_to_go = $args->[1];
     my $wait_time      = $args->[2];
     my $is_update      = $args->[3];
+    my $filename_tmp   = $args->[4];
+    my $prev_mtime     = $args->[5];
 
-    &debug("checking child log at $filename ($attempts_to_go)");
+    my $file_progress = 'no ' . $filename_tmp;
+    my $this_mtime = $prev_mtime;
+    if (-f $filename_tmp) {
+        $this_mtime = (stat(_))[9];
+        $file_progress = 'mtime=' . $this_mtime;
+    }
+    &debug("checking child log at $filename [$file_progress v $prev_mtime] ($attempts_to_go)");
 
     # reap any random leftover processes - work around a bug in irssi on gentoo
     waitpid( -1, WNOHANG );
@@ -2521,7 +2530,7 @@ sub monitor_child {
 
         if ( $attempts_to_go > 0 ) {
             Irssi::timeout_add_once( $wait_time, 'monitor_child',
-                [ $filename, $attempts_to_go - 1, $wait_time, $is_update ] );
+                [ $filename, $attempts_to_go - 1, $wait_time, $is_update, $filename_tmp, $this_mtime ] );
         } else {
             &debug("Giving up on polling $filename");
             Irssi::pidwait_remove($child_pid);
