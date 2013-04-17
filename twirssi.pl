@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.2beta7$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.6.0beta1$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.2beta7$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2012-10-15 10:36:06 +0000$',
+    changed => '$Date: 2013-04-17 01:56:11 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -859,7 +859,7 @@ sub cmd_login {
             } else {
                 $twit = Net::Twitter->new(
                     traits =>
-                      [ 'API::REST', 'OAuth', 'API::Search', 'API::Lists', 'RetryOnError' ],
+                      [ 'API::RESTv1_1', 'OAuth', 'RetryOnError' ],
                     (
                         grep tr/a-zA-Z/n-za-mN-ZA-M/, map $_,
                         pbafhzre_xrl => 'OMINiOzn4TkqvEjKVioaj',
@@ -1000,10 +1000,16 @@ sub rate_limited {
     eval {
         $rate_limit = $obj->rate_limit_status();
     };
-    if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
-        &notice( [ 'error', $username, $fh ],
-            "Rate limit exceeded, try again after $rate_limit->{reset_time}" );
-        return 1;
+    if ( $rate_limit and $rate_limit->{resources} ) {
+        for my $resource (keys %{ $rate_limit->{resources} }) {
+            for my $uri (keys %{ $rate_limit->{resources}->{$resource} }) {
+                if ( $rate_limit->{resources}->{$resource}->{$uri}->{remaining} < 1 ) {
+                    &notice( [ 'error', $username, $fh ],
+                        "Rate limit exceeded, try again after $rate_limit->{reset_time}" );
+                    return 1;
+                }
+            }
+        }
     }
     return 0;
 }
@@ -1581,7 +1587,7 @@ sub get_lists {
     # ensure $new_lists->{$list_name} = $id
     my %more_args = ();
     my $new_lists = &scan_cursor('lists', $u_twit, $username, $fh,
-				{ fn=>'get_lists', cp=>'c', set_key=>'lists',
+				{ fn=>'get_lists', cp=>'', set_key=>'lists',
 					args=>{ user=>$userid, %more_args }, item_key=>'name', item_val=>'id', });
     return if not defined $new_lists;
 
@@ -1629,7 +1635,7 @@ sub get_blocks {
     my $is_update = shift;
 
     my $new_blocks = &scan_cursor('blocks', $u_twit, $username, $fh,
-				{ fn=>'blocking', cp=>'p', item_key=>'screen_name', });
+				{ fn=>'blocking', cp=>'c', set_key=>'users', item_key=>'screen_name', });
     return if not defined $new_blocks;
 
     return $new_blocks if not $is_update;
@@ -1732,8 +1738,7 @@ sub tweet_to_meta {
         username => $username,
         type     => $type,
         nick     => ($type eq 'dm' ? $t->{sender_screen_name}
-                                    : ($type =~ /^search/ ? $t->{from_user}
-                                                          : $t->{user}{screen_name})),
+                                    : $t->{user}{screen_name}),
     );
     ($meta{account}, $meta{service}) = split('@', $username, 2);
     foreach my $meta_key (keys %meta_to_twit) {
@@ -2248,25 +2253,25 @@ sub do_subscriptions {
                 return;
             }
 
-            unless ( $search->{max_id} ) {
+            unless ( $search->{search_metadata}->{max_id} ) {
                 print $fh "t:debug %G$username%n Invalid search results when searching",
                   " for '$topic'. Aborted.\n";
                 return;
             }
 
-            $state{__last_id}{$username}{__search}{$topic} = $search->{max_id};
+            $state{__last_id}{$username}{__search}{$topic} = $search->{search_metadata}->{max_id};
             printf $fh "t:searchid id:%s ac:%s topic:%s\n",
-              $search->{max_id}, $username, &encode_for_file($topic);
+              $search->{search_metadata}->{max_id}, $username, &encode_for_file($topic);
 
-            foreach my $t ( reverse @{ $search->{results} } ) {
-                next if exists $blocks{$username}{ $t->{from_user} };
+            foreach my $t ( reverse @{ $search->{statuses} } ) {
+                next if exists $blocks{$username}{ $t->{user}->{screen_name} };
                 my $text = &get_text( $t, $obj );
                 $text = &remove_tags($text);
-                my $ign = &is_ignored($text, $t->{from_user});
+                my $ign = &is_ignored($text, $t->{user}->{screen_name});
                 &get_unshorten_urls($text, $fh);
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
                 printf $fh "t:search id:%s ac:%s %snick:%s topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $ign, $t->{from_user}, &encode_for_file($topic),
+                  $t->{id}, $username, $ign, $t->{user}->{screen_name}, &encode_for_file($topic),
                   &encode_for_file($t->{created_at}), $text;
             }
         }
@@ -2294,7 +2299,7 @@ sub do_searches {
                 return;
             }
 
-            unless ( $search->{max_id} ) {
+            unless ( $search->{search_metadata}->{max_id} ) {
                 print $fh "t:debug %G$username%n Invalid search results when searching once",
                   " for $topic. Aborted.\n";
                 return;
@@ -2302,9 +2307,9 @@ sub do_searches {
 
             # TODO: consider applying ignore-settings to search results
             my @results = ();
-            foreach my $res (@{ $search->{results} }) {
-                if (exists $blocks{$username}{ $res->{from_user} }) {
-                    print $fh "t:debug %G$username%n blocked $topic: $res->{from_user}\n";
+            foreach my $res (@{ $search->{statuses} }) {
+                if (exists $blocks{$username}{ $res->{user}->{screen_name} }) {
+                    print $fh "t:debug %G$username%n blocked $topic: $res->{user}->{screen_name}\n";
                     next;
                 }
                 push @results, $res;
@@ -2316,10 +2321,10 @@ sub do_searches {
                 my $text = &get_text( $t, $obj );
                 $text = &remove_tags($text);
                 &get_unshorten_urls($text, $fh);
-                my $ign = &is_ignored($text, $t->{from_user});
+                my $ign = &is_ignored($text, $t->{user}->{screen_name});
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
                 printf $fh "t:search_once id:%s ac:%s %s%snick:%s topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $ign, &get_reply_to($t), $t->{from_user}, &encode_for_file($topic),
+                  $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}->{screen_name}, &encode_for_file($topic),
                   &encode_for_file($t->{created_at}), $text;
             }
         }
