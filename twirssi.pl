@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.5.2beta5$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.6.0beta1$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.5.2beta5$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2012-03-13 21:04:44 +0000$',
+    changed => '$Date: 2013-04-17 01:56:11 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -92,6 +92,7 @@ my @settings_defn = (
         [ 'poll_store',        'twirssi_poll_store',        's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.polls" ],
         [ 'id_store',          'twirssi_id_store',          's', Irssi::get_irssi_dir . "/scripts/$IRSSI{name}.ids" ],
         [ 'retweet_format',    'twirssi_retweet_format',    's', 'RT $n: "$t" ${-- $c$}' ],
+        [ 'retweeted_format',  'twirssi_retweeted_format',  's', 'RT $n: $t' ],
         [ 'stripped_tags',     'twirssi_stripped_tags',     's', '',			'list{,}' ],
         [ 'topic_color',       'twirssi_topic_color',       's', '%r', ],
         [ 'timestamp_format',  'twirssi_timestamp_format',  's', '%H:%M:%S', ],
@@ -112,6 +113,7 @@ my @settings_defn = (
         [ 'limit_user_tweets', 'twitter_user_results',      's', '20' ],
 
         [ 'always_shorten',    'twirssi_always_shorten',    'b', 0 ],
+        [ 'rt_to_expand',      'twirssi_retweet_to_expand', 'b', 1 ],
         [ 'avoid_ssl',         'twirssi_avoid_ssl',         'b', 0 ],
         [ 'debug',             'twirssi_debug',             'b', 0 ],
         [ 'notify_timeouts',   'twirssi_notify_timeouts',   'b', 1 ],
@@ -255,7 +257,7 @@ sub cmd_retweet_as {
         return;
     }
 
-    $id = $state{__indexes}{lc $nick} unless $id;
+    $id = $state{__indexes}{lc $nick} unless defined $id;
     unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "tweet", $username ],
             "Can't find a tweet numbered $id from $nick to retweet!" );
@@ -268,16 +270,8 @@ sub cmd_retweet_as {
         return;
     }
 
-# Irssi::settings_add_str( $IRSSI{name}, "twirssi_retweet_format", 'RT $n: $t ${-- $c$}' );
-    my $text = $settings{retweet_format};
-    $text =~ s/\$n/\@$nick/g;
-    if ($data) {
-        $text =~ s/\${|\$}//g;
-        $text =~ s/\$c/$data/;
-    } else {
-        $text =~ s/\${.*?\$}//;
-    }
-    $text =~ s/\$t/$state{__tweets}{ lc $nick }[$id]/;
+    my $text = &format_expand(fmt => $settings{retweet_format}, nick => $nick, data => $data,
+                 tweet => $state{__tweets}{ lc $nick }[$id]);
 
     my $modified = $data;
     $data = &shorten($text);
@@ -324,6 +318,20 @@ sub cmd_retweet_as {
 }
 
 
+sub format_expand {
+    my %args = @_;
+    $args{fmt} =~ s/\$n/\@$args{nick}/g;
+    if (defined $args{data} and $args{data} ne '') {
+        $args{fmt} =~ s/\${|\$}//g;
+        $args{fmt} =~ s/\$c/$args{data}/g;
+    } else {
+        $args{fmt} =~ s/\${.*?\$}//g;
+    }
+    $args{fmt} =~ s/\$t/$args{tweet}/g;
+    return $args{fmt};
+}
+
+
 sub cmd_retweet_to_window {
     my ( $data, $server, $win ) = @_;
 
@@ -338,7 +346,7 @@ sub cmd_retweet_to_window {
         return;
     }
 
-    $id = $state{__indexes}{lc $nick} unless $id;
+    $id = $state{__indexes}{lc $nick} unless defined $id;
     unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "tweet" ],
             "Can't find a tweet numbered $id from $nick to retweet!" );
@@ -372,16 +380,8 @@ sub cmd_retweet_to_window {
         return;
     }
 
-    my $text = $settings{retweet_format};
-    $text =~ s/\$n/\@$nick/g;
-    if ($data) {
-        $text =~ s/\${|\$}//g;
-        $text =~ s/\$c/$data/;
-    } else {
-        $text =~ s/\${.*?\$}//;
-    }
-    my $tweet = &unshorten($state{__tweets}{ lc $nick }[$id]);
-    $text =~ s/\$t/$tweet/;
+    my $text = &format_expand(fmt => $settings{retweet_format}, nick => $nick, data => $data,
+                 tweet => &post_process_tweet($state{__tweets}{ lc $nick }[$id], not $settings{rt_to_expand}));
 
     Irssi::command("msg $target $text");
 
@@ -519,7 +519,11 @@ sub cmd_info {
     my $tweet         = $state{__tweets}{$nick}[$id];
     my $reply_to_id   = $state{__reply_to_ids}{$nick}[$id];
     my $reply_to_user = $state{__reply_to_users}{$nick}[$id];
-    my $exp_tweet     = &unshorten($tweet) if $tweet;
+    my $exp_tweet     = $tweet;
+    if ($tweet) {
+        $tweet        = &post_process_tweet($tweet, 1);
+        $exp_tweet    = &post_process_tweet($exp_tweet);
+    }
 
     my $url = '';
     if ( defined $username ) {
@@ -590,7 +594,7 @@ sub cmd_reply_as {
         return;
     }
 
-    $id = $state{__indexes}{lc $nick} unless $id;
+    $id = $state{__indexes}{lc $nick} unless defined $id;
     unless ( $state{__ids}{ lc $nick }[$id] ) {
         &notice( [ "reply", $username ],
             "Can't find a tweet numbered $id from $nick to reply to!" );
@@ -812,14 +816,6 @@ sub cmd_login {
     } elsif ( @{ $settings{usernames} } and @{ $settings{passwords} } ) {
         &debug("autouser login");
 
-        # if a password ends with a '\', it was meant to escape the comma, and
-        # it should be concatinated with the next one
-        for (my $i = 0;  $i+1 < @{ $settings{passwords} };  $i++) {
-            while ( $settings{passwords}->[$i] =~ /\\$/ ) {
-                $settings{passwords}->[$i] .= "," . delete $settings{passwords}->[$i+1];
-            }
-        }
-
         if ( @{ $settings{usernames} } != @{ $settings{passwords} } ) {
             &notice( ["error"],
                     "Number of usernames doesn't match "
@@ -863,7 +859,7 @@ sub cmd_login {
             } else {
                 $twit = Net::Twitter->new(
                     traits =>
-                      [ 'API::REST', 'OAuth', 'API::Search', 'API::Lists', 'RetryOnError' ],
+                      [ 'API::RESTv1_1', 'OAuth', 'RetryOnError' ],
                     (
                         grep tr/a-zA-Z/n-za-mN-ZA-M/, map $_,
                         pbafhzre_xrl => 'OMINiOzn4TkqvEjKVioaj',
@@ -957,7 +953,7 @@ sub cmd_oauth {
     };
 
     if ($@) {
-        &notice( ["error"], "Invalid pin, try again." );
+        &notice( ["error"], "Invalid pin, try again: $@" );
         return;
     }
 
@@ -1004,10 +1000,16 @@ sub rate_limited {
     eval {
         $rate_limit = $obj->rate_limit_status();
     };
-    if ( $rate_limit and $rate_limit->{remaining_hits} < 1 ) {
-        &notice( [ 'error', $username, $fh ],
-            "Rate limit exceeded, try again after $rate_limit->{reset_time}" );
-        return 1;
+    if ( $rate_limit and $rate_limit->{resources} ) {
+        for my $resource (keys %{ $rate_limit->{resources} }) {
+            for my $uri (keys %{ $rate_limit->{resources}->{$resource} }) {
+                if ( $rate_limit->{resources}->{$resource}->{$uri}->{remaining} < 1 ) {
+                    &notice( [ 'error', $username, $fh ],
+                        "Rate limit exceeded, try again after $rate_limit->{reset_time}" );
+                    return 1;
+                }
+            }
+        }
     }
     return 0;
 }
@@ -1585,7 +1587,7 @@ sub get_lists {
     # ensure $new_lists->{$list_name} = $id
     my %more_args = ();
     my $new_lists = &scan_cursor('lists', $u_twit, $username, $fh,
-				{ fn=>'get_lists', cp=>'c', set_key=>'lists',
+				{ fn=>'get_lists', cp=>'', set_key=>'lists',
 					args=>{ user=>$userid, %more_args }, item_key=>'name', item_val=>'id', });
     return if not defined $new_lists;
 
@@ -1633,7 +1635,7 @@ sub get_blocks {
     my $is_update = shift;
 
     my $new_blocks = &scan_cursor('blocks', $u_twit, $username, $fh,
-				{ fn=>'blocking', cp=>'p', item_key=>'screen_name', });
+				{ fn=>'blocking', cp=>'c', set_key=>'users', item_key=>'screen_name', });
     return if not defined $new_blocks;
 
     return $new_blocks if not $is_update;
@@ -1736,8 +1738,7 @@ sub tweet_to_meta {
         username => $username,
         type     => $type,
         nick     => ($type eq 'dm' ? $t->{sender_screen_name}
-                                    : ($type =~ /^search/ ? $t->{from_user}
-                                                          : $t->{user}{screen_name})),
+                                    : $t->{user}{screen_name}),
     );
     ($meta{account}, $meta{service}) = split('@', $username, 2);
     foreach my $meta_key (keys %meta_to_twit) {
@@ -1803,7 +1804,7 @@ sub background_setup {
 
     if ($child_pid) {                   # parent
         Irssi::timeout_add_once( $pause_monitor, 'monitor_child',
-            [ $done_filename, $max_pauses, $pause_monitor, $is_update ] );
+            [ $done_filename, $max_pauses, $pause_monitor, $is_update, $filename . '.' . $child_pid, 0 ] );
         Irssi::pidwait_add($child_pid);
     } elsif ( defined $child_pid ) {    # child
         my $pid_filename = $filename . '.' . $$;
@@ -1888,6 +1889,7 @@ sub get_updates_child {
     my $time_before_update = time;
 
     my $error = 0;
+    my @error_types = ();
     my %context_cache;
 
     foreach my $update_tuple ( @$to_be_updated ) {
@@ -1897,14 +1899,20 @@ sub get_updates_child {
 
         if (0 == keys(%$what_to_update)
                 or defined $what_to_update->{up_tweets}) {
-            $error++ unless &get_tweets( $fh, $username, $twits{$username}, \%context_cache );
+            unless (&get_tweets( $fh, $username, $twits{$username}, \%context_cache )) {
+                $error++;
+                push @error_types, 'tweets';
+            }
 
             if ( exists $state{__last_id}{$username}{__extras}
                     and keys %{ $state{__last_id}{$username}{__extras} } ) {
                 my @frusers = sort keys %{ $state{__last_id}{$username}{__extras} };
 
-                $error++ unless &get_timeline( $fh, $frusers[ $fix_replies_index{$username} ],
-                                               $username, $twits{$username}, \%context_cache, $is_regular );
+                unless (&get_timeline( $fh, $frusers[ $fix_replies_index{$username} ],
+                                               $username, $twits{$username}, \%context_cache, $is_regular )) {
+                    $error++;
+                    push @error_types, 'replies';
+                }
 
                 $fix_replies_index{$username}++;
                 $fix_replies_index{$username} = 0
@@ -1916,27 +1924,39 @@ sub get_updates_child {
         next if $error > $errors_beforehand;
 
         if (defined $what_to_update->{up_user}) {
-            $error++ unless &get_timeline( $fh, $what_to_update->{up_user},
-                                               $username, $twits{$username}, \%context_cache, $is_regular );
+            unless (&get_timeline( $fh, $what_to_update->{up_user},
+                                               $username, $twits{$username}, \%context_cache, $is_regular )) {
+                $error++;
+                push @error_types, 'tweets';
+            }
 
         }
         next if $error > $errors_beforehand;
 
         if (0 == keys(%$what_to_update)
                     or defined $what_to_update->{up_dms}) {
-            $error++ unless &do_dms( $fh, $username, $twits{$username}, $is_regular );
+            unless (&do_dms( $fh, $username, $twits{$username}, $is_regular )) {
+                $error++;
+                push @error_types, 'dms';
+            }
         }
         next if $error > $errors_beforehand;
 
         if (0 == keys(%$what_to_update)
                     or defined $what_to_update->{up_subs}) {
-            $error++ unless &do_subscriptions( $fh, $username, $twits{$username}, $what_to_update->{up_subs} );
+            unless (&do_subscriptions( $fh, $username, $twits{$username}, $what_to_update->{up_subs} )) {
+                $error++;
+                push @error_types, 'subs';
+            }
         }
         next if $error > $errors_beforehand;
 
         if (0 == keys(%$what_to_update)
                     or defined $what_to_update->{up_searches}) {
-            $error++ unless &do_searches( $fh, $username, $twits{$username}, $what_to_update->{up_searches} );
+            unless (&do_searches( $fh, $username, $twits{$username}, $what_to_update->{up_searches} )) {
+                $error++;
+                push @error_types, 'searches';
+            }
         }
         next if $error > $errors_beforehand;
 
@@ -2002,6 +2022,7 @@ sub get_updates_child {
                 if (not defined &get_lists($twits{$username}, $username, $fh, 0, @{ $what_to_update->{up_lists} })) {
                     &debug($fh, "%G$username%n Polling for lists failed.");
                     $error++;
+                    push @error_types, 'lists';
                 }
             }
             if (not defined $state{__lists}{$list_account}) {
@@ -2026,7 +2047,8 @@ sub get_updates_child {
     &put_unshorten_urls($fh, $time_before_update);
 
     if ($error) {
-        &notice( [ 'error', undef, $fh ], "Update encountered errors.  Aborted");
+        &notice( [ 'error', undef, $fh ], "Update encountered errors (@error_types).  Aborted");
+        &notice( [ 'error', undef, $fh ], "For recurring DMs errors, please re-auth (delete $settings{oauth_store})") if grep { $_ eq 'dms' } @error_types;
     } elsif ($is_regular) {
         print $fh "t:last_poll poll_type:__poll epoch:$time_before_update\n";
     }
@@ -2145,6 +2167,7 @@ sub get_tweets {
 
     if ($@) {
         print $fh "t:debug %G$username%n Error during replies call.  Aborted.\n";
+        &debug($fh, "%G$username%n Error: " . $@);
         return;
     }
 
@@ -2187,6 +2210,7 @@ sub do_dms {
     };
     if ($@) {
         &debug($fh, "%G$username%n Error during direct_messages call.  Aborted.");
+        &debug($fh, "%G$username%n Error: " . $@);
         return;
     }
     &debug($fh, "%G$username%n got DMs: " . (0+@$tweets));
@@ -2225,28 +2249,29 @@ sub do_subscriptions {
             if ($@) {
                 print $fh
                   "t:debug %G$username%n Error during search($topic) call.  Aborted.\n";
+                &debug($fh, "%G$username%n Error: " . $@);
                 return;
             }
 
-            unless ( $search->{max_id} ) {
+            unless ( $search->{search_metadata}->{max_id} ) {
                 print $fh "t:debug %G$username%n Invalid search results when searching",
                   " for '$topic'. Aborted.\n";
                 return;
             }
 
-            $state{__last_id}{$username}{__search}{$topic} = $search->{max_id};
+            $state{__last_id}{$username}{__search}{$topic} = $search->{search_metadata}->{max_id};
             printf $fh "t:searchid id:%s ac:%s topic:%s\n",
-              $search->{max_id}, $username, &encode_for_file($topic);
+              $search->{search_metadata}->{max_id}, $username, &encode_for_file($topic);
 
-            foreach my $t ( reverse @{ $search->{results} } ) {
-                next if exists $blocks{$username}{ $t->{from_user} };
+            foreach my $t ( reverse @{ $search->{statuses} } ) {
+                next if exists $blocks{$username}{ $t->{user}->{screen_name} };
                 my $text = &get_text( $t, $obj );
                 $text = &remove_tags($text);
-                my $ign = &is_ignored($text, $t->{from_user});
+                my $ign = &is_ignored($text, $t->{user}->{screen_name});
                 &get_unshorten_urls($text, $fh);
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
                 printf $fh "t:search id:%s ac:%s %snick:%s topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $ign, $t->{from_user}, &encode_for_file($topic),
+                  $t->{id}, $username, $ign, $t->{user}->{screen_name}, &encode_for_file($topic),
                   &encode_for_file($t->{created_at}), $text;
             }
         }
@@ -2270,10 +2295,11 @@ sub do_searches {
 
             if ($@) {
                 print $fh "t:debug %G$username%n Error during search_once($topic) call.  Aborted.\n";
+                &debug($fh, "%G$username%n Error: " . $@);
                 return;
             }
 
-            unless ( $search->{max_id} ) {
+            unless ( $search->{search_metadata}->{max_id} ) {
                 print $fh "t:debug %G$username%n Invalid search results when searching once",
                   " for $topic. Aborted.\n";
                 return;
@@ -2281,9 +2307,9 @@ sub do_searches {
 
             # TODO: consider applying ignore-settings to search results
             my @results = ();
-            foreach my $res (@{ $search->{results} }) {
-                if (exists $blocks{$username}{ $res->{from_user} }) {
-                    print $fh "t:debug %G$username%n blocked $topic: $res->{from_user}\n";
+            foreach my $res (@{ $search->{statuses} }) {
+                if (exists $blocks{$username}{ $res->{user}->{screen_name} }) {
+                    print $fh "t:debug %G$username%n blocked $topic: $res->{user}->{screen_name}\n";
                     next;
                 }
                 push @results, $res;
@@ -2295,10 +2321,10 @@ sub do_searches {
                 my $text = &get_text( $t, $obj );
                 $text = &remove_tags($text);
                 &get_unshorten_urls($text, $fh);
-                my $ign = &is_ignored($text, $t->{from_user});
+                my $ign = &is_ignored($text, $t->{user}->{screen_name});
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
                 printf $fh "t:search_once id:%s ac:%s %s%snick:%s topic:%s created_at:%s %s\n",
-                  $t->{id}, $username, $ign, &get_reply_to($t), $t->{from_user}, &encode_for_file($topic),
+                  $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}->{screen_name}, &encode_for_file($topic),
                   &encode_for_file($t->{created_at}), $text;
             }
         }
@@ -2403,7 +2429,7 @@ sub meta_to_line {
             level    => MSGLEVEL_PUBLIC,
     );
 
-    if ($meta->{type} eq 'dm' or $meta->{type} eq 'error') {
+    if ($meta->{type} eq 'dm' or $meta->{type} eq 'error' or $meta->{type} eq 'deerror') {
         $line_attribs{level} = MSGLEVEL_MSGS;
     }
 
@@ -2478,8 +2504,16 @@ sub monitor_child {
     my $attempts_to_go = $args->[1];
     my $wait_time      = $args->[2];
     my $is_update      = $args->[3];
+    my $filename_tmp   = $args->[4];
+    my $prev_mtime     = $args->[5];
 
-    &debug("checking child log at $filename ($attempts_to_go)");
+    my $file_progress = 'no ' . $filename_tmp;
+    my $this_mtime = $prev_mtime;
+    if (-f $filename_tmp) {
+        $this_mtime = (stat(_))[9];
+        $file_progress = 'mtime=' . $this_mtime;
+    }
+    &debug("checking child log at $filename [$file_progress v $prev_mtime] ($attempts_to_go)");
 
     # reap any random leftover processes - work around a bug in irssi on gentoo
     waitpid( -1, WNOHANG );
@@ -2501,7 +2535,7 @@ sub monitor_child {
 
         if ( $attempts_to_go > 0 ) {
             Irssi::timeout_add_once( $wait_time, 'monitor_child',
-                [ $filename, $attempts_to_go - 1, $wait_time, $is_update ] );
+                [ $filename, $attempts_to_go - 1, $wait_time, $is_update, $filename_tmp, $this_mtime ] );
         } else {
             &debug("Giving up on polling $filename");
             Irssi::pidwait_remove($child_pid);
@@ -2570,7 +2604,7 @@ sub monitor_child {
         if ($type eq 'debug') {
             &debug($_);
 
-        } elsif ($type eq 'error' or $type eq 'info') {
+        } elsif ($type =~ /^(error|info|deerror)$/) {
             $got_errors++ if $type eq 'error';
             &notice([$type], $_);
 
@@ -2728,7 +2762,7 @@ sub monitor_child {
 
     if ($is_update) {
         if ($failstatus and not $got_errors) {
-            &notice([ 'error' ], "Update succeeded.");
+            &notice([ 'deerror' ], "Update succeeded.");
             $failstatus    = 0;
         }
         $first_call        = 0;
@@ -2762,7 +2796,7 @@ sub write_lines {
         );
         push @print_opts, (lc $line->{topic} ne lc $win_name ? $line->{topic} . ':' : '')
           if $line->{type} =~ /search/;
-        push @print_opts, $line->{hi_nick} if $line->{type} ne 'error';
+        push @print_opts, $line->{hi_nick} if $line->{type} ne 'error' and $line->{type} ne 'deerror';
         push @print_opts, $line->{marker} if defined $line->{marker};
 
         # set timestamp
@@ -2791,7 +2825,7 @@ sub write_lines {
         if (not defined $old_tf) {
             $old_tf = Irssi::settings_get_str('timestamp_format');
         }
-        $line->{text} = &unshorten($line->{text});
+        $line->{text} = &post_process_tweet($line->{text});
         Irssi::command("^set timestamp_format $ts");
         Irssi::window_find_name($win_name)->printformat(
             @print_opts, &hilight( $line->{text} ) . $ymd_suffix
@@ -2946,9 +2980,10 @@ sub debug {
 }
 
 sub notice {
-    my ( $type, $tag, $fh );
+    my ( $type, $tag, $fh, $theme );
     if ( ref $_[0] ) {
         ( $type, $tag, $fh ) = @{ shift @_ };
+        $theme = 'twirssi_' . $type;
     }
     foreach my $msg (@_) {
         if (defined $fh) {
@@ -2969,8 +3004,8 @@ sub notice {
                 $win = Irssi::window_find_name(&window( $type, $tag ));
             }
 
-            if ($type =~ /^(error|info)$/) {
-                $win->printformat(MSGLEVEL_PUBLIC, 'twirssi_'.$type, $msg); # theme
+            if ($type =~ /^(error|info|deerror)$/) {
+                $win->printformat(MSGLEVEL_PUBLIC, $theme, $msg); # theme
             } else {
                 $win->print("${col}***%n $msg", $win_level );
             }
@@ -3204,6 +3239,14 @@ sub event_setup_changed {
                         $settings{$setting->[0]} = [ ];
                     } else {
                         $settings{$setting->[0]} = [ split($re, $settings{$setting->[0]}) ];
+                        if (grep { $_ eq $setting->[0] } ('passwords')) {
+                            # ends '\', unescape separator:  concatenate with next
+                            for (my $i = 0;  $i+1 < @{ $settings{$setting->[0]} };  $i++) {
+                                while ( $settings{$setting->[0]}->[$i] =~ /\\$/ ) {
+                                    $settings{$setting->[0]}->[$i] .= "," . delete $settings{$setting->[0]}->[$i+1];
+                                }
+                            }
+                        }
                     }
                     $is_list = 1;
                 } elsif ($pre_proc =~ s/^norm_user(?:,|$)//) {
@@ -3217,7 +3260,7 @@ sub event_setup_changed {
                     my @normed = ();
                     for my $to_norm ($is_list ? @{ $settings{$setting->[0]} } : $settings{$setting->[0]} ) {
                         next if $to_norm eq '';
-&debug($setting->[0] . ' to_norm {' . $to_norm . '}');
+                        &debug($setting->[0] . ' to_norm {' . $to_norm . '}');
                         push @normed, &normalize_username($to_norm, 1);
                     }
                     $is_list = 1;
@@ -3493,15 +3536,17 @@ sub put_unshorten_urls {
 }
 
 
-sub unshorten {
+sub post_process_tweet {
     my $data = shift;
-    return $data unless @{ $settings{url_unshorten} };
-    for my $site (keys %expanded_url) {
-        for my $https (keys %{ $expanded_url{$site} }) {
-            my $url = ($https ? 'https' : 'http') . '://' . $site . '/';
-            next if -1 == index($data, $url);
-            for my $uri (keys %{ $expanded_url{$site}{$https} }) {
-                $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{$settings{unshorten_color}}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
+    my $skip_unshorten = shift;
+    if (@{ $settings{url_unshorten} } and not $skip_unshorten) {
+        for my $site (keys %expanded_url) {
+            for my $https (keys %{ $expanded_url{$site} }) {
+                my $url = ($https ? 'https' : 'http') . '://' . $site . '/';
+                next if -1 == index($data, $url);
+                for my $uri (keys %{ $expanded_url{$site}{$https} }) {
+                    $data =~ s/\Q$url$uri\E/$& \cC$irssi_to_mirc_colors{$settings{unshorten_color}}<$expanded_url{$site}{$https}{$uri}{url}>\cO/g;
+                }
             }
         }
     }
@@ -3542,8 +3587,9 @@ sub get_text {
     my $object = shift;
     my $text   = decode_entities( $tweet->{text} );
     if ( exists $tweet->{retweeted_status} ) {
-        $text = "RT \@$tweet->{retweeted_status}{user}{screen_name}: "
-          . "$tweet->{retweeted_status}{text}";
+        $text = &format_expand(fmt => $settings{retweeted_format} || $settings{retweet_format},
+                  nick => $tweet->{retweeted_status}{user}{screen_name}, data => '',
+                  tweet => decode_entities( $tweet->{retweeted_status}{text} ));
     } elsif ( $tweet->{truncated} and $object->isa('Net::Twitter') ) {
         $text .= " -- http://twitter.com/$tweet->{user}{screen_name}"
           . "/status/$tweet->{id}";
@@ -3561,6 +3607,7 @@ sub window {
     my $topic = lc(shift || '');
 
     $type = "search" if $type eq 'search_once';
+    $type = "error" if $type eq 'deerror';
 
     my $win;
     my @all_priorities = qw/ account sender list /;
@@ -3669,6 +3716,7 @@ Irssi::theme_register( # theme
         'twirssi_reply',       '[$0\--> %B@$1%n$2] $3',
         'twirssi_dm',          '[$0%r@$1%n (%WDM%n)] $2',
         'twirssi_error',       '%RERROR%n: $0',
+        'twirssi_deerror',     '%RUPDATE%n: $0',
         'twirssi_info',        '%CINFO:%N $0',
         'twirssi_new_day',     '%CDay changed to $0%N',
     ]
