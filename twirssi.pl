@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.6.0beta1$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.6.0beta2$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => 'Dan Boger',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.6.0beta1$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2013-04-17 01:56:11 +0000$',
+    changed => '$Date: 2013-04-25 20:16:10 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -198,7 +198,7 @@ sub cmd_direct_as {
 
     eval {
         if ( $twits{$username}
-            ->new_direct_message( { user => $target, text => $text } ) ) {
+            ->new_direct_message( { screen_name => $target, text => $text } ) ) {
             &notice( [ "dm", $target_norm ], "DM sent to $target: $text" );
             $nicks{$target} = time;
         } else {
@@ -1000,18 +1000,19 @@ sub rate_limited {
     eval {
         $rate_limit = $obj->rate_limit_status();
     };
+    my $res = 0;
     if ( $rate_limit and $rate_limit->{resources} ) {
         for my $resource (keys %{ $rate_limit->{resources} }) {
             for my $uri (keys %{ $rate_limit->{resources}->{$resource} }) {
                 if ( $rate_limit->{resources}->{$resource}->{$uri}->{remaining} < 1 ) {
                     &notice( [ 'error', $username, $fh ],
-                        "Rate limit exceeded, try again after $rate_limit->{reset_time}" );
-                    return 1;
+                        "Rate limit exceeded for $resource ($uri), try again after $rate_limit->{resources}->{$resource}->{$uri}->{reset}" );
+                    $res = 1;
                 }
             }
         }
     }
-    return 0;
+    return $res;
 }
 
 sub verify_twitter_object {
@@ -2289,13 +2290,16 @@ sub do_searches {
             next if defined $search_limit and @$search_limit and not grep { $topic eq $_ } @$search_limit;
             my $max_results = $search_once{$username}->{$topic};
 
+            $topic = &make_utf8($topic);
+
             print $fh
               "t:debug %G$username%n search $topic once (max $max_results)\n";
             eval { $search = $obj->search( { 'q' => $topic } ); };
 
-            if ($@) {
+            if (my $err = $@) {
+                $err = $err->error . ' (' . $err->code . ' ' . $err->message . ')' if ref($err) eq 'Net::Twitter::Error';
                 print $fh "t:debug %G$username%n Error during search_once($topic) call.  Aborted.\n";
-                &debug($fh, "%G$username%n Error: " . $@);
+                &debug($fh, "%G$username%n Error: $err");
                 return;
             }
 
