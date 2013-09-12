@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.6.0$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.6.1$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.6.0$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2013-06-08 13:30:00 +0000$',
+    changed => '$Date: 2013-09-12 22:21:59 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -2242,7 +2242,9 @@ sub do_subscriptions {
                 $search = $obj->search(
                     {
                         q        => $topic,
-                        since_id => $state{__last_id}{$username}{__search}{$topic}
+                        since_id => $state{__last_id}{$username}{__search}{$topic} eq '9223372036854775807'
+                                     ? 0
+                                     : $state{__last_id}{$username}{__search}{$topic},
                     }
                 );
             };
@@ -2258,6 +2260,9 @@ sub do_subscriptions {
                 print $fh "t:debug %G$username%n Invalid search results when searching",
                   " for '$topic'. Aborted.\n";
                 return;
+            } elsif ( $search->{search_metadata}->{max_id} eq '9223372036854775807' ) {
+                &debug($fh, "%G$username%n Error: search max_id = MAX_INT64");
+                $search->{search_metadata}->{max_id} = $state{__last_id}{$username}{__search}{$topic};
             }
 
             $state{__last_id}{$username}{__search}{$topic} = $search->{search_metadata}->{max_id};
