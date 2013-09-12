@@ -2242,7 +2242,9 @@ sub do_subscriptions {
                 $search = $obj->search(
                     {
                         q        => $topic,
-                        since_id => $state{__last_id}{$username}{__search}{$topic}
+                        since_id => $state{__last_id}{$username}{__search}{$topic} eq '9223372036854775807'
+                                     ? 0
+                                     : $state{__last_id}{$username}{__search}{$topic},
                     }
                 );
             };
@@ -2258,6 +2260,9 @@ sub do_subscriptions {
                 print $fh "t:debug %G$username%n Invalid search results when searching",
                   " for '$topic'. Aborted.\n";
                 return;
+            } elsif ( $search->{search_metadata}->{max_id} eq '9223372036854775807' ) {
+                &debug($fh, "%G$username%n Error: search max_id = MAX_INT64");
+                $search->{search_metadata}->{max_id} = $state{__last_id}{$username}{__search}{$topic};
             }
 
             $state{__last_id}{$username}{__search}{$topic} = $search->{search_metadata}->{max_id};
