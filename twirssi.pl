@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.6.1$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.6.2$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.6.1$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2013-09-12 22:21:59 +0000$',
+    changed => '$Date: 2013-09-13 19:49:11 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -2262,12 +2262,17 @@ sub do_subscriptions {
                 return;
             } elsif ( $search->{search_metadata}->{max_id} eq '9223372036854775807' ) {
                 &debug($fh, "%G$username%n Error: search max_id = MAX_INT64");
-                $search->{search_metadata}->{max_id} = $state{__last_id}{$username}{__search}{$topic};
+                $state{__last_id}{$username}{__search}{$topic} = 0;
+                foreach my $t ( reverse @{ $search->{statuses} } ) {
+                    $state{__last_id}{$username}{__search}{$topic} = $t->{id}
+                      if cmp_id($t->{id}, $state{__last_id}{$username}{__search}{$topic}) > 0;
+                }
+            } else {
+                $state{__last_id}{$username}{__search}{$topic} = $search->{search_metadata}->{max_id};
             }
 
-            $state{__last_id}{$username}{__search}{$topic} = $search->{search_metadata}->{max_id};
             printf $fh "t:searchid id:%s ac:%s topic:%s\n",
-              $search->{search_metadata}->{max_id}, $username, &encode_for_file($topic);
+              $state{__last_id}{$username}{__search}{$topic}, $username, &encode_for_file($topic);
 
             foreach my $t ( reverse @{ $search->{statuses} } ) {
                 next if exists $blocks{$username}{ $t->{user}->{screen_name} };
@@ -2648,7 +2653,8 @@ sub monitor_child {
             if ( $meta{type} eq 'searchid' ) {
                 &debug("%G$meta{username}%n Search '$meta{topic}' got id $meta{id}");
                 if (not exists $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} }
-                        or $meta{id} >= $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} } ) {
+                        or $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} } eq '9223372036854775807'
+                        or cmp_id($meta{id}, $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} }) > 0) {
                     $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} } = $meta{id};
                 } else {
                     &debug("%G$meta{username}%n Search '$meta{topic}' bad id $meta{id}");
@@ -2656,10 +2662,10 @@ sub monitor_child {
                 }
             } elsif ( $meta{type} eq 'last_id') {
                 $state{__last_id}{ $meta{username} }{ $meta{id_type} } = $meta{id}
-                  if $state{__last_id}{ $meta{username} }{ $meta{id_type} } < $meta{id};
+                  if cmp_id($meta{id}, $state{__last_id}{ $meta{username} }{ $meta{id_type} }) > 0;
             } elsif ( $meta{type} eq 'last_id_fixreplies' ) {
                 $state{__last_id}{ $meta{username} }{__extras}{ $meta{id_type} } = $meta{id}
-                  if $state{__last_id}{ $meta{username} }{__extras}{ $meta{id_type} } < $meta{id};
+                  if cmp_id($meta{id}, $state{__last_id}{ $meta{username} }{__extras}{ $meta{id_type} }) > 0;
             }
 
         } elsif ($type eq 'tweet' or $type eq 'dm' or $type eq 'reply' or $type eq 'search' or $type eq 'search_once') {	# cf theme_register
@@ -2681,7 +2687,7 @@ sub monitor_child {
 
             if ( $meta{type} eq 'search' ) {
                 if ( exists $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} }
-                        and $meta{id} > $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} } ) {
+                        and cmp_id($meta{id}, $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} }) > 0) {
                     $state{__last_id}{ $meta{username} }{__search}{ $meta{topic} } = $meta{id};
                 }
             } elsif ( $meta{type} eq 'search_once' ) {
@@ -2777,6 +2783,14 @@ sub monitor_child {
         $first_call        = 0;
         $update_is_running = 0;
     }
+}
+
+sub cmp_id {
+    my $id1 = shift;
+    my $id2 = shift;
+    return -1 if length $id1 < length $id2;
+    return  1 if length $id1 > length $id2;
+    return $id1 cmp $id2;
 }
 
 sub write_lines {
