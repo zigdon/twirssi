@@ -1006,7 +1006,8 @@ sub rate_limited {
             for my $uri (keys %{ $rate_limit->{resources}->{$resource} }) {
                 if ( $rate_limit->{resources}->{$resource}->{$uri}->{remaining} < 1 ) {
                     &notice( [ 'error', $username, $fh ],
-                        "Rate limit exceeded for $resource ($uri), try again after $rate_limit->{resources}->{$resource}->{$uri}->{reset}" );
+                        "Rate limit exceeded for $resource ($uri), try again after " .
+			localtime $rate_limit->{resources}->{$resource}->{$uri}->{reset} );
                     $res = 1;
                 }
             }
@@ -1525,39 +1526,48 @@ sub scan_cursor {
     my $fn_info   = shift;
 
     my $whole_set = {};
-    my $paging_broken = 0;
     my $fn_args = { (defined $fn_info->{args} ? %{ $fn_info->{args} } : ()) };
     my $fn_name = $fn_info->{fn};
+    my $pg_type = index($fn_info->{cp}, 'c') >= 0 ? 'cursor' : ($fn_info->{cp} =~ /p(\d*)/ ? 'page' : '');
+    my $max_page = 10;
+    $max_page = $1 if $pg_type eq 'page' and length($1) > 0;
     eval {
-        for (my $cursor = -1, my $page = 1; $cursor and $page <= 10 and not $paging_broken; $page++) {
-            if (-1 != index($fn_info->{cp}, 'c')) {
+        for (my($cursor, $page) = (-1, 1); $cursor and $page <= $max_page; $page++) {
+            if ($pg_type eq 'cursor') {
                 $fn_args->{cursor} = $cursor;
-            }
-            if ($fn_info->{cp} =~ /p(\d*)/) {
-                my $max_page = $1;
+            } elsif ($pg_type eq 'page') {
                 $fn_args->{page} = $page;
-                last if length($max_page) > 0 and $page > $max_page;
             }
-            &debug($fh, "%G$username%n Loading $type_str page $page...");
+            &debug($fh, "%G$username%n Loading $type_str $pg_type " . ($pg_type eq 'cursor' ? $cursor : $page));
             my $collection = $u_twit->$fn_name($fn_args);
-            last unless $collection;
-            if (-1 != index($fn_info->{cp}, 'c')) {
+            last if not $collection;
+            if ($pg_type eq 'cursor') {
                 $cursor = $collection->{next_cursor};
-                $collection = $collection->{$fn_info->{set_key}};
+                $collection = $collection->{$fn_info->{set_key}} if defined $fn_info->{set_key};
             }
+            last if 0 == @$collection;
             foreach my $coll_item (@$collection) {
-                if (-1 != index($fn_info->{cp}, 'p')
+                if ($pg_type eq 'page'
                        and defined $whole_set->{$coll_item->{$fn_info->{item_key}}}) {
-                    # fix broken paging, as we've seen this $coll_item before
-                    $paging_broken = 1;
-                    last;
+                    &debug($fh, "%G$username%n repeated page $page key " . $fn_info->{item_key} .
+                       ' val ' . $coll_item->{$fn_info->{item_key}} .
+                       ''); #' pre ' . Dumper($whole_set->{$coll_item->{$fn_info->{item_key}}}));
+                    next;
                 }
-                $whole_set->{$coll_item->{$fn_info->{item_key}}} = (defined $fn_info->{item_val}
-								? $coll_item->{$fn_info->{item_val}} : time);
+                $whole_set->{$coll_item->{$fn_info->{item_key}}} = (
+                    defined $fn_info->{item_val}
+                        ? $coll_item->{$fn_info->{item_val}}
+                        : (defined $fn_info->{item_keys}
+                              ? (ref($fn_info->{item_keys}) eq 'ARRAY'
+                                    ? { map { $_ => $coll_item->{$_} } @{ $fn_info->{item_keys} } }
+                                    : { %$coll_item })
+                              : time)
+                );
+                $fn_args->{max_id} = $coll_item->{id_str} if defined $fn_args->{since_id};
             }
         }
     };
-foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "crsr: $item"); }
+foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "$pg_type: $item"); }
 
     if ($@) {
         &notice(['error', $username, $fh], "$username: Error updating $type_str.  Aborted.");
@@ -1588,7 +1598,7 @@ sub get_lists {
     # ensure $new_lists->{$list_name} = $id
     my %more_args = ();
     my $new_lists = &scan_cursor('lists', $u_twit, $username, $fh,
-				{ fn=>'get_lists', cp=>'', set_key=>'lists',
+				{ fn=>'list_ownerships', cp=>'c', set_key=>'lists',
 					args=>{ user=>$userid, %more_args }, item_key=>'name', item_val=>'id', });
     return if not defined $new_lists;
 
@@ -2084,47 +2094,20 @@ sub get_tweets {
 
     return if &rate_limited($obj, $username, $fh);
 
-    &debug($fh, "%G$username%n Polling for tweets");
-    my $tweets = [];
-    eval {
-        my %call_attribs = ( page => 1 );
-        $call_attribs{count} = $settings{track_replies} if $settings{track_replies};
-        $call_attribs{since_id} = $state{__last_id}{$username}{timeline}
+    my %call_attribs = ();
+    $call_attribs{count} = 200;
+    $call_attribs{since_id} = $state{__last_id}{$username}{timeline}
                            if defined $state{__last_id}{$username}{timeline};
-        for ( ; $call_attribs{page} < 2 ; $call_attribs{page}++) {
-            &debug($fh, "%G$username%n timeline " . join(' ', map { $_ . '=' . $call_attribs{$_} } sort keys %call_attribs));
-            my $page_tweets = $obj->home_timeline( \%call_attribs );
-            last if not defined $page_tweets or @$page_tweets == 0;
-            unshift @$tweets, @$page_tweets;
-        }
-    };
 
-    if ($@) {
+    my $tweets = &scan_cursor('home_timeline', $obj, $username, $fh,
+				{ fn=>'home_timeline', cp=>'p', args => \%call_attribs,
+					item_key=>'id_str', item_keys=>1 });
+
+    if (not defined $tweets) {
         print $fh "t:error $username Error during home_timeline call: Aborted.\n";
-        print $fh "t:debug : $_\n" foreach split /\n/, Dumper($@);
         return;
     }
-
-
-=pod
-
-    unless ( ref $tweets ) {
-        if ( $obj->can("get_error") ) {
-            my $error = "Unknown error";
-            eval { $error = JSON::Any->jsonToObj( $obj->get_error() ) };
-            unless ($@) { $error = $obj->get_error() }
-            &notice([ 'error', $username, $fh],
-                "$username: API Error during home_timeline call: Aborted");
-            print $fh "t:debug : $_\n" foreach split /\n/, Dumper($error);
-
-        } else {
-            &notice([ 'error', $username, $fh],
-                "$username: API Error in home_timeline call. Aborted.");
-        }
-        return;
-    }
-
-=cut
+    $tweets = [ map { $tweets->{$_} } sort { cmp_id($b, $a) } keys %$tweets ];
 
     print $fh "t:debug %G$username%n got ", scalar(@$tweets), ' tweets',
 		(@$tweets	? ', first/last: ' . join('/',
