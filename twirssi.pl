@@ -2515,10 +2515,6 @@ sub monitor_child {
     }
     &debug("checking child log at $filename [$file_progress v $prev_mtime] ($attempts_to_go)");
 
-    # reap any random leftover processes - work around a bug in irssi on gentoo
-    # ~~ is this still needed? remove_child has been added/improved to solve this!
-    do {} while waitpid( -1, WNOHANG ) > 0;
-
     # first time we run we don't want to print out *everything*, so we just
     # pretend
 
@@ -2788,51 +2784,6 @@ sub remove_child {
 	    last;
 	}
     }
-
-
-    # !!! BEGIN: I don't know what I'm doing here, these are educated guesses !!!
-
-    # original method was this:
-    #
-    # Irssi::pidwait_remove($child_pid);
-    # waitpid( -1, WNOHANG );
-    # 
-    # problem/questions:
-    # - this *does* accumulate Zombies/dead processes
-    # - Irssi documentation says "pidwait_remove should not need to be called"
-    # - if there are more than 1 dead children, waitpid() only reaps one
-    
-    # variant 1:
-    # ~~~~~~~~~~
-    # - don't call irssi's method and reap as many processes as there are
-    #
-    # do {} while waitpid( -1, WNOHANG ) > 0;
-
-    # variant 2:
-    # ~~~~~~~~~~
-    # - reap as many processes as there are and if a child is removed, remove it from
-    #   irssi's list (we're reaping behind irssi's back, I think, so we should tell about it :-)
-    # > this might not be perfect, but at least it's proven to work for me
-    while (1) {
-	my $killed = waitpid( -1, WNOHANG );
-	if ($killed > 0) {
-	    &notice([ 'error' ], "remove_child: reaped pid $killed");
-	    Irssi::pidwait_remove($killed);
-	} else {
-	    last;
-	}
-    };
-
-    # variant 3:
-    # ~~~~~~~~~~
-    # - let irssi do all the work as it claims to reap everything that has been
-    #   announced via Irssi::pidwait_add()
-    # - don't call Irssi::pidwait_remove() and don't do any waitpid() stuff
-    #   -> also remove the waidpid() call in monitor_child()
-    # > this sounds like the best/most clean solution, but it should be
-    #   tested if it works at all :-)
-
-    # !!! END: I don't know what I'm doing here, these are educated guesses !!!
 
 }
 
