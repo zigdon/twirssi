@@ -1029,9 +1029,10 @@ sub verify_twitter_object {
     eval { $verified = $twit->verify_credentials(); };
 
     if ( $@ or not $verified ) {
+        my $msg = $@ // 'Not verified';
         &notice(
             [ "tweet", "$user\@$service" ],
-            "Login as $user\@$service failed"
+            "Login as $user\@$service failed: $msg"
         );
 
         if ( not $settings{avoid_ssl} ) {
