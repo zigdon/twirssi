@@ -1222,7 +1222,15 @@ sub cmd_upgrade {
         return;
     }
 
-    my $md5;
+    my $URL = "https://raw.githubusercontent.com/"
+                . ( $settings{upgrade_beta}
+                        ? "$settings{upgrade_dev}/twirssi/$settings{upgrade_branch}"
+                        : "zigdon/twirssi/master"
+                ) . "/twirssi.pl";
+    &notice( ["notice"], "Downloading twirssi from $URL" );
+    my $new_twirssi = get( $URL );
+
+    my $new_md5;
     unless ( $data or $settings{upgrade_beta} ) {
         eval " use Digest::MD5; ";
 
@@ -1233,14 +1241,7 @@ sub cmd_upgrade {
             return;
         }
 
-        $md5 = get("http://twirssi.com/md5sum");
-        chomp $md5;
-        $md5 =~ s/ .*//;
-        unless ($md5) {
-            &notice( ["error"],
-                "Failed to download md5sum from peeron!  Aborting." );
-            return;
-        }
+        $new_md5 = Digest::MD5::md5_hex($new_twirssi);
 
         my $fh;
         unless ( open( $fh, '<', $loc ) ) {
@@ -1254,18 +1255,16 @@ sub cmd_upgrade {
         my $cur_md5 = Digest::MD5::md5_hex(<$fh>);
         close $fh;
 
-        if ( $cur_md5 eq $md5 ) {
+        if ( $cur_md5 eq $new_md5 ) {
             &notice( ["error"], "Current twirssi seems to be up to date." );
             return;
         }
     }
 
-    my $URL =
-      $settings{upgrade_beta}
-      ? "http://github.com/$settings{upgrade_dev}/twirssi/raw/$settings{upgrade_branch}/twirssi.pl"
-      : "http://twirssi.com/twirssi.pl";
-    &notice( ["notice"], "Downloading twirssi from $URL" );
-    LWP::Simple::getstore( $URL, "$loc.upgrade" );
+    open my $fh, '>', "$loc.upgrade"
+        or return &notice([ 'error' ],"Failed to write upgrade to $file: $!");
+    print $fh $new_twirssi;
+    close $fh;
 
     unless ( -s "$loc.upgrade" ) {
         &notice( ["error"],
@@ -1273,26 +1272,6 @@ sub cmd_upgrade {
               . "  Check that /set twirssi_location is set to the correct location."
         );
         return;
-    }
-
-    unless ( $data or $settings{upgrade_beta} ) {
-        my $fh;
-        unless ( open( $fh, '<', "$loc.upgrade" ) ) {
-            &notice( ["error"],
-                    "Failed to read $loc.upgrade."
-                  . "  Check that /set twirssi_location is set to the correct location."
-            );
-            return;
-        }
-
-        my $new_md5 = Digest::MD5::md5_hex(<$fh>);
-        close $fh;
-
-        if ( $new_md5 ne $md5 ) {
-            &notice( ["error"],
-                "MD5 verification failed. expected $md5, got $new_md5" );
-            return;
-        }
     }
 
     rename $loc, "$loc.backup"
