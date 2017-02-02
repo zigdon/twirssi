@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.6.3$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.6.4$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
     contact     => 'zigdon@gmail.com',
@@ -322,10 +322,10 @@ sub format_expand {
     my %args = @_;
     $args{fmt} =~ s/\$n/\@$args{nick}/g;
     if (defined $args{data} and $args{data} ne '') {
-        $args{fmt} =~ s/\${|\$}//g;
+        $args{fmt} =~ s/\$\{|\$}//g;
         $args{fmt} =~ s/\$c/$args{data}/g;
     } else {
-        $args{fmt} =~ s/\${.*?\$}//g;
+        $args{fmt} =~ s/\$\{.*?\$}//g;
     }
     $args{fmt} =~ s/\$t/$args{tweet}/g;
     return $args{fmt};
@@ -3242,7 +3242,7 @@ sub event_setup_changed {
             while (defined $pre_proc and $pre_proc ne '') {
                 if ($pre_proc =~ s/^lc(?:,|$)//) {
                     $settings{$setting->[0]} = lc $settings{$setting->[0]};
-                } elsif ($pre_proc =~ s/^list{(.)}(?:,|$)//) {
+                } elsif ($pre_proc =~ s/^list\{(.)}(?:,|$)//) {
                     my $re = $1;
                     $re = qr/\s*$re\s*/ if $trim;
                     if ($settings{$setting->[0]} eq '') {
