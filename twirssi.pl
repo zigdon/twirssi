@@ -1570,8 +1570,8 @@ sub scan_cursor {
                 $fn_args->{max_id} = $coll_item->{id_str} if defined $fn_args->{since_id};
             }
         }
-    };
 foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "$pg_type: $item"); }
+    };
 
     if ($@) {
         &notice(['error', $username, $fh], "$username: Error updating $type_str.  Aborted.");
