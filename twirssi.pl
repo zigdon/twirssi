@@ -98,7 +98,7 @@ my @settings_defn = (
         [ 'timestamp_format',  'twirssi_timestamp_format',  's', '%H:%M:%S', ],
         [ 'window_priority',   'twirssi_window_priority',   's', 'account', ],
         [ 'upgrade_branch',    'twirssi_upgrade_branch',    's', 'master', ],
-        [ 'upgrade_dev',       'twirssi_upgrade_dev',       's', 'zigdon', ],
+        [ 'upgrade_dev',       'twirssi_upgrade_dev',       's', 'gedge', ],
         [ 'bitlbee_server',    'bitlbee_server',            's', 'bitlbee' ],
         [ 'hilight_color',     'twirssi_hilight_color',     's', '%M' ],
         [ 'unshorten_color',   'twirssi_unshorten_color',   's', '%b' ],
