@@ -20,7 +20,7 @@ use vars qw($VERSION %IRSSI);
 $VERSION = sprintf '%s', q$Version: v2.7.0$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
-    contact     => 'zigdon@gmail.com',
+    contact     => 'gedgey@gmail.com',
     name        => 'twirssi',
     description => 'Send twitter updates using /tweet.  '
       . 'Can optionally set your bitlbee /away message to same',
@@ -1226,7 +1226,7 @@ sub cmd_upgrade {
     my $URL = "https://raw.githubusercontent.com/"
                 . ( $settings{upgrade_beta}
                         ? "$settings{upgrade_dev}/twirssi/$settings{upgrade_branch}"
-                        : "zigdon/twirssi/master"
+                        : "$settings{upgrade_dev}/twirssi/master"
                 ) . "/twirssi.pl";
     &notice( ["notice"], "Downloading twirssi from $URL" );
     my $new_twirssi = get( $URL );
