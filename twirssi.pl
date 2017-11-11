@@ -17,16 +17,16 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.6.4$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.7.0$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
-    contact     => 'zigdon@gmail.com',
+    contact     => 'gedgey@gmail.com',
     name        => 'twirssi',
     description => 'Send twitter updates using /tweet.  '
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2014-01-16 21:59:02 +0000$',
+    changed => '$Date: 2017-11-11 21:00:00 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -98,7 +98,7 @@ my @settings_defn = (
         [ 'timestamp_format',  'twirssi_timestamp_format',  's', '%H:%M:%S', ],
         [ 'window_priority',   'twirssi_window_priority',   's', 'account', ],
         [ 'upgrade_branch',    'twirssi_upgrade_branch',    's', 'master', ],
-        [ 'upgrade_dev',       'twirssi_upgrade_dev',       's', 'zigdon', ],
+        [ 'upgrade_dev',       'twirssi_upgrade_dev',       's', 'gedge', ],
         [ 'bitlbee_server',    'bitlbee_server',            's', 'bitlbee' ],
         [ 'hilight_color',     'twirssi_hilight_color',     's', '%M' ],
         [ 'unshorten_color',   'twirssi_unshorten_color',   's', '%b' ],
@@ -138,6 +138,7 @@ my @settings_defn = (
         [ 'autosearch_results','twitter_autosearch_results','i', 0 ],
         [ 'timeout',           'twitter_timeout',           'i', 30 ],
         [ 'track_replies',     'twirssi_track_replies',     'i', 100 ],
+        [ 'tweet_max_chars',   'twirssi_tweet_max_chars',   'i', 280 ],
 );
 
 my %meta_to_twit = (    # map file keys to twitter keys
@@ -1029,9 +1030,10 @@ sub verify_twitter_object {
     eval { $verified = $twit->verify_credentials(); };
 
     if ( $@ or not $verified ) {
+        my $msg = $@ // 'Not verified';
         &notice(
             [ "tweet", "$user\@$service" ],
-            "Login as $user\@$service failed"
+            "Login as $user\@$service failed: $msg"
         );
 
         if ( not $settings{avoid_ssl} ) {
@@ -1221,7 +1223,15 @@ sub cmd_upgrade {
         return;
     }
 
-    my $md5;
+    my $URL = "https://raw.githubusercontent.com/"
+                . ( $settings{upgrade_beta}
+                        ? "$settings{upgrade_dev}/twirssi/$settings{upgrade_branch}"
+                        : "$settings{upgrade_dev}/twirssi/master"
+                ) . "/twirssi.pl";
+    &notice( ["notice"], "Downloading twirssi from $URL" );
+    my $new_twirssi = get( $URL );
+
+    my $new_md5;
     unless ( $data or $settings{upgrade_beta} ) {
         eval " use Digest::MD5; ";
 
@@ -1232,14 +1242,7 @@ sub cmd_upgrade {
             return;
         }
 
-        $md5 = get("http://twirssi.com/md5sum");
-        chomp $md5;
-        $md5 =~ s/ .*//;
-        unless ($md5) {
-            &notice( ["error"],
-                "Failed to download md5sum from peeron!  Aborting." );
-            return;
-        }
+        $new_md5 = Digest::MD5::md5_hex($new_twirssi);
 
         my $fh;
         unless ( open( $fh, '<', $loc ) ) {
@@ -1253,18 +1256,16 @@ sub cmd_upgrade {
         my $cur_md5 = Digest::MD5::md5_hex(<$fh>);
         close $fh;
 
-        if ( $cur_md5 eq $md5 ) {
+        if ( $cur_md5 eq $new_md5 ) {
             &notice( ["error"], "Current twirssi seems to be up to date." );
             return;
         }
     }
 
-    my $URL =
-      $settings{upgrade_beta}
-      ? "http://github.com/$settings{upgrade_dev}/twirssi/raw/$settings{upgrade_branch}/twirssi.pl"
-      : "http://twirssi.com/twirssi.pl";
-    &notice( ["notice"], "Downloading twirssi from $URL" );
-    LWP::Simple::getstore( $URL, "$loc.upgrade" );
+    open my $fh, '>', "$loc.upgrade"
+        or return &notice([ 'error' ],"Failed to write upgrade to $loc.upgrade $!");
+    print $fh $new_twirssi;
+    close $fh;
 
     unless ( -s "$loc.upgrade" ) {
         &notice( ["error"],
@@ -1272,26 +1273,6 @@ sub cmd_upgrade {
               . "  Check that /set twirssi_location is set to the correct location."
         );
         return;
-    }
-
-    unless ( $data or $settings{upgrade_beta} ) {
-        my $fh;
-        unless ( open( $fh, '<', "$loc.upgrade" ) ) {
-            &notice( ["error"],
-                    "Failed to read $loc.upgrade."
-                  . "  Check that /set twirssi_location is set to the correct location."
-            );
-            return;
-        }
-
-        my $new_md5 = Digest::MD5::md5_hex(<$fh>);
-        close $fh;
-
-        if ( $new_md5 ne $md5 ) {
-            &notice( ["error"],
-                "MD5 verification failed. expected $md5, got $new_md5" );
-            return;
-        }
     }
 
     rename $loc, "$loc.backup"
@@ -1569,8 +1550,8 @@ sub scan_cursor {
                 $fn_args->{max_id} = $coll_item->{id_str} if defined $fn_args->{since_id};
             }
         }
-    };
 foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "$pg_type: $item"); }
+    };
 
     if ($@) {
         &notice(['error', $username, $fh], "$username: Error updating $type_str.  Aborted.");
@@ -3044,9 +3025,11 @@ sub too_long {
     my $data     = shift;
     my $alert_to = shift;
 
-    if ( length $data > 140 ) {
+    if ( length $data > $settings{tweet_max_chars} ) {
         &notice( $alert_to,
-            "Tweet too long (" . length($data) . " characters) - aborted" )
+            "Tweet is " . ( length $data - $settings{tweet_max_chars} ) .
+                   " characters too long (max is " . length($data) .
+                   " chars, attempt was " . $settings{tweet_max_chars} . " chars) - aborted" )
           if defined $alert_to;
         return 1;
     }
