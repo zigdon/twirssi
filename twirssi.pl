@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.6.4$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.7.0$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
     contact     => 'zigdon@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.6.4$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2014-01-16 21:59:02 +0000$',
+    changed => '$Date: 2017-11-11 21:00:00 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -138,6 +138,7 @@ my @settings_defn = (
         [ 'autosearch_results','twitter_autosearch_results','i', 0 ],
         [ 'timeout',           'twitter_timeout',           'i', 30 ],
         [ 'track_replies',     'twirssi_track_replies',     'i', 100 ],
+        [ 'tweet_max_chars',   'twirssi_tweet_max_chars',   'i', 280 ],
 );
 
 my %meta_to_twit = (    # map file keys to twitter keys
@@ -1262,7 +1263,7 @@ sub cmd_upgrade {
     }
 
     open my $fh, '>', "$loc.upgrade"
-        or return &notice([ 'error' ],"Failed to write upgrade to $file: $!");
+        or return &notice([ 'error' ],"Failed to write upgrade to $loc.upgrade $!");
     print $fh $new_twirssi;
     close $fh;
 
@@ -3024,9 +3025,11 @@ sub too_long {
     my $data     = shift;
     my $alert_to = shift;
 
-    if ( length $data > 140 ) {
+    if ( length $data > $settings{tweet_max_chars} ) {
         &notice( $alert_to,
-            "Tweet too long (" . length($data) . " characters) - aborted" )
+            "Tweet is " . ( length $data - $settings{tweet_max_chars} ) .
+                   " characters too long (max is " . length($data) .
+                   " chars, attempt was " . $settings{tweet_max_chars} . " chars) - aborted" )
           if defined $alert_to;
         return 1;
     }
