@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.7.0$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.7.1$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
     contact     => 'gedgey@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.7.0$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2017-11-11 21:00:00 +0000$',
+    changed => '$Date: 2017-11-12 17:40:00 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -73,6 +73,7 @@ my %valid_types = (
 	'window'	=> [ qw/ tweet search dm reply sender error default /],	# twirssi_set_window
 	'channel'	=> [ qw/ tweet search dm reply sender error * / ],	# twirssi_set_channel
 );
+my $t_text = 'full_text';
 
 my $local_tz = DateTime::TimeZone->new( name => 'local' );
 
@@ -2078,14 +2079,17 @@ sub get_tweets {
 
     return if &rate_limited($obj, $username, $fh);
 
-    my %call_attribs = ();
-    $call_attribs{count} = 200;
+    my %call_attribs = (
+            tweet_mode => 'extended',
+            count      => 200,
+    );
     $call_attribs{since_id} = $state{__last_id}{$username}{timeline}
                            if defined $state{__last_id}{$username}{timeline};
 
-    my $tweets = &scan_cursor('home_timeline', $obj, $username, $fh,
-				{ fn=>'home_timeline', cp=>'p', args => \%call_attribs,
-					item_key=>'id_str', item_keys=>1 });
+    my $tweets = &scan_cursor('home_timeline', $obj, $username, $fh, {
+		fn => 'home_timeline', cp => 'p', args => \%call_attribs,
+		item_key => 'id_str', item_keys => 1,
+    });
 
     if (not defined $tweets) {
         print $fh "t:error $username Error during home_timeline call: Aborted.\n";
@@ -2184,7 +2188,7 @@ sub do_dms {
     &debug($fh, "%G$username%n got DMs: " . (0+@$tweets));
 
     foreach my $t ( reverse @$tweets ) {
-        my $text = decode_entities( $t->{text} );
+        my $text = decode_entities( $t->{$t_text} );
         $text =~ s/[\n\r]/ /g;
         printf $fh "t:dm id:%s ac:%s %snick:%s created_at:%s %s\n",
           $t->{id}, $username, &get_reply_to($t), $t->{sender_screen_name},
@@ -3577,11 +3581,11 @@ sub normalize_username {
 sub get_text {
     my $tweet  = shift;
     my $object = shift;
-    my $text   = decode_entities( $tweet->{text} );
+    my $text   = decode_entities( $tweet->{$t_text} );
     if ( exists $tweet->{retweeted_status} ) {
         $text = &format_expand(fmt => $settings{retweeted_format} || $settings{retweet_format},
                   nick => $tweet->{retweeted_status}{user}{screen_name}, data => '',
-                  tweet => decode_entities( $tweet->{retweeted_status}{text} ));
+                  tweet => decode_entities( $tweet->{retweeted_status}{$t_text} ));
     } elsif ( $tweet->{truncated} and $object->isa('Net::Twitter') ) {
         $text .= " -- http://twitter.com/$tweet->{user}{screen_name}"
           . "/status/$tweet->{id}";
