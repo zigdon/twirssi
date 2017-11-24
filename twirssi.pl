@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.7.0$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.7.2$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
     contact     => 'gedgey@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.7.0$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2017-11-11 21:00:00 +0000$',
+    changed => '$Date: 2017-11-18 13:41:00 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -1550,7 +1550,7 @@ sub scan_cursor {
                 $fn_args->{max_id} = $coll_item->{id_str} if defined $fn_args->{since_id};
             }
         }
-foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "$pg_type: $item"); }
+foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "$pg_type: $item"); } # TODO remove
     };
 
     if ($@) {
@@ -2078,14 +2078,17 @@ sub get_tweets {
 
     return if &rate_limited($obj, $username, $fh);
 
-    my %call_attribs = ();
-    $call_attribs{count} = 200;
+    my %call_attribs = (
+            tweet_mode => 'extended',
+            count      => 200,
+    );
     $call_attribs{since_id} = $state{__last_id}{$username}{timeline}
                            if defined $state{__last_id}{$username}{timeline};
 
-    my $tweets = &scan_cursor('home_timeline', $obj, $username, $fh,
-				{ fn=>'home_timeline', cp=>'p', args => \%call_attribs,
-					item_key=>'id_str', item_keys=>1 });
+    my $tweets = &scan_cursor('home_timeline', $obj, $username, $fh, {
+		fn => 'home_timeline', cp => 'p', args => \%call_attribs,
+		item_key => 'id_str', item_keys => 1,
+    });
 
     if (not defined $tweets) {
         print $fh "t:error $username Error during home_timeline call: Aborted.\n";
@@ -2124,13 +2127,12 @@ sub get_tweets {
     printf $fh "t:last_id id:%s ac:%s id_type:timeline\n", $new_poll_id, $username if $new_poll_id;
 
     &debug($fh, "%G$username%n Polling for replies since " . $state{__last_id}{$username}{reply});
+    my $arg_ref = { tweet_mode => 'extended' };
+    if ( $state{__last_id}{$username}{reply} ) {
+        $arg_ref->{since_id} = $state{__last_id}{$username}{reply};
+    }
     eval {
-        if ( $state{__last_id}{$username}{reply} ) {
-            $tweets = $obj->replies( { since_id => $state{__last_id}{$username}{reply} } )
-                      || [];
-        } else {
-            $tweets = $obj->replies() || [];
-        }
+        $tweets = $obj->replies( $arg_ref ) || [];
     };
 
     if ($@) {
@@ -2163,9 +2165,9 @@ sub do_dms {
 
     my $new_poll_id = 0;
 
-    my $since_args = {};
+    my $dm_args = { tweet_mode => 'extended' };
     if ( $is_regular and $state{__last_id}{$username}{dm} ) {
-        $since_args->{since_id} = $state{__last_id}{$username}{dm};
+        $dm_args->{since_id} = $state{__last_id}{$username}{dm};
         &debug($fh, "%G$username%n Polling for DMs since_id " .
                          $state{__last_id}{$username}{dm});
     } else {
@@ -2174,7 +2176,7 @@ sub do_dms {
 
     my $tweets;
     eval {
-        $tweets = $obj->direct_messages($since_args) || [];
+        $tweets = $obj->direct_messages($dm_args) || [];
     };
     if ($@) {
         &debug($fh, "%G$username%n Error during direct_messages call.  Aborted.");
@@ -2182,9 +2184,10 @@ sub do_dms {
         return;
     }
     &debug($fh, "%G$username%n got DMs: " . (0+@$tweets));
+    foreach my $item (split "\n", Dumper(@$tweets)) { &debug($fh, "dm: $item"); } # TODO remove
 
     foreach my $t ( reverse @$tweets ) {
-        my $text = decode_entities( $t->{text} );
+        my $text = decode_entities( get_full_text($t) );
         $text =~ s/[\n\r]/ /g;
         printf $fh "t:dm id:%s ac:%s %snick:%s created_at:%s %s\n",
           $t->{id}, $username, &get_reply_to($t), $t->{sender_screen_name},
@@ -2208,10 +2211,11 @@ sub do_subscriptions {
             eval {
                 $search = $obj->search(
                     {
-                        q        => $topic,
-                        since_id => $state{__last_id}{$username}{__search}{$topic} eq '9223372036854775807'
-                                     ? 0
-                                     : $state{__last_id}{$username}{__search}{$topic},
+                        tweet_mode => 'extended',
+                        q          => $topic,
+                        since_id   => $state{__last_id}{$username}{__search}{$topic} eq '9223372036854775807'
+                                       ? 0
+                                       : $state{__last_id}{$username}{__search}{$topic},
                     }
                 );
             };
@@ -2271,7 +2275,12 @@ sub do_searches {
 
             print $fh
               "t:debug %G$username%n search $topic once (max $max_results)\n";
-            eval { $search = $obj->search( { 'q' => $topic } ); };
+            eval {
+                    $search = $obj->search( {
+                            q          => $topic,
+                            tweet_mode => 'extended',
+                    } );
+            };
 
             if (my $err = $@) {
                 $err = $err->error . ' (' . $err->code . ' ' . $err->message . ')' if ref($err) eq 'Net::Twitter::Error';
@@ -2321,7 +2330,10 @@ sub get_timeline {
 
     &debug($fh, "%G$username%n get_timeline $target"
       . ($is_update ? "($fix_replies_index{$username} > $last_id)" : ''));
-    my $arg_ref = { id => $target, };
+    my $arg_ref = {
+            id         => $target,
+            tweet_mode => 'extended',
+    };
     if ($is_update) {
         $arg_ref->{since_id} = $last_id if $last_id;
         $arg_ref->{include_rts} = 1 if $settings{retweet_show};
@@ -3577,11 +3589,13 @@ sub normalize_username {
 sub get_text {
     my $tweet  = shift;
     my $object = shift;
-    my $text   = decode_entities( $tweet->{text} );
+    my $text   = decode_entities( get_full_text($tweet) );
     if ( exists $tweet->{retweeted_status} ) {
-        $text = &format_expand(fmt => $settings{retweeted_format} || $settings{retweet_format},
-                  nick => $tweet->{retweeted_status}{user}{screen_name}, data => '',
-                  tweet => decode_entities( $tweet->{retweeted_status}{text} ));
+        $text = &format_expand(
+                fmt   => $settings{retweeted_format} || $settings{retweet_format},
+                nick  => $tweet->{retweeted_status}{user}{screen_name}, data => '',
+                tweet => decode_entities( get_full_text($tweet->{retweeted_status}) ),
+        );
     } elsif ( $tweet->{truncated} and $object->isa('Net::Twitter') ) {
         $text .= " -- http://twitter.com/$tweet->{user}{screen_name}"
           . "/status/$tweet->{id}";
@@ -3590,6 +3604,11 @@ sub get_text {
     $text =~ s/[\n\r]/ /g;
 
     return $text;
+}
+
+sub get_full_text {
+    my $t  = shift;
+    return defined($t->{full_text}) ? $t->{full_text} : $t->{text};
 }
 
 sub window {
