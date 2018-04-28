@@ -2840,7 +2840,6 @@ sub write_lines {
     # recall timestamp format
     if (defined $old_tf) {
         Irssi::command("^set timestamp_format $old_tf");
-        &debug((0+@$lines_ref) . " lines, pre-ts: " . $old_tf);
     }
 }
 
