@@ -17,7 +17,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.7.2$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.7.3$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
     contact     => 'gedgey@gmail.com',
@@ -26,7 +26,7 @@ $VERSION = sprintf '%s', q$Version: v2.7.2$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2017-11-18 13:41:00 +0000$',
+    changed => '$Date: 2018-04-28 23:01:00 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
@@ -139,6 +139,7 @@ my @settings_defn = (
         [ 'timeout',           'twitter_timeout',           'i', 30 ],
         [ 'track_replies',     'twirssi_track_replies',     'i', 100 ],
         [ 'tweet_max_chars',   'twirssi_tweet_max_chars',   'i', 280 ],
+        [ 'dm_max_chars',      'twirssi_dm_max_chars',      'i', 10000 ],
 );
 
 my %meta_to_twit = (    # map file keys to twitter keys
@@ -3036,16 +3037,18 @@ sub too_long {
     my $data     = shift;
     my $alert_to = shift;
 
+    my $doing   = 'Tweet';
     my $max_len = $settings{tweet_max_chars};
-    if($alert_to && $alert_to->[0] eq 'dm') {
+    if ($alert_to and $alert_to->[0] eq 'dm') {
         # Twitter removed (more or less) the DM limit:
         # https://blog.twitter.com/official/en_us/a/2015/removing-the-140-character-limit-from-direct-messages.html
-        $max_len = 10000;
+        $max_len = $settings{dm_max_chars};
+        $doing   = 'DM';
     }
 
     if ( length $data > $max_len ) {
         &notice( $alert_to,
-            "Tweet is " . ( length $data - $max_len ) .
+            "$doing is " . ( length $data - $max_len ) .
                    " characters too long (max is " . $max_len .
                    " chars, attempt was " . length($data) . " chars) - aborted" )
           if defined $alert_to;
