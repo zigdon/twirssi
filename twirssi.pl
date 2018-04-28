@@ -3036,11 +3036,18 @@ sub too_long {
     my $data     = shift;
     my $alert_to = shift;
 
-    if ( length $data > $settings{tweet_max_chars} ) {
+    my $max_len = $settings{tweet_max_chars};
+    if($alert_to && $alert_to->[0] eq 'dm') {
+        # Twitter removed (more or less) the DM limit:
+        # https://blog.twitter.com/official/en_us/a/2015/removing-the-140-character-limit-from-direct-messages.html
+        $max_len = 10000;
+    }
+
+    if ( length $data > $max_len ) {
         &notice( $alert_to,
-            "Tweet is " . ( length $data - $settings{tweet_max_chars} ) .
-                   " characters too long (max is " . length($data) .
-                   " chars, attempt was " . $settings{tweet_max_chars} . " chars) - aborted" )
+            "Tweet is " . ( length $data - $max_len ) .
+                   " characters too long (max is " . $max_len .
+                   " chars, attempt was " . length($data) . " chars) - aborted" )
           if defined $alert_to;
         return 1;
     }
