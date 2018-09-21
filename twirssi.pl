@@ -10,14 +10,15 @@ use Encode;
 use FileHandle;
 use POSIX qw/:sys_wait_h strftime/;
 use Net::Twitter qw/3.11009/;
-use JSON::Any;
+use Twitter::API;
+use JSON::MaybeXS;
 use DateTime;
 use DateTime::Format::Strptime;
 $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.7.3$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.8.0$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
     contact     => 'gedgey@gmail.com',
@@ -26,10 +27,10 @@ $VERSION = sprintf '%s', q$Version: v2.7.3$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2018-04-28 23:01:00 +0000$',
+    changed => '$Date: 2018-09-21 15:00:00 +0000$',
 );
 
-my $twit;	# $twit is current logged-in Net::Twitter object (usually one of %twits)
+my $twit;	# $twit is current logged-in Net::Twitter or Twitter::API object (usually one of %twits)
 my %twits;	# $twits{$username} = logged-in object
 my %oauth;
 my $user;	# current $account
@@ -43,6 +44,8 @@ my %blocks;		# $blocks {$username}{$nick} = $epoch_when_refreshed (rhs value use
 my %tweet_cache;	# $tweet_cache{$tweet_id} = time of tweet (helps keep last hour of IDs, to avoid dups)
 my %state;
 		# $state{__ids}			{$lc_nick}[$cache_idx]	= $tweet_id
+		# $state{__u}			{$lc_nick}		= { id=>$user_id }
+		# $state{__i}			{$user_id}		= $lc_nick
 		# $state{__tweets}		{$lc_nick}[$cache_idx]	= $tweet_text
 		# $state{__usernames}		{$lc_nick}[$cache_idx]	= $username_that_polled_tweet
 		# $state{__reply_to_ids}	{$lc_nick}[$cache_idx]	= $polled_tweet_replies_to_this_id
@@ -180,6 +183,68 @@ sub cmd_direct {
     &cmd_direct_as( "$user $data", $server, $win );
 }
 
+sub user_to_id {
+    my $obj  = shift;
+    my $user = shift;
+    my $ctx  = shift // "u2id";
+    my $fh   = shift;
+
+    if (not defined $state{__u}{lc $user} or not defined $state{__u}{lc $user}{id}) {
+        my $r;
+        eval {
+            $r = $obj->lookup_users({screen_name=>$user, include_entities=>0});
+            if (not defined $r) {
+                &error([$ctx, $fh], "Cannot get id for user: $user" );
+                return;
+            }
+        };
+        if ($@) {
+            &error([$ctx, $fh], "Failed to get id for user: $user" );
+            return;
+        }
+        if (not defined $r->[0] or not exists $r->[0]->{id_str}) {
+            &error([$ctx, $fh], "Bad response for id for user: $user" );
+            return;
+        }
+        if (defined $fh) { printf $fh "t:uid id:%s nick:%s\n", $r->[0]->{id_str}, lc $user; }
+        $state{__u}{lc $user}{id} = $r->[0]->{id_str};
+        $state{__i}{$r->[0]->{id_str}} = lc $user;
+    }
+
+    return $state{__u}{lc $user}{id};
+}
+
+sub id_to_user {
+    my $obj  = shift;
+    my $u_id = shift;
+    my $ctx  = shift // "id2u";
+    my $fh   = shift;
+
+    if (not defined $state{__i}{$u_id}) {
+        my $r;
+        eval {
+            $r = $obj->lookup_users({user_id=>$u_id, include_entities=>0});
+            if (not defined $r) {
+                &error([$ctx, $fh], "Cannot get user for id $u_id" );
+                return;
+            }
+        };
+        if ($@) {
+            &error([$ctx, $fh], "Failed to get user for id $u_id" );
+            return;
+        }
+        if (not defined $r->[0] or not exists $r->[0]->{screen_name}) {
+            &error([$ctx, $fh], "Bad response for id for user: $u_id" );
+            return;
+        }
+        if (defined $fh) { printf $fh "t:uid id:%s nick:%s\n", $u_id, lc $r->[0]->{screen_name}; }
+        $state{__i}{$u_id} = lc $r->[0]->{screen_name};
+        $state{__u}{lc $r->[0]->{screen_name}}{id} = $u_id;
+    }
+
+    return $state{__i}{$u_id};
+}
+
 sub cmd_direct_as {
     my ( $data, $server, $win ) = @_;
 
@@ -193,29 +258,41 @@ sub cmd_direct_as {
     return unless &logged_in($twits{$username});
 
     my $target_norm = &normalize_username($target, 1);
+    my $target_id   = &user_to_id($twits{$username}, $target, "dm");
+    return unless defined $target_id;
 
     $text = &shorten($text);
 
     return if &too_long($text, ['dm', $target_norm]);
 
     eval {
-        if ( $twits{$username}
-            ->new_direct_message( { screen_name => $target, text => $text } ) ) {
-            &notice( [ "dm", $target_norm ], "DM sent to $target: $text" );
-            $nicks{$target} = time;
-        } else {
+        my $r = $twits{$username}->request(post => 'direct_messages/events/new', {
+            -to_json => {
+                event => {
+                    type           => 'message_create',
+                    message_create => {
+                        target       => { recipient_id => $target_id, },
+                        message_data => { text => $text, },
+                    },
+                },
+            },
+        });
+        if (not defined $r) {
             my $error;
             eval {
-                $error = JSON::Any->jsonToObj( $twits{$username}->get_error() );
+                $error = decode_json( $twits{$username}->get_error() );
                 $error = $error->{error};
             };
             die "$error\n" if $error;
             &notice( [ "dm", $target_norm ], "DM to $target failed" );
+            return;
         }
+        &notice( [ "dm", $target_norm ], "DM sent to $target: $text" );
+        $nicks{$target} = time;
     };
 
     if ($@) {
-        &notice( ["error"], "DM caused an error: $@" );
+        &error( "DM caused an error: $@" );
         return;
     }
 }
@@ -305,8 +382,7 @@ sub cmd_retweet_as {
     }
 
     if ($@) {
-        &notice( [ "error", $username ],
-            "Update caused an error: $@.  Aborted" );
+        &error( [ $username ], "Update caused an error: $@.  Aborted" );
         return;
     }
 
@@ -445,8 +521,7 @@ sub cmd_tweet_as {
     return unless $success;
 
     if ($@) {
-        &notice( [ "error", $username ],
-            "Update caused an error: $@.  Aborted." );
+        &error( [ $username ], "Update caused an error: $@.  Aborted." );
         return;
     }
 
@@ -668,7 +743,7 @@ sub gen_cmd {
         return unless $success;
 
         if ($@) {
-            &notice(['error'], "$api_name caused an error.  Aborted: $@");
+            &error("$api_name caused an error.  Aborted: $@");
             return;
         }
 
@@ -695,7 +770,7 @@ sub cmd_listinfo {
         ]);
 
     } else {
-        &notice( ['error'], 'Usage: /twitter_listinfo [ <user> [<list name>] ]' );
+        &error( 'Usage: /twitter_listinfo [ <user> [<list name>] ]' );
     }
 }
 
@@ -734,9 +809,8 @@ sub cmd_dms_as {
     return unless &logged_in($twits{$username});
 
     if ( length $data > 0 ) {
-        &notice( ['error'], 'Usage: /' .
-                      ($username eq "$user\@$defservice"
-                          ? 'twitter_dms' : 'twitter_dms_as <username>') );
+        &error( 'Usage: /' .  ($username eq "$user\@$defservice"
+                                ? 'twitter_dms' : 'twitter_dms_as <username>') );
         return;
     }
     &notice( [ 'dm' ], 'Fetching direct messages' );
@@ -819,8 +893,7 @@ sub cmd_login {
         &debug("autouser login");
 
         if ( @{ $settings{usernames} } != @{ $settings{passwords} } ) {
-            &notice( ["error"],
-                    "Number of usernames doesn't match "
+            &error( "Number of usernames doesn't match "
                   . "the number of passwords - auto-login failed" );
             return;
         } else {
@@ -833,8 +906,7 @@ sub cmd_login {
         }
 
     } else {
-        &notice( ["error"],
-                "/twitter_login requires either a username/password "
+        &error( "/twitter_login requires either a username/password "
               . "or twitter_usernames and twitter_passwords to be set. "
               . "Note that if twirssi_use_oauth is true, passwords are "
               . "not required" );
@@ -859,9 +931,8 @@ sub cmd_login {
                     ssl      => !$settings{avoid_ssl},
                 );
             } else {
-                $twit = Net::Twitter->new(
-                    traits =>
-                      [ 'API::RESTv1_1', 'OAuth', 'RetryOnError' ],
+                $twit = Twitter::API->new_with_traits(
+                    traits => [ qw/ Migration ApiMethods RetryOnError / ],
                     (
                         grep tr/a-zA-Z/n-za-mN-ZA-M/, map $_,
                         pbafhzre_xrl => 'OMINiOzn4TkqvEjKVioaj',
@@ -875,7 +946,7 @@ sub cmd_login {
         };
 
         if ($@) {
-            &notice( ["error"], "Error when creating object:  $@" );
+            &error( "Error when creating object:  $@" );
         }
 
         if ($twit) {
@@ -891,20 +962,29 @@ sub cmd_login {
                 close $oa_fh;
             }
 
-            unless ( $twit->authorized ) {
-                my $url;
-                eval { $url = $twit->get_authorization_url; };
-
+            # leave undefined if authorized
+            my $authorize_url;
+            if ( ref($twit) eq 'Twitter::API'
+                       and not ($twit->has_access_token and $twit->has_access_token_secret ) ) {
+                eval { $authorize_url = $twit->oauth_authorization_url({ oauth_token => $twit->get_access_token }); };
                 if ($@) {
-                    &notice( ["error"],
-                        "Failed to get OAuth authorization_url: $@" );
+                    &error( "Failed to get oauth_authorization_url: $@" );
                     return;
                 }
-                &notice( ["error"],
-                    "$user: $IRSSI{name} not authorized to access $defservice.",
+            }
+            elsif ( $twit->can('authorized') and not $twit->authorized ) {
+                eval { $authorize_url = $twit->get_authorization_url; };
+                if ($@) {
+                    &error( "Failed to get OAuth authorization_url: $@" );
+                    return;
+                }
+            }
+
+            if ( $authorize_url ) {
+                &error( "$user: $IRSSI{name} not authorized to access $defservice.",
                     "Please authorize at the following url, then enter the PIN",
                     "supplied with /twirssi_oauth $username <pin>",
-                    $url
+                    $authorize_url
                 );
 
                 $oauth{pending}{$username} = $twit;
@@ -922,7 +1002,7 @@ sub cmd_login {
     }
 
     unless ($twit) {
-        &notice( ["error"], "Failed to create object!  Aborting." );
+        &error( "Failed to create object!  Aborting." );
         return;
     }
 
@@ -941,8 +1021,7 @@ sub cmd_oauth {
     &debug("Applying pin to $key");
 
     unless ( exists $oauth{pending}{$key} ) {
-        &notice( ["error"],
-                "There isn't a pending oauth request for $key. "
+        &error( "There isn't a pending oauth request for $key. "
               . "Try /twitter_login first" );
         return;
     }
@@ -955,7 +1034,7 @@ sub cmd_oauth {
     };
 
     if ($@) {
-        &notice( ["error"], "Invalid pin, try again: $@" );
+        &error( "Invalid pin, try again: $@" );
         return;
     }
 
@@ -980,13 +1059,12 @@ sub cmd_oauth {
             print $oa_fh "$_\n" foreach @store;
             close $oa_fh;
             rename "$store_file.new", $store_file
-              or &notice( ["error"], "Failed to rename $store_file.new: $!" );
+              or &error( "Failed to rename $store_file.new: $!" );
         } else {
-            &notice( ["error"], "Failed to write $store_file.new: $!" );
+            &error( "Failed to write $store_file.new: $!" );
         }
     } else {
-        &notice( ["error"],
-                "No persistant storage set for OAuth.  "
+        &error( "No persistant storage set for OAuth.  "
               . "Please /set twirssi_oauth_store to a writable filename." );
     }
 
@@ -1007,7 +1085,7 @@ sub rate_limited {
         for my $resource (keys %{ $rate_limit->{resources} }) {
             for my $uri (keys %{ $rate_limit->{resources}->{$resource} }) {
                 if ( $rate_limit->{resources}->{$resource}->{$uri}->{remaining} < 1 ) {
-                    &notice( [ 'error', $username, $fh ],
+                    &error([$username, $fh],
                         "Rate limit exceeded for $resource ($uri), try again after " .
 			localtime $rate_limit->{resources}->{$resource}->{$uri}->{reset} );
                     $res = 1;
@@ -1021,10 +1099,16 @@ sub rate_limited {
 sub verify_twitter_object {
     my ( $server, $win, $user, $service, $twit ) = @_;
 
-    if ( my $timeout = $settings{timeout} and $twit->can('ua') ) {
-        $twit->ua->timeout($timeout);
+    if ( my $timeout = $settings{timeout} ) {
+        if ( $twit->can('user_agent') ) {
+            $twit->user_agent->timeout($timeout);
+        } elsif ( $twit->can('ua') ) {
+            $twit->ua->timeout($timeout);
+        } else {
+            $timeout = undef;
+        }
         &notice( ["tweet", "$user\@$service"],
-                 "Twitter timeout for $user\@$service set to $timeout" );
+                 "Twitter timeout for $user\@$service set to $timeout" ) if defined $timeout;
     }
 
     my $verified = 0;
@@ -1076,7 +1160,7 @@ sub cmd_add_follow {
     my ( $data, $server, $win ) = @_;
 
     unless ($data) {
-        &notice( ["error"], "Usage: /twitter_add_follow_extra <username>" );
+        &error( "Usage: /twitter_add_follow_extra <username>" );
         return;
     }
 
@@ -1097,7 +1181,7 @@ sub cmd_del_follow {
     my ( $data, $server, $win ) = @_;
 
     unless ($data) {
-        &notice( ["error"], "Usage: /twitter_del_follow_extra <username>" );
+        &error( "Usage: /twitter_del_follow_extra <username>" );
         return;
     }
 
@@ -1106,7 +1190,7 @@ sub cmd_del_follow {
     $data = lc $data;
 
     unless ( exists $state{__last_id}{"$user\@$defservice"}{__extras}{$data} ) {
-        &notice( ["error"], "Wasn't following all replies by \@$data" );
+        &error( "Wasn't following all replies by \@$data" );
         return;
     }
 
@@ -1136,8 +1220,9 @@ sub cmd_add_search {
     my ( $data, $server, $win ) = @_;
 
     unless ( $twit and $twit->can('search') ) {
+        my $ref_type = ref($twit);
         &notice( ["search"],
-                "ERROR: Your version of Net::Twitter ($Net::Twitter::VERSION) "
+                "ERROR: Your version of $ref_type (" . $ref_type->VERSION . ") "
               . "doesn't support searches." );
         return;
     }
@@ -1171,8 +1256,9 @@ sub cmd_del_search {
     my ( $data, $server, $win ) = @_;
 
     unless ( $twit and $twit->can('search') ) {
+        my $ref_type = ref($twit);
         &notice( ["search"],
-                "ERROR: Your version of Net::Twitter ($Net::Twitter::VERSION) "
+                "ERROR: Your version of $ref_type (" . $ref_type->VERSION . ") "
               . "doesn't support searches." );
         return;
     }
@@ -1218,8 +1304,7 @@ sub cmd_upgrade {
 
     my $loc = $settings{location};
     unless ( -w $loc ) {
-        &notice( ["error"],
-                "$loc isn't writable, can't upgrade."
+        &error( "$loc isn't writable, can't upgrade."
               . "  Perhaps you need to /set twirssi_location?" );
         return;
     }
@@ -1237,8 +1322,7 @@ sub cmd_upgrade {
         eval " use Digest::MD5; ";
 
         if ($@) {
-            &notice( ["error"],
-                    "Failed to load Digest::MD5."
+            &error( "Failed to load Digest::MD5."
                   . "  Try '/twirssi_upgrade nomd5' to skip MD5 verification" );
             return;
         }
@@ -1247,8 +1331,7 @@ sub cmd_upgrade {
 
         my $fh;
         unless ( open( $fh, '<', $loc ) ) {
-            &notice( ["error"],
-                    "Failed to read $loc."
+            &error( "Failed to read $loc."
                   . "  Check that /set twirssi_location is set to the correct location."
             );
             return;
@@ -1258,29 +1341,28 @@ sub cmd_upgrade {
         close $fh;
 
         if ( $cur_md5 eq $new_md5 ) {
-            &notice( ["error"], "Current twirssi seems to be up to date." );
+            &error( "Current twirssi seems to be up to date." );
             return;
         }
     }
 
     open my $fh, '>', "$loc.upgrade"
-        or return &notice([ 'error' ],"Failed to write upgrade to $loc.upgrade $!");
+        or return &error("Failed to write upgrade to $loc.upgrade $!");
     print $fh $new_twirssi;
     close $fh;
 
     unless ( -s "$loc.upgrade" ) {
-        &notice( ["error"],
-                "Failed to save $loc.upgrade."
+        &error( "Failed to save $loc.upgrade."
               . "  Check that /set twirssi_location is set to the correct location."
         );
         return;
     }
 
     rename $loc, "$loc.backup"
-      or &notice( ["error"], "Failed to back up $loc: $!.  Aborting" )
+      or &error( "Failed to back up $loc: $!.  Aborting" )
       and return;
     rename "$loc.upgrade", $loc
-      or &notice( ["error"], "Failed to rename $loc.upgrade: $!.  Aborting" )
+      or &error( "Failed to rename $loc.upgrade: $!.  Aborting" )
       and return;
 
     my ( $dir, $file ) = ( $loc =~ m{(.*)/([^/]+)$} );
@@ -1288,10 +1370,9 @@ sub cmd_upgrade {
         &notice( ["notice"], "Updating $dir/autorun/$file" );
         unlink "$dir/autorun/$file"
           or
-          &notice( ["error"], "Failed to remove old $file from autorun: $!" );
+          &error( "Failed to remove old $file from autorun: $!" );
         symlink "../$file", "$dir/autorun/$file"
-          or &notice( ["error"],
-            "Failed to create symlink in autorun directory: $!" );
+          or &error( "Failed to create symlink in autorun directory: $!" );
     }
 
     &notice( ["notice"],
@@ -1332,8 +1413,8 @@ sub cmd_set_channel {
     my $delete = 1 if $type =~ s/^-//;
 
     unless ( grep { $type eq $_ } @{ $valid_types{'channel'} } ) {
-        &notice(['error'], "Invalid message type '$type'.");
-        &notice(['error'], 'Valid types: ' . join(', ', @{ $valid_types{'channel'} }));
+        &error( "Invalid message type '$type'.",
+                'Valid types: ' . join(', ', @{ $valid_types{'channel'} }));
         return;
     }
 
@@ -1420,10 +1501,8 @@ sub cmd_set_window {
     } elsif ( @words >= 1 ) {
         my $type = lc $words[0];
         unless ( grep { $_ eq $type } @{ $valid_types{'window'} } ) {
-            &notice(['error'],
-                "Invalid message type '$type'.",
-                'Valid types: ' . join(', ', @{ $valid_types{'window'} })
-            );
+            &error("Invalid message type '$type'.",
+                'Valid types: ' . join(', ', @{ $valid_types{'window'} }));
             return;
         }
 
@@ -1441,7 +1520,7 @@ sub cmd_set_window {
               $tag = lc join(' ', @words[1..$#words]);
            }
            if (substr($tag, -1, 1) eq '@') {
-              &notice(['error'], "Invalid tag '$tag'.");
+              &error("Invalid tag '$tag'.");
               return;
            }
         }
@@ -1510,7 +1589,7 @@ sub scan_cursor {
     my $fh        = shift;
     my $fn_info   = shift;
 
-    my $whole_set = {};
+    my $whole_set = ($fn_info->{want_array} ? [] : {});
     my $fn_args = { (defined $fn_info->{args} ? %{ $fn_info->{args} } : ()) };
     my $fn_name = $fn_info->{fn};
     my $pg_type = index($fn_info->{cp}, 'c') >= 0 ? 'cursor' : ($fn_info->{cp} =~ /p(\d*)/ ? 'page' : '');
@@ -1519,18 +1598,27 @@ sub scan_cursor {
     eval {
         for (my($cursor, $page) = (-1, 1); $cursor and $page <= $max_page; $page++) {
             if ($pg_type eq 'cursor') {
-                $fn_args->{cursor} = $cursor;
+                $fn_args->{cursor} = $cursor if $cursor > 0;
             } elsif ($pg_type eq 'page') {
                 $fn_args->{page} = $page;
             }
             &debug($fh, "%G$username%n Loading $type_str $pg_type " . ($pg_type eq 'cursor' ? $cursor : $page));
-            my $collection = $u_twit->$fn_name($fn_args);
+            my $collection;
+            if ($fn_name =~ /^(get|post|put|delete)$/ and defined $fn_info->{endpoint}) {
+              $collection = $u_twit->$fn_name($fn_info->{endpoint}, $fn_args);
+            } else {
+              $collection = $u_twit->$fn_name($fn_args);
+            }
             last if not $collection;
             if ($pg_type eq 'cursor') {
                 $cursor = $collection->{next_cursor};
                 $collection = $collection->{$fn_info->{set_key}} if defined $fn_info->{set_key};
             }
             last if 0 == @$collection;
+            if ($fn_info->{want_array}) {
+              push @$whole_set, @$collection;
+              next;
+            }
             foreach my $coll_item (@$collection) {
                 if ($pg_type eq 'page'
                        and defined $whole_set->{$coll_item->{$fn_info->{item_key}}}) {
@@ -1551,11 +1639,13 @@ sub scan_cursor {
                 $fn_args->{max_id} = $coll_item->{id_str} if defined $fn_args->{since_id};
             }
         }
-foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "$pg_type: $item"); } # TODO remove
+        if ($settings{debug}) {
+            foreach my $item (split "\n", Dumper($whole_set)) { &debug($fh, "$pg_type: $item"); } # TODO remove
+        }
     };
 
     if ($@) {
-        &notice(['error', $username, $fh], "$username: Error updating $type_str.  Aborted.");
+        &error([$username, $fh], "Error updating $type_str.  Aborted.");
         &debug($fh, "%G$username%n Error updating $type_str: $@");
         return;
     }
@@ -1696,7 +1786,7 @@ sub cmd_wipe {
                 &notice('Wiping all info/settings.');
                 %state = ();
             } else {
-                &notice([ 'error' ], "Error: no such twirssi_wipe argument '$to_wipe'.");
+                &error("No such twirssi_wipe argument '$to_wipe'.");
             }
         }
     }
@@ -1740,7 +1830,7 @@ sub tweet_to_meta {
     foreach my $meta_key (keys %meta_to_twit) {
         $meta{$meta_key} = $t->{$meta_to_twit{$meta_key}} if defined $t->{$meta_to_twit{$meta_key}};
     }
-    $meta{created_at} = &date_to_epoch($meta{created_at});
+    $meta{created_at} = $meta{ts} // &date_to_epoch($meta{created_at});
     $meta{topic} = $topic if defined $topic;
     $meta{text} = &get_text($t, $obj);
     return \%meta;
@@ -1768,11 +1858,9 @@ sub tweet_or_reply {
         if (my $t_reply = $cache->{ $t->{in_reply_to_status_id} }) {
             if (defined $fh) {
                 my $ctext = &get_text( $t_reply, $obj );
-                printf $fh "t:tweet id:%s ac:%s %snick:%s created_at:%s %s\n",
+                printf $fh "t:tweet id:%s ac:%s %snick:%s ts:%s %s\n",
                   $t_reply->{id}, $username, &get_reply_to($t_reply),
-                  $t_reply->{user}{screen_name},
-                  &encode_for_file($t_reply->{created_at}),
-                  $ctext;
+                  $t_reply->{user}{screen_name}, &get_ts($t_reply), $ctext;
                 &get_unshorten_urls($ctext, $fh);
             }
             $type = 'reply';
@@ -1818,7 +1906,7 @@ sub background_setup {
         rename $pid_filename, $done_filename;
         exit;
     } else {
-        &notice([ 'error' ], "Failed to fork for background call: $!");
+        &error("Failed to fork for background call: $!");
     }
 }
 
@@ -2043,8 +2131,8 @@ sub get_updates_child {
     &put_unshorten_urls($fh, $time_before_update);
 
     if ($error) {
-        &notice( [ 'error', undef, $fh ], "Update encountered errors (@error_types).  Aborted");
-        &notice( [ 'error', undef, $fh ], "For recurring DMs errors, please re-auth (delete $settings{oauth_store})") if grep { $_ eq 'dms' } @error_types;
+        &error([$fh], "Update encountered errors (@error_types).  Aborted");
+        # &error( [$fh], "For recurring DMs errors, please re-auth (delete $settings{oauth_store})") if grep { $_ eq 'dms' } @error_types;
     } elsif ($is_regular) {
         print $fh "t:last_poll poll_type:__poll epoch:$time_before_update\n";
     }
@@ -2072,6 +2160,12 @@ sub remove_tags {
         $text =~ s/(^|\b|\s)\Q$tag\E(\b|\s|$)/$1$2/gi;
     }
     return $text;
+}
+
+sub get_ts {
+    my $t = shift;
+    return $t->{created_timestamp} / 1000 if defined $t->{created_timestamp};
+    return &date_to_epoch($t->{created_at});
 }
 
 sub get_tweets {
@@ -2117,9 +2211,9 @@ sub get_tweets {
             push @own_ids, $t->{id};
             next;
         }
-        printf $fh "t:%s id:%s ac:%s %s%snick:%s created_at:%s %s\n",
+        printf $fh "t:%s id:%s ac:%s %s%snick:%s ts:%s %s\n",
             $reply, $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}{screen_name},
-            &encode_for_file($t->{created_at}), $text;
+            &get_ts($t), $text;
         &get_unshorten_urls($text, $fh);
 
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
@@ -2152,9 +2246,9 @@ sub get_tweets {
         &get_unshorten_urls($text, $fh);
         my $ign = &is_ignored($text);
         $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
-        printf $fh "t:tweet id:%s ac:%s %s%snick:%s created_at:%s %s\n",
+        printf $fh "t:tweet id:%s ac:%s %s%snick:%s ts:%s %s\n",
           $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}{screen_name},
-          &encode_for_file($t->{created_at}), $text;
+          &get_ts($t), $text;
     }
     printf $fh "t:last_id id:%s ac:%s id_type:reply\n", $new_poll_id, $username if $new_poll_id;
     return 1;
@@ -2175,24 +2269,42 @@ sub do_dms {
         &debug($fh, "%G$username%n Polling for DMs");
     }
 
-    my $tweets;
+    my $dms;
     eval {
-        $tweets = $obj->direct_messages($dm_args) || [];
+      $dms = &scan_cursor('DMs', $obj, $username, $fh, {
+		fn=>'get', endpoint=>'direct_messages/events/list', cp=>'c', args=>{},
+		set_key=>'events', want_array=>1,
+      });
+      return if not defined $dms;
+
+      #$dms = $obj->post('direct_messages/events/list', $dm_args) || {};
     };
     if ($@) {
         &debug($fh, "%G$username%n Error during direct_messages call.  Aborted.");
         &debug($fh, "%G$username%n Error: " . $@);
         return;
     }
-    &debug($fh, "%G$username%n got DMs: " . (0+@$tweets));
-    foreach my $item (split "\n", Dumper(@$tweets)) { &debug($fh, "dm: $item"); } # TODO remove
+    &debug($fh, "%G$username%n got DMs: " . (0+@$dms));
+    return 1 unless 0+@$dms;
+    if ($settings{debug}) {
+        foreach my $item (split "\n", Dumper($dms)) { &debug($fh, "dm: $item"); } # TODO remove
+    }
 
-    foreach my $t ( reverse @$tweets ) {
-        my $text = decode_entities( get_full_text($t) );
+    foreach my $t ( reverse @$dms ) {
+        # XXX last if $t->{id_str} eq $state{__last_id}{$username}{dm};
+        my $text = decode_entities( get_full_text($t->{message_create}->{message_data}) );
         $text =~ s/[\n\r]/ /g;
-        printf $fh "t:dm id:%s ac:%s %snick:%s created_at:%s %s\n",
-          $t->{id}, $username, &get_reply_to($t), $t->{sender_screen_name},
-          &encode_for_file($t->{created_at}), $text;
+
+        my $sender_id   = $t->{message_create}->{sender_id};
+        my $sender_nick = &id_to_user($obj, $sender_id, "dms", $fh);
+        if (not defined $sender_nick) {
+            &error(['dms', $fh], "update encountered error. Skipping DM for " . $sender_id);
+            next;
+        }
+        next if &normalize_username($sender_nick) eq $username;
+
+        printf $fh "t:dm id:%s ac:%s %snick:%s ts:%s %s\n",
+          $t->{id}, $username, &get_reply_to($t), $sender_nick, &get_ts($t), $text;
         $new_poll_id = $t->{id} if $new_poll_id < $t->{id};
     }
     printf $fh "t:last_id id:%s ac:%s id_type:dm\n", $new_poll_id, $username if $new_poll_id;
@@ -2253,9 +2365,9 @@ sub do_subscriptions {
                 my $ign = &is_ignored($text, $t->{user}->{screen_name});
                 &get_unshorten_urls($text, $fh);
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
-                printf $fh "t:search id:%s ac:%s %snick:%s topic:%s created_at:%s %s\n",
+                printf $fh "t:search id:%s ac:%s %snick:%s topic:%s ts:%s %s\n",
                   $t->{id}, $username, $ign, $t->{user}->{screen_name}, &encode_for_file($topic),
-                  &encode_for_file($t->{created_at}), $text;
+                  &get_ts($t), $text;
             }
         }
     }
@@ -2284,7 +2396,7 @@ sub do_searches {
             };
 
             if (my $err = $@) {
-                $err = $err->error . ' (' . $err->code . ' ' . $err->message . ')' if ref($err) eq 'Net::Twitter::Error';
+                $err = $err->error . ' (' . $err->code . ' ' . $err->message . ')' if ref($err) =~ /(?:Net::Twitter|Twitter::API)::Error/;
                 print $fh "t:debug %G$username%n Error during search_once($topic) call.  Aborted.\n";
                 &debug($fh, "%G$username%n Error: $err");
                 return;
@@ -2314,9 +2426,9 @@ sub do_searches {
                 &get_unshorten_urls($text, $fh);
                 my $ign = &is_ignored($text, $t->{user}->{screen_name});
                 $ign = (defined $ign ? 'ign:' . &encode_for_file($ign) . ' ' : '');
-                printf $fh "t:search_once id:%s ac:%s %s%snick:%s topic:%s created_at:%s %s\n",
+                printf $fh "t:search_once id:%s ac:%s %s%snick:%s topic:%s ts:%s %s\n",
                   $t->{id}, $username, $ign, &get_reply_to($t), $t->{user}->{screen_name}, &encode_for_file($topic),
-                  &encode_for_file($t->{created_at}), $text;
+                  &get_ts($t), $text;
             }
         }
     }
@@ -2358,12 +2470,12 @@ sub get_timeline {
 
     my $not_before = time - $1*86400 if not $is_update and $settings{limit_user_tweets} and $settings{limit_user_tweets} =~ /\b(\d+)d\b/;
     foreach my $t ( reverse @$tweets ) {
-        next if defined $not_before and &date_to_epoch($t->{created_at}) < $not_before;
+        my $ts = &get_ts($t);
+        next if defined $not_before and $ts < $not_before;
         my $text = &get_text( $t, $obj );
         my $reply = &tweet_or_reply($obj, $t, $username, $cache, $fh);
-        printf $fh "t:%s id:%s ac:%s %snick:%s created_at:%s %s\n",
-          $reply, $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name},
-          &encode_for_file($t->{created_at}), $text;
+        printf $fh "t:%s id:%s ac:%s %snick:%s ts:%s %s\n",
+          $reply, $t->{id}, $username, &get_reply_to($t), $t->{user}{screen_name}, $ts, $text;
         $last_id = $t->{id} if $last_id < $t->{id};
         &get_unshorten_urls($text, $fh);
     }
@@ -2482,6 +2594,8 @@ sub cache_to_meta {
                 $meta{username} = &normalize_username($meta{account});	# username is account@Service
                 $meta{account} =~ s/\@(\w+)$//;
                 $meta{service} = $1;
+            } elsif ($key eq 'ts') {
+                $meta{created_at} = $meta{ts};
             } elsif ($key eq 'created_at') {
                 $meta{created_at} = &date_to_epoch($meta{created_at});
             }
@@ -2537,7 +2651,7 @@ sub monitor_child {
             unlink $filename unless &debug();
 
             if (not $is_update) {
-                &notice([ 'error' ], "Failed to get response.  Giving up.");
+                &error("Failed to get response.  Giving up.");
                 return;
             }
 
@@ -2554,8 +2668,7 @@ sub monitor_child {
             }
 
             if ( $failstatus < 2 and time - $last_poll{__poll} > 60 * 60 ) {
-                &notice([ 'error' ],
-                  $settings{mini_whale}
+                &error( $settings{mini_whale}
                   ? 'FAIL WHALE'
                   : q{     v  v        v},
                     q{     |  |  v     |  v},
@@ -2570,7 +2683,7 @@ sub monitor_child {
             }
 
             if ( $failstatus == 0 and time - $last_poll{__poll} < 600 ) {
-                &notice([ 'error' ],"Haven't been able to get updated tweets since $since");
+                &error("Haven't been able to get updated tweets since $since");
                 $failstatus = 1;
             }
         }
@@ -2591,7 +2704,7 @@ sub monitor_child {
         if (s/^t:(\w+)\s+//) {
             $type = $1;
         } else {
-            &notice(['error'], "invalid: $_");
+            &error("invalid: $_");
             next;
         }
 
@@ -2601,6 +2714,11 @@ sub monitor_child {
         } elsif ($type =~ /^(error|info|deerror)$/) {
             $got_errors++ if $type eq 'error';
             &notice([$type], $_);
+
+        } elsif ($type eq 'uid') {
+            my %meta = &cache_to_meta($_, $type, [ qw/ nick id / ]);
+            $state{__i}{$meta{id}}       = $meta{nick};
+            $state{__u}{$meta{nick}}{id} = $meta{id};
 
         } elsif ($type eq 'url') {
             my %meta = &cache_to_meta($_, $type, [ qw/epoch https site uri/ ]);
@@ -2649,7 +2767,7 @@ sub monitor_child {
             }
 
         } elsif ($type eq 'tweet' or $type eq 'dm' or $type eq 'reply' or $type eq 'search' or $type eq 'search_once') {	# cf theme_register
-            my %meta = &cache_to_meta($_, $type, [ qw/id ac ign reply_to_user reply_to_id nick topic created_at/ ]);
+            my %meta = &cache_to_meta($_, $type, [ qw/id ac ign reply_to_user reply_to_id nick topic created_at ts / ]);
 
             if (exists $new_cache{ $meta{id} }) {
                 &debug("SKIP newly-cached $meta{id}");
@@ -2701,7 +2819,7 @@ sub monitor_child {
             }
 
         } else {
-            &notice(['error'], "invalid type ($type): $_");
+            &error("invalid type ($type): $_");
         }
     }
 
@@ -2803,6 +2921,12 @@ sub write_lines {
         push @print_opts, $line->{marker} if defined $line->{marker};
 
         # set timestamp
+        if (not defined $line->{epoch}) {
+            Irssi::window_find_name($settings{debug_win_name})->printformat(
+                @print_opts, &hilight( $line->{text} ) . " \cC${ymd_color}BAD DATE\cO"
+            );
+            next;
+        }
         my @date = localtime($line->{epoch});
         my $ymd  = sprintf('%04d-%02d-%02d', $date[5]+1900, $date[4]+1, $date[3]);
         my $ymd_suffix = '';
@@ -2896,7 +3020,7 @@ sub log_format {
 
     my $ymd = sprintf('%04d-%02d-%02d', $date_ref->[5]+1900, $date_ref->[4]+1, $date_ref->[3]);
     if ($ymd_obj->{ymd} ne $ymd) {
-        push @logs, "Day changed to $ymd" if $ymd ne '';
+        push @logs, "Day changed to $ymd (was ".$ymd_obj->{ymd}.")" if $ymd ne '';
         $ymd_obj->{ymd} = $ymd;
     }
 
@@ -2927,19 +3051,19 @@ sub save_state {
     # save state hash
     if ( keys %state and my $file = $settings{replies_store} ) {
         if ( open my $fh, '>', $file ) {
-            print $fh JSON::Any->objToJson( \%state );
+            print $fh encode_json( \%state );
             close $fh;
         } else {
-            &notice([ 'error' ],"Failed to write state to $file: $!");
+            &error("Failed to write state to $file: $!");
         }
     }
     # save id hash
     if ( my $file = $settings{id_store} ) {
         if ( open my $fh, '>', $file ) {
-            print $fh JSON::Any->objToJson( \%tweet_cache );
+            print $fh encode_json( \%tweet_cache );
             close $fh;
         } else {
-            &notice([ 'error' ],"Failed to write IDs to $file: $!");
+            &error("Failed to write IDs to $file: $!");
         }
     }
 }
@@ -2948,10 +3072,10 @@ sub save_polls {
     # save last_poll hash
     if ( keys %last_poll and my $file = $settings{poll_store} ) {
         if ( open my $fh, '>', $file ) {
-            print $fh JSON::Any->objToJson( \%last_poll );
+            print $fh encode_json( \%last_poll );
             close $fh;
         } else {
-            &notice([ 'error' ], "Failed to write polls to $file: $!");
+            &error("Failed to write polls to $file: $!");
         }
     }
 }
@@ -2981,6 +3105,17 @@ sub debug {
     return 1;
 }
 
+sub error {
+    my $ref = $_[0];
+    if (ref $ref) {
+        shift;
+        unshift @$ref, undef if 1 == @$ref and ref($ref->[0]) eq 'GLOB'; # [$fh] so add null tag
+    } else {
+        $ref = [];
+    }
+    &notice([ 'error', @$ref ], @_);
+}
+
 sub notice {
     my ( $type, $tag, $fh, $theme );
     if ( ref $_[0] ) {
@@ -2990,7 +3125,7 @@ sub notice {
     foreach my $msg (@_) {
         if (defined $fh) {
             for my $sub_line (split("\n", $msg)) {
-                print $fh "t:$type ", $sub_line, "\n" if $sub_line ne '';
+                print $fh "t:$type ", ($tag ? "$tag " : '') . $sub_line, "\n" if $sub_line ne '';
             }
         } else {
             my $col = '%G';
@@ -3024,7 +3159,7 @@ sub update_away {
             $server->send_raw("away :$data");
             return 1;
         } else {
-            &notice([ 'error' ], "Can't find bitlbee server.",
+            &error("Can't find bitlbee server.",
                 "Update bitlbee_server or disable tweet_to_away" );
             return 0;
         }
@@ -3069,11 +3204,12 @@ sub make_utf8 {
 
 sub valid_username {
     my $username = shift;
+    my $orig_username = $username;
 
     $username = &normalize_username($username);
 
     unless ( exists $twits{$username} ) {
-        &notice( ["error", $username], "Unknown username $username" );
+        &error( [$username], "Unknown username '$username' from '$orig_username'" );
         return;
     }
 
@@ -3083,8 +3219,7 @@ sub valid_username {
 sub logged_in {
     my $obj = shift;
     unless ($obj) {
-        &notice( ["error"],
-            "Not logged in!  Use /twitter_login username" );
+        &error( "Not logged in!  Use /twitter_login username" );
         return 0;
     }
 
@@ -3218,7 +3353,7 @@ sub event_setup_changed {
             if ($do_add) {
                 print        "ERROR: Bad opt '$setting->[2]' for $setting->[0]";
             } else {
-                &notice( ["error"], "Bad opt '$setting->[2]' for $setting->[0]" );
+                &error( "Bad opt '$setting->[2]' for $setting->[0]" );
             }
             next;
         }
@@ -3267,7 +3402,7 @@ sub event_setup_changed {
                 } elsif ($do_add) {
                     print        "ERROR: Bad opt pre-proc '$pre_proc' for $setting->[0]";
                 } else {
-                    &notice( ["error"], "Bad opt pre-proc '$pre_proc' for $setting->[0]" );
+                    &error( "Bad opt pre-proc '$pre_proc' for $setting->[0]" );
                 }
                 if ($norm_user) {
                     my @normed = ();
@@ -3332,7 +3467,7 @@ sub ensure_logfile() {
                 'ymd' => '',
         };
     } else {
-        &notice( ["error"], "Failed to append to $new_logfile: $!" );
+        &error( "Failed to append to $new_logfile: $!" );
     }
     umask($old_umask);
     return $res;
@@ -3461,7 +3596,7 @@ sub shorten {
                 if ($short) {
                     $data =~ s/\Q$url/$short/g;
                 } else {
-                    &notice( ["error"], "Failed to shorten $url!" );
+                    &error( "Failed to shorten $url!" );
                 }
             };
         }
@@ -3586,7 +3721,7 @@ sub normalize_username {
             }
 
             unless ($service) {
-                &notice( ["error"], "Can't find a logged in user '$user'" );
+                &error( "Can't find a logged in user '$user'" );
                 return "$username\@$settings{default_service}";
             }
         }
@@ -3605,7 +3740,7 @@ sub get_text {
                 nick  => $tweet->{retweeted_status}{user}{screen_name}, data => '',
                 tweet => decode_entities( get_full_text($tweet->{retweeted_status}) ),
         );
-    } elsif ( $tweet->{truncated} and $object->isa('Net::Twitter') ) {
+    } elsif ( $tweet->{truncated} and ( $object->isa('Net::Twitter') or $object->isa('Twitter::API') ) ) {
         $text .= " -- http://twitter.com/$tweet->{user}{screen_name}"
           . "/status/$tweet->{id}";
     }
@@ -3681,7 +3816,7 @@ sub ensure_window {
     &notice([ 'crap', $using_win ], "Creating window '$win'.");
     my $newwin = Irssi::Windowitem::window_create( $win, 1 );
     if (not $newwin) {
-        &notice([ 'error', $using_win ], "Failed to create window $win!");
+        &error([ $using_win ], "Failed to create window $win!");
         return;
     }
     $newwin->set_name($win);
@@ -3716,11 +3851,11 @@ sub read_json {
             do { local $/; $json = <$fh>; };
             close $fh;
             eval {
-                my $ref = JSON::Any->jsonToObj($json);
+                my $ref = decode_json($json);
                 %$store = %$ref;
             };
         } else {
-            &notice( ["error"], "Failed to load $desc from $file: $!" );
+            &error( "Failed to load $desc from $file: $!" );
         }
     }
 }
@@ -3797,6 +3932,8 @@ if ( Irssi::window_find_name(window()) ) {
             &debug( "searches: ", join(';  ', map { $state{__last_id}{$_}{__search} and "$_ : " . join(', ', keys %{ $state{__last_id}{$_}{__search} }) } keys %{ $state{__last_id} } ));
             &debug( "windows: ",  Dumper \%{ $state{__windows} } );
             &debug( "channels: ",  Dumper \%{ $state{__channels} } );
+            &debug( "u_info ",  Dumper \%{ $state{__u} } );
+            &debug( "id_info ",  Dumper \%{ $state{__i} } );
             &debug( "lists: ", Dumper \%{ $state{__lists} } );
             &debug( "settings: ",  Dumper \%settings );
             &debug( "last poll: ", Dumper \%last_poll );
@@ -3816,8 +3953,12 @@ if ( Irssi::window_find_name(window()) ) {
         "twirssi_version",
         sub {
             &notice(
-                # ["error"],
                 "$IRSSI{name} v$VERSION; "
+                  . (
+                    $Twitter::API::VERSION
+                    ? "Twitter::API v$Twitter::API::VERSION. "
+                    : ""
+                  )
                   . (
                     $Net::Twitter::VERSION
                     ? "Net::Twitter v$Net::Twitter::VERSION. "
@@ -3829,7 +3970,7 @@ if ( Irssi::window_find_name(window()) ) {
                     : ""
                   )
                   . "JSON in use: "
-                  . JSON::Any::handler()
+                  . ref(JSON::MaybeXS->new())
                   . ".  See details at http://twirssi.com/"
             );
         }
@@ -3983,7 +4124,7 @@ if ( Irssi::window_find_name(window()) ) {
             do { local $/; $json = <$fh>; };
             close $fh;
             eval {
-                my $ref = JSON::Any->jsonToObj($json);
+                my $ref = decode_json($json);
                 %state = %$ref;
                 # fix legacy vulnerable ids
                 for (grep !/^__\w+$/, keys %state) { $state{__ids}{$_} = $state{$_}; delete $state{$_}; }
@@ -4007,7 +4148,7 @@ if ( Irssi::window_find_name(window()) ) {
                 &cmd_list_follow;
             };
         } else {
-            &notice( ["error"], "Failed to load old replies from $file: $!" );
+            &error( "Failed to load old replies from $file: $!" );
         }
     }
 
@@ -4019,10 +4160,8 @@ if ( Irssi::window_find_name(window()) ) {
         eval "use WWW::Shorten::$provider;";
 
         if ($@) {
-            &notice(["error"],
-                "Failed to load WWW::Shorten::$provider - either clear",
-                "short_url_provider or install the CPAN module"
-            );
+            &error( "Failed to load WWW::Shorten::$provider - either clear",
+                "short_url_provider or install the CPAN module");
         }
     }
 
