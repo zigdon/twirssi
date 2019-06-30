@@ -18,7 +18,7 @@ $Data::Dumper::Indent = 1;
 
 use vars qw($VERSION %IRSSI);
 
-$VERSION = sprintf '%s', q$Version: v2.8.0$ =~ /^\w+:\s+v(\S+)/;
+$VERSION = sprintf '%s', q$Version: v2.8.1$ =~ /^\w+:\s+v(\S+)/;
 %IRSSI   = (
     authors     => '@zigdon, @gedge',
     contact     => 'gedgey@gmail.com',
@@ -27,7 +27,7 @@ $VERSION = sprintf '%s', q$Version: v2.8.0$ =~ /^\w+:\s+v(\S+)/;
       . 'Can optionally set your bitlbee /away message to same',
     license => 'GNU GPL v2',
     url     => 'http://twirssi.com',
-    changed => '$Date: 2018-09-21 15:00:00 +0000$',
+    changed => '$Date: 2019-06-29 18:00:00 +0000$',
 );
 
 my $twit;	# $twit is current logged-in Net::Twitter or Twitter::API object (usually one of %twits)
@@ -875,7 +875,8 @@ sub cmd_login {
         ( $username, $pass ) = split ' ', $data, 2;
         unless ( $settings{use_oauth} or $pass ) {
             &notice( ["tweet"],
-                "usage: /twitter_login <username>[\@<service>] <password>" );
+                "usage: /twitter_login <username>[\@<service>] [<password>*]",
+                "  *required if not using OAUTH" );
             return;
         }
         &debug("%G$username%n manual data login");
@@ -920,12 +921,12 @@ sub cmd_login {
     $blocks{$username} = {};
     $friends{$username} = {};
 
-    if ( $defservice eq 'Twitter' and $settings{use_oauth} ) {
-        &debug("%G$username%n Attempting OAuth");
+    if ( $settings{use_oauth} ) {
+        &debug("%G$username%n Attempting OAuth to $defservice");
         eval {
             if ( $defservice eq 'Identica' ) {
                 $twit = Net::Twitter->new(
-                    identica => 1,
+                    ($defservice eq 'Identica' ? ( identica => 1 ) : ()),
                     traits   => [ 'API::REST', 'API::Search' ],
                     source   => "twirssi",	# XXX
                     ssl      => !$settings{avoid_ssl},
@@ -964,9 +965,28 @@ sub cmd_login {
 
             # leave undefined if authorized
             my $authorize_url;
-            if ( ref($twit) eq 'Twitter::API'
+            my %req_tokes = ();
+            if ( ref($twit) =~ /Twitter::API/
                        and not ($twit->has_access_token and $twit->has_access_token_secret ) ) {
-                eval { $authorize_url = $twit->oauth_authorization_url({ oauth_token => $twit->get_access_token }); };
+                my $oauth_ref;
+                eval { $oauth_ref = $twit->oauth_request_token(); };
+                if ($@) {
+                    &error( "Failed to get oauth_request_token: $@" );
+                    return;
+                }
+                if (not $oauth_ref->{oauth_token} or not $oauth_ref->{oauth_token_secret}) {
+                    &error( "Failed to return oauth_token*" );
+                    return;
+                }
+
+                $req_tokes{token}        = $oauth_ref->{oauth_token};
+                $req_tokes{token_secret} = $oauth_ref->{oauth_token_secret};
+
+                eval { $authorize_url = $twit->oauth_authorization_url({
+                                        oauth_token => $oauth_ref->{oauth_token},
+                                        screen_name => $user,
+                                });
+                };
                 if ($@) {
                     &error( "Failed to get oauth_authorization_url: $@" );
                     return;
@@ -982,12 +1002,16 @@ sub cmd_login {
 
             if ( $authorize_url ) {
                 &error( "$user: $IRSSI{name} not authorized to access $defservice.",
-                    "Please authorize at the following url, then enter the PIN",
-                    "supplied with /twirssi_oauth $username <pin>",
-                    $authorize_url
+                    "Please authorize at the following url:",
+                    "  " . $authorize_url,
+                    "then enter the PIN supplied with:",
+                    "  /twirssi_oauth $username <pin>",
                 );
 
-                $oauth{pending}{$username} = $twit;
+                $oauth{pending}{$username} = {
+                        twit => $twit,
+                        %req_tokes,
+                };
                 return;
             }
         }
@@ -997,7 +1021,7 @@ sub cmd_login {
             username => $user,
             password => $pass,
             source   => "twirssi",	# XXX
-            ssl      => $settings{avoid_ssl},
+            ssl      => !$settings{avoid_ssl},
         );
     }
 
@@ -1026,17 +1050,30 @@ sub cmd_oauth {
         return;
     }
 
-    my $twit = $oauth{pending}{$key};
+    my $twit = $oauth{pending}{$key}->{twit};
     my ( $access_token, $access_token_secret );
     eval {
-        ( $access_token, $access_token_secret ) =
-          $twit->request_access_token( verifier => $pin );
+          my $hash_ref = $twit->oauth_access_token({
+              token         => $oauth{pending}{$key}->{token},
+              token_secret  => $oauth{pending}{$key}->{token_secret},
+              verifier      => $pin,
+          });
+          $access_token        = $hash_ref->{oauth_token};
+          $access_token_secret = $hash_ref->{oauth_token_secret};
     };
 
     if ($@) {
         &error( "Invalid pin, try again: $@" );
         return;
     }
+
+    if (not $access_token or not $access_token_secret) {
+        &error( "Invalid tokens returned, try again" );
+        return;
+    }
+
+    $twit->access_token($access_token);
+    $twit->access_token_secret($access_token_secret);
 
     delete $oauth{pending}{$key};
 
