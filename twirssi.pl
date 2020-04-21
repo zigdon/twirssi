@@ -2660,9 +2660,6 @@ sub monitor_child {
     }
     &debug("checking child log at $filename [$file_progress v $prev_mtime] ($attempts_to_go)");
 
-    # reap any random leftover processes - work around a bug in irssi on gentoo
-    waitpid( -1, WNOHANG );
-
     # first time we run we don't want to print out *everything*, so we just
     # pretend
 
@@ -2682,9 +2679,11 @@ sub monitor_child {
             Irssi::timeout_add_once( $wait_time, 'monitor_child',
                 [ $filename, $attempts_to_go - 1, $wait_time, $is_update, $filename_tmp, $this_mtime ] );
         } else {
+
+            &notice([ 'error' ], "Giving up on polling=$filename child_pid=$child_pid parent_pid=$$");
+
             &debug("Giving up on polling $filename");
-            Irssi::pidwait_remove($child_pid);
-            waitpid( -1, WNOHANG );
+	    remove_child($child_pid);
             unlink $filename unless &debug();
 
             if (not $is_update) {
@@ -2863,12 +2862,7 @@ sub monitor_child {
     # file was opened, so we tried to parse...
     close $fh;
 
-    # make sure the pid is removed from the waitpid list
-    Irssi::pidwait_remove($child_pid);
-
-    # and that we don't leave any zombies behind, somehow
-    waitpid( -1, WNOHANG );
-
+    remove_child($child_pid);
     &debug("new last_poll    = $last_poll{__poll}",
            "new last_poll_id = " . Dumper( $state{__last_id} )) if $is_update;
     if ($is_update and $first_call and not $settings{force_first}) {
@@ -2918,6 +2912,28 @@ sub monitor_child {
         $first_call        = 0;
         $update_is_running = 0;
     }
+}
+
+sub remove_child {
+    my $child_pid = shift;
+
+    # Check if the child is still running.  (Look for PID with ourself as parent PID)
+    # If it is: kill it.
+    # There is the probability of a race-condition, but how to do it right[tm]?
+
+    # BEWARE: UGLY DIRTY HACK, shell code, unix only -> translate this to Perl!
+    # perhaps use Process::Table?
+    my $ps_cmdline = "ps --format pid= --ppid $$";
+    my @child_pids = split /\s+/, `$ps_cmdline`;
+#    &notice([ 'error' ], "remove_child: child_pid=<${child_pid}> ps_cmdline=<${ps_cmdline}> ps_output=<".join(', ', @child_pids).">");
+    foreach my $pid (@child_pids) {
+	if ($pid == $child_pid) {
+	    &notice([ 'error' ], "remove_child: child was still running, killing it now! child_pid=$child_pid parent_pid=$$");
+	    kill 15, $child_pid;
+	    last;
+	}
+    }
+
 }
 
 sub cmp_id {
